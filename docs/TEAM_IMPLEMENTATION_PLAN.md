@@ -2,7 +2,6 @@
 
 **Project:** PhishLens — Real-Time Explainable Multi-Vector Scam Interception Engine  
 **Target SLA:** Sub-1000ms End-to-End Interception (< 5.0s Strict Hackathon SLA)  
-**Lead / Project Manager:** Avika Srivastava (@avksr)  
 **Architectural Baseline:** GIGW 3.0 Cybersecurity Standards, Zero-Trust Input Sanitization, Explainable AI Audit Trails
 
 ---
@@ -269,4 +268,4 @@ When you raise a PR to `dev`, GitHub Actions (`.github/workflows/ci.yml`) automa
 2. **Flake8 Lint:** `flake8 backend/ --max-line-length=120`
 3. **Frontend Build:** `npm ci && npm run build` (inside `frontend/`)
 
-Ensure your tests pass locally before requesting review from **@avksr**!
+Ensure your tests pass locally before opening your pull request!
