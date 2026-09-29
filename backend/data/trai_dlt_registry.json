@@ -1,0 +1,33 @@
+{
+  "_description": "TRAI DLT certified sender prefix whitelist for major Indian financial institutions, utilities, and government services.",
+  "registered_headers": {
+    "SBIINB": { "entity": "State Bank of India", "category": "BANK", "legit": true },
+    "SBIBNK": { "entity": "State Bank of India", "category": "BANK", "legit": true },
+    "SBISMS": { "entity": "State Bank of India", "category": "BANK", "legit": true },
+    "HDFCBK": { "entity": "HDFC Bank", "category": "BANK", "legit": true },
+    "HDFCLD": { "entity": "HDFC Bank Loans", "category": "BANK", "legit": true },
+    "ICICIB": { "entity": "ICICI Bank", "category": "BANK", "legit": true },
+    "ICICIT": { "entity": "ICICI Bank Transactional", "category": "BANK", "legit": true },
+    "AXISBK": { "entity": "Axis Bank", "category": "BANK", "legit": true },
+    "KOTAKB": { "entity": "Kotak Mahindra Bank", "category": "BANK", "legit": true },
+    "PNBSMS": { "entity": "Punjab National Bank", "category": "BANK", "legit": true },
+    "BOBTXN": { "entity": "Bank of Baroda", "category": "BANK", "legit": true },
+    "CANBNK": { "entity": "Canara Bank", "category": "BANK", "legit": true },
+    "INDUSB": { "entity": "IndusInd Bank", "category": "BANK", "legit": true },
+    "PAYTMB": { "entity": "Paytm Payments Bank", "category": "PAYMENT", "legit": true },
+    "GPAYIN": { "entity": "Google Pay India", "category": "PAYMENT", "legit": true },
+    "PHNPAY": { "entity": "PhonePe", "category": "PAYMENT", "legit": true },
+    "UIDAI": { "entity": "Unique Identification Authority of India (Aadhaar)", "category": "GOVERNMENT", "legit": true },
+    "INCOMET": { "entity": "Income Tax Department of India", "category": "GOVERNMENT", "legit": true },
+    "EPFOHO": { "entity": "Employees Provident Fund Organisation", "category": "GOVERNMENT", "legit": true },
+    "VODAIN": { "entity": "Vodafone Idea Telecom", "category": "TELECOM", "legit": true },
+    "AIRTEL": { "entity": "Bharti Airtel", "category": "TELECOM", "legit": true },
+    "JIONET": { "entity": "Reliance Jio", "category": "TELECOM", "legit": true }
+  },
+  "valid_operator_prefixes": [
+    "VM", "VK", "VN", "VA", "VP", "VD", "VF", "VG", "VI",
+    "AX", "AD", "AF", "AP", "AB",
+    "BZ", "BA", "BW", "BP",
+    "JD", "JM", "JR", "JS", "JX"
+  ]
+}

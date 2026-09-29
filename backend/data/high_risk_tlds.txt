@@ -1,0 +1,23 @@
+# High-risk Top-Level Domains (TLDs) frequently abused in phishing and cybercrime campaigns
+.top
+.xyz
+.club
+.work
+.icu
+.buzz
+.cc
+.cfd
+.rest
+.gq
+.ml
+.cf
+.tk
+.ga
+.fit
+.sbs
+.monster
+.click
+.link
+.live
+.country
+.stream

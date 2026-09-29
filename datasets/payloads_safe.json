@@ -1,0 +1,26 @@
+[
+  {
+    "id": "safe_001",
+    "name": "Standard HDFC Bank OTP Transaction Alert",
+    "payload": {
+      "content": "Dear Customer, your OTP for transaction of Rs 1,499 at Amazon on card ending 8812 is 654321. Valid for 5 mins. Do not share OTP with anyone - HDFC Bank",
+      "sender": "VM-HDFCBK",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "expected_tier": "SAFE",
+    "expected_max_score": 15
+  },
+  {
+    "id": "safe_002",
+    "name": "Legitimate Swiggy Delivery Tracking Notification",
+    "payload": {
+      "content": "Your Swiggy order from Biryani Blues is arriving in 15 mins. Track your rider at https://swiggy.com/orders/89211029",
+      "sender": "AD-SWIGGY",
+      "extracted_url": "https://swiggy.com/orders/89211029",
+      "channel": "sms"
+    },
+    "expected_tier": "SAFE",
+    "expected_max_score": 20
+  }
+]
