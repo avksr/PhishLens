@@ -7,7 +7,7 @@ Ref: schema_mocks.json
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -137,7 +137,7 @@ class AuditTrail(BaseModel):
 
 class ScanResponse(BaseModel):
     scan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     overall_risk_score: int = Field(..., ge=0, le=100)
     risk_tier: RiskTierEnum
     verdict: str
