@@ -1,0 +1,181 @@
+{
+  "SBI": {
+    "brand_name": "State Bank of India",
+    "keywords": ["sbi", "onlinesbi", "sbionline"],
+    "official_domains": [
+      "sbi.co.in",
+      "onlinesbi.sbi",
+      "sbionline.in",
+      "sbi.gov.in",
+      "sbimf.com",
+      "sbicard.com",
+      "sbilife.co.in",
+      "sbigeneral.in",
+      "sbimops.in"
+    ]
+  },
+  "HDFC": {
+    "brand_name": "HDFC Bank",
+    "keywords": ["hdfc", "hdfcbank"],
+    "official_domains": [
+      "hdfcbank.com",
+      "hdfc.com",
+      "hdfclife.com",
+      "hdfcfund.com",
+      "hdfcergo.com",
+      "hdfcsec.com",
+      "hdfcpension.com"
+    ]
+  },
+  "ICICI": {
+    "brand_name": "ICICI Bank",
+    "keywords": ["icici", "icicibank"],
+    "official_domains": [
+      "icicibank.com",
+      "icicidirect.com",
+      "iciciprulife.com",
+      "iciciprumf.com",
+      "icicilombard.com",
+      "icicisecurities.com"
+    ]
+  },
+  "AXIS": {
+    "brand_name": "Axis Bank",
+    "keywords": ["axis", "axisbank"],
+    "official_domains": [
+      "axisbank.com",
+      "axismf.com",
+      "axisdirect.in",
+      "axisbank.co.in"
+    ]
+  },
+  "PNB": {
+    "brand_name": "Punjab National Bank",
+    "keywords": ["pnb", "pnbonline"],
+    "official_domains": [
+      "pnbindia.in",
+      "pnbnet.net.in",
+      "pnbmetlife.com"
+    ]
+  },
+  "BOB": {
+    "brand_name": "Bank of Baroda",
+    "keywords": ["bob", "baroda", "bankofbaroda"],
+    "official_domains": [
+      "bankofbaroda.in",
+      "bobibanking.com",
+      "bobi.co.in"
+    ]
+  },
+  "KOTAK": {
+    "brand_name": "Kotak Mahindra Bank",
+    "keywords": ["kotak", "kotakbank"],
+    "official_domains": [
+      "kotak.com",
+      "kotakbank.com",
+      "kotakmf.com",
+      "kotaklife.com",
+      "kotaksecurities.com"
+    ]
+  },
+  "INDUSIND": {
+    "brand_name": "IndusInd Bank",
+    "keywords": ["indusind", "indusindbank"],
+    "official_domains": [
+      "indusind.com"
+    ]
+  },
+  "CANARA": {
+    "brand_name": "Canara Bank",
+    "keywords": ["canara", "canarabank"],
+    "official_domains": [
+      "canarabank.com"
+    ]
+  },
+  "UCO": {
+    "brand_name": "UCO Bank",
+    "keywords": ["uco", "ucobank"],
+    "official_domains": [
+      "ucobank.com"
+    ]
+  },
+  "AMAZON_IN": {
+    "brand_name": "Amazon India",
+    "keywords": ["amazon"],
+    "official_domains": [
+      "amazon.in",
+      "amazon.com",
+      "amazonpay.in",
+      "amazontrust.com"
+    ]
+  },
+  "FLIPKART": {
+    "brand_name": "Flipkart",
+    "keywords": ["flipkart"],
+    "official_domains": [
+      "flipkart.com"
+    ]
+  },
+  "PAYTM": {
+    "brand_name": "Paytm",
+    "keywords": ["paytm"],
+    "official_domains": [
+      "paytm.com",
+      "paytmbank.com"
+    ]
+  },
+  "PHONEPE": {
+    "brand_name": "PhonePe",
+    "keywords": ["phonepe"],
+    "official_domains": [
+      "phonepe.com"
+    ]
+  },
+  "GPAY": {
+    "brand_name": "Google Pay",
+    "keywords": ["gpay", "googlepay"],
+    "official_domains": [
+      "pay.google.com",
+      "google.com"
+    ]
+  },
+  "RAZORPAY": {
+    "brand_name": "Razorpay",
+    "keywords": ["razorpay"],
+    "official_domains": [
+      "razorpay.com"
+    ]
+  },
+  "IRCTC": {
+    "brand_name": "IRCTC",
+    "keywords": ["irctc"],
+    "official_domains": [
+      "irctc.co.in",
+      "irctc.com"
+    ]
+  },
+  "AADHAAR": {
+    "brand_name": "UIDAI / Aadhaar",
+    "keywords": ["aadhaar", "uidai", "aadhar"],
+    "official_domains": [
+      "uidai.gov.in",
+      "myaadhaar.uidai.gov.in"
+    ]
+  },
+  "EPFO": {
+    "brand_name": "EPFO / PF",
+    "keywords": ["epfo", "epf", "providentfund"],
+    "official_domains": [
+      "epfindia.gov.in",
+      "epfigms.gov.in"
+    ]
+  },
+  "INCOME_TAX": {
+    "brand_name": "Income Tax India",
+    "keywords": ["incometax", "itr"],
+    "official_domains": [
+      "incometax.gov.in",
+      "incometaxindia.gov.in"
+    ]
+  }
+}
