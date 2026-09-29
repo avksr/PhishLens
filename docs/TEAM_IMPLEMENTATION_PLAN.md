@@ -189,13 +189,16 @@ class ScanResponse(BaseModel):
 ### 👩‍💻 5. AVIKA — Risk Scoring Engine & Verdict Synthesis
 * **Branch:** `feature/avika-scoring-engine`
 * **Target Files:**
-  * `backend/core/scoring_engine.py` (Implemented & Verified ✅)
-  * `backend/core/verdict_utils.py` (Implemented & Verified ✅)
-  * `backend/tests/test_scoring.py` (Implemented & Verified ✅)
-* **Status:** **Completed and committed on `feature/avika-scoring-engine`!**
-  - Dynamic weight redistribution handles skipped agents.
-  - Critical escalation rules (Double Whammy, GSM Bank KYC, OTP Harvesting, Extortion) enforce proper risk tiers.
-  - Sub-10ms execution latency.
+  * `backend/core/scoring_engine.py`
+  * `backend/core/verdict_utils.py`
+  * `backend/tests/test_scoring.py`
+* **Responsibilities:**
+  1. Implement `compute_score(req, url_r, sender_r, intent_r) -> ScanResponse`:
+     - Dynamic weight redistribution (Base: URL 40%, Sender 30%, Intent 30%; reallocate proportionally when an agent is skipped or in error).
+     - Heuristic escalation rules: Double Whammy (score ≥ 92), GSM bank KYC spoofing (score ≥ 88), active OTP harvesting (score ≥ 90), and TRAI certified benign whitelist override (score ≤ 12).
+     - Map composite risk score to tiers: SAFE (0–24), CAUTION (25–49), HIGH_RISK (50–77), CRITICAL (78–100).
+  2. Implement `backend/core/verdict_utils.py` for explainable executive verdicts and actionable recommendations.
+  3. Deliverable: `pytest tests/test_scoring.py -v` passes with tests for dynamic weights, escalation rules, and latency benchmark (< 10ms).
 
 ---
 
