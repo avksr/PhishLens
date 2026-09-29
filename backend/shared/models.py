@@ -74,6 +74,12 @@ class ScanRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
 
 
+class ConfidenceLevelEnum(str, Enum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
 # --- Individual Agent Result Models ---
 class UrlAgentResult(BaseModel):
     status: AgentStatusEnum = AgentStatusEnum.SUCCESS
@@ -117,6 +123,17 @@ class IntentAgentResult(BaseModel):
     latency_ms: float = 0.0
 
 
+class UpiAgentResult(BaseModel):
+    status: AgentStatusEnum = AgentStatusEnum.SUCCESS
+    risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    detected_vpa: Optional[str] = None
+    is_spoofed_merchant: bool = False
+    target_entity: Optional[str] = None
+    flags: List[str] = Field(default_factory=list)
+    details: str = ""
+    latency_ms: float = 0.0
+
+
 # --- Composite Output Models ---
 class SynthesisBreakdown(BaseModel):
     weights_applied: Dict[str, float] = Field(default_factory=lambda: {
@@ -132,6 +149,7 @@ class AuditTrail(BaseModel):
     url_analysis: UrlAgentResult
     sender_analysis: SenderAgentResult
     intent_analysis: IntentAgentResult
+    upi_analysis: Optional[UpiAgentResult] = None
     synthesis_breakdown: SynthesisBreakdown
 
 
@@ -140,8 +158,11 @@ class ScanResponse(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     overall_risk_score: int = Field(..., ge=0, le=100)
     risk_tier: RiskTierEnum
+    confidence: ConfidenceLevelEnum = ConfidenceLevelEnum.HIGH
     verdict: str
+    verdict_hi: Optional[str] = None
     recommendation: str
+    recommendation_hi: Optional[str] = None
     action_required: ActionRequiredEnum
     audit_trail: AuditTrail
     processing_time_ms: float
