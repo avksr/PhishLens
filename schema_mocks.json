@@ -1,0 +1,316 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PhishLensDataContract",
+  "description": "Unified schema and mock payloads for PhishLens real-time scam interception pipeline",
+  "definitions": {
+    "ScanRequest": {
+      "type": "object",
+      "required": ["content"],
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "The raw message text, email body, or payment note to inspect",
+          "minLength": 1,
+          "maxLength": 8000,
+          "example": "URGENT: Your SBI account #XXXX1234 is suspended due to missing PAN. Update immediately at https://sbi-kyc-update.top to prevent freeze."
+        },
+        "sender": {
+          "type": "string",
+          "description": "Sender identifier if available (e.g. phone number, SMS header like 'VM-SBIINB', or email address)",
+          "example": "+91-9876543210"
+        },
+        "extracted_url": {
+          "type": "string",
+          "description": "Pre-extracted URL if user specifically entered a link or frontend extracted it",
+          "example": "https://sbi-kyc-update.top"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["sms", "whatsapp", "email", "qr_payment", "web_url", "unknown"],
+          "default": "sms"
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "client_timestamp": { "type": "string", "format": "date-time" },
+            "device_platform": { "type": "string", "example": "android" }
+          }
+        }
+      }
+    },
+    "UrlAgentResult": {
+      "type": "object",
+      "required": ["risk_score", "flags", "details"],
+      "properties": {
+        "status": { "type": "string", "enum": ["SUCCESS", "SKIPPED", "ERROR"] },
+        "url_analyzed": { "type": "string", "nullable": true },
+        "risk_score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "domain_age_days": { "type": "integer", "nullable": true },
+        "is_typosquatting": { "type": "boolean" },
+        "target_brand": { "type": "string", "nullable": true },
+        "tld_reputation": { "type": "string", "enum": ["HIGH_RISK", "NEUTRAL", "REPUTABLE"] },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "details": { "type": "string" },
+        "latency_ms": { "type": "number" }
+      }
+    },
+    "SenderAgentResult": {
+      "type": "object",
+      "required": ["risk_score", "flags", "details"],
+      "properties": {
+        "status": { "type": "string", "enum": ["SUCCESS", "SKIPPED", "ERROR"] },
+        "sender_analyzed": { "type": "string", "nullable": true },
+        "risk_score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "is_spoofed_header": { "type": "boolean" },
+        "sender_category": { "type": "string", "enum": ["OFFICIAL_TRAI_HEADER", "PERSONAL_GSM", "INTERNATIONAL", "LOOKALIKE_HEADER", "UNKNOWN"] },
+        "brand_claimed": { "type": "string", "nullable": true },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "details": { "type": "string" },
+        "latency_ms": { "type": "number" }
+      }
+    },
+    "IntentAgentResult": {
+      "type": "object",
+      "required": ["risk_score", "flags", "details"],
+      "properties": {
+        "status": { "type": "string", "enum": ["SUCCESS", "SKIPPED", "ERROR"] },
+        "risk_score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "detected_intent": { "type": "string", "enum": ["PANIC_URGENCY", "FINANCIAL_EXTORTION", "LOTTERY_REWARD", "KYC_VERIFICATION", "OTP_HARVEST", "BENIGN", "SUSPICIOUS"] },
+        "manipulation_tactics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reasoning": { "type": "string" },
+        "details": { "type": "string" },
+        "latency_ms": { "type": "number" }
+      }
+    },
+    "AuditTrail": {
+      "type": "object",
+      "required": ["url_analysis", "sender_analysis", "intent_analysis", "synthesis_breakdown"],
+      "properties": {
+        "url_analysis": { "$ref": "#/definitions/UrlAgentResult" },
+        "sender_analysis": { "$ref": "#/definitions/SenderAgentResult" },
+        "intent_analysis": { "$ref": "#/definitions/IntentAgentResult" },
+        "synthesis_breakdown": {
+          "type": "object",
+          "properties": {
+            "weights_applied": {
+              "type": "object",
+              "properties": {
+                "url_weight": { "type": "number" },
+                "sender_weight": { "type": "number" },
+                "intent_weight": { "type": "number" }
+              }
+            },
+            "heuristics_triggered": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "summary_explanation": { "type": "string" }
+          }
+        }
+      }
+    },
+    "ScanResponse": {
+      "type": "object",
+      "required": ["scan_id", "overall_risk_score", "risk_tier", "verdict", "recommendation", "audit_trail", "processing_time_ms"],
+      "properties": {
+        "scan_id": { "type": "string", "format": "uuid" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "overall_risk_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Normalized scam probability score (0-100)"
+        },
+        "risk_tier": {
+          "type": "string",
+          "enum": ["SAFE", "CAUTION", "HIGH_RISK", "CRITICAL"],
+          "description": "Tier determining frontend modal behavior (Informational vs Active Interception Blocking)"
+        },
+        "verdict": {
+          "type": "string",
+          "example": "High Probability Banking Impersonation Phishing"
+        },
+        "recommendation": {
+          "type": "string",
+          "example": "DO NOT click the link or provide credentials. SBI never uses '.top' domains."
+        },
+        "action_required": {
+          "type": "string",
+          "enum": ["ALLOW", "WARN_USER", "BLOCK_TRANSACTION"],
+          "example": "BLOCK_TRANSACTION"
+        },
+        "audit_trail": { "$ref": "#/definitions/AuditTrail" },
+        "processing_time_ms": {
+          "type": "number",
+          "description": "Total end-to-end processing latency in ms (<5000ms SLA target)"
+        }
+      }
+    }
+  },
+  "mock_examples": {
+    "sample_high_risk_request": {
+      "content": "URGENT: SBI customer! Your account 4321 is blocked today. To unblock immediately submit your Aadhaar & Pan details at https://sbi-kyc-verify.top or call 9876543210. Failing which account deactivated within 2 hours.",
+      "sender": "+919876543210",
+      "extracted_url": "https://sbi-kyc-verify.top",
+      "channel": "sms",
+      "metadata": {
+        "client_timestamp": "2026-09-29T12:45:00Z",
+        "device_platform": "android"
+      }
+    },
+    "sample_high_risk_response": {
+      "scan_id": "c7a8b3e1-9524-4f0e-b7d6-ec2d79d501b4",
+      "timestamp": "2026-09-29T12:45:01.842Z",
+      "overall_risk_score": 92,
+      "risk_tier": "CRITICAL",
+      "verdict": "Confirmed Impersonation & Credential Harvesting Attack",
+      "recommendation": "BLOCK IMMEDIATE ACTION. This message impersonates State Bank of India using an unverified personal mobile number and a fresh phishing domain (.top). Never enter OTP or KYC credentials on third-party domains.",
+      "action_required": "BLOCK_TRANSACTION",
+      "audit_trail": {
+        "url_analysis": {
+          "status": "SUCCESS",
+          "url_analyzed": "https://sbi-kyc-verify.top",
+          "risk_score": 95,
+          "domain_age_days": 2,
+          "is_typosquatting": true,
+          "target_brand": "State Bank of India (SBI)",
+          "tld_reputation": "HIGH_RISK",
+          "flags": [
+            "DOMAIN_REGISTERED_RECENTLY (< 7 days)",
+            "TYPOSQUATTING_DETECTED (sbi-kyc-verify mimicking onlinesbi.sbi)",
+            "HIGH_RISK_TLD (.top)"
+          ],
+          "details": "Domain registered 48 hours ago via privacy proxy. Mimics official SBI domain structure.",
+          "latency_ms": 320
+        },
+        "sender_analysis": {
+          "status": "SUCCESS",
+          "sender_analyzed": "+919876543210",
+          "risk_score": 88,
+          "is_spoofed_header": false,
+          "sender_category": "PERSONAL_GSM",
+          "brand_claimed": "State Bank of India (SBI)",
+          "flags": [
+            "COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM",
+            "MISSING_TRAI_OFFICIAL_HEADER (Expected format like VM-SBIINB or AX-SBIINB)"
+          ],
+          "details": "Legitimate banking alerts in India are mandated by TRAI to originate from DLT registered alphabetic sender IDs (e.g. SBIBNK), never personal 10-digit mobile numbers.",
+          "latency_ms": 110
+        },
+        "intent_analysis": {
+          "status": "SUCCESS",
+          "risk_score": 90,
+          "detected_intent": "KYC_VERIFICATION",
+          "manipulation_tactics": [
+            "False Urgency (2-hour account deactivation ultimatum)",
+            "Fear Appeals (Account blocked/frozen)",
+            "Credential & PII Harvesting (Aadhaar, PAN)"
+          ],
+          "confidence": 0.94,
+          "flags": [
+            "PSYCHOLOGICAL_URGENCY_TRIGGER",
+            "UNVERIFIED_KYC_SOLICITATION"
+          ],
+          "reasoning": "The message creates artificial panic by claiming immediate account deactivation within 2 hours, coercing the recipient into submitting sensitive KYC identity documents via an insecure unverified link.",
+          "details": "Linguistic markers match high-probability social engineering scam corpus.",
+          "latency_ms": 680
+        },
+        "synthesis_breakdown": {
+          "weights_applied": {
+            "url_weight": 0.40,
+            "sender_weight": 0.30,
+            "intent_weight": 0.30
+          },
+          "heuristics_triggered": [
+            "CRITICAL_ESCALATION: High risk URL combined with Personal GSM sender claiming Tier-1 Indian Bank",
+            "Active credential harvesting pattern detected across all 3 independent vectors"
+          ],
+          "summary_explanation": "All three autonomous agents independently flagged severe anomalies: Domain age (2 days), unauthorized personal sender ID, and coercive fear-based KYC extortion."
+        }
+      },
+      "processing_time_ms": 820.5
+    },
+    "sample_safe_request": {
+      "content": "Dear Customer, your OTP for transaction of Rs 1,499 at Amazon on card ending 8812 is 654321. Valid for 5 mins. Do not share OTP with anyone - HDFC Bank",
+      "sender": "VM-HDFCBK",
+      "extracted_url": null,
+      "channel": "sms",
+      "metadata": {
+        "client_timestamp": "2026-09-29T12:46:00Z",
+        "device_platform": "android"
+      }
+    },
+    "sample_safe_response": {
+      "scan_id": "f290d4a9-8351-499b-98df-5847eec659a8",
+      "timestamp": "2026-09-29T12:46:00.350Z",
+      "overall_risk_score": 8,
+      "risk_tier": "SAFE",
+      "verdict": "Legitimate Bank OTP Transaction Notification",
+      "recommendation": "Normal verified communication. Remember to never share this OTP with any caller or in third-party forms.",
+      "action_required": "ALLOW",
+      "audit_trail": {
+        "url_analysis": {
+          "status": "SKIPPED",
+          "url_analyzed": null,
+          "risk_score": 0,
+          "domain_age_days": null,
+          "is_typosquatting": false,
+          "target_brand": null,
+          "tld_reputation": "NEUTRAL",
+          "flags": [],
+          "details": "No URL found in message body.",
+          "latency_ms": 2
+        },
+        "sender_analysis": {
+          "status": "SUCCESS",
+          "sender_analyzed": "VM-HDFCBK",
+          "risk_score": 5,
+          "is_spoofed_header": false,
+          "sender_category": "OFFICIAL_TRAI_HEADER",
+          "brand_claimed": "HDFC Bank",
+          "flags": ["VERIFIED_TRAI_DLT_SENDER_HEADER"],
+          "details": "Sender matches certified TRAI transactional sender prefix assigned to HDFC Bank Ltd.",
+          "latency_ms": 85
+        },
+        "intent_analysis": {
+          "status": "SUCCESS",
+          "risk_score": 10,
+          "detected_intent": "BENIGN",
+          "manipulation_tactics": [],
+          "confidence": 0.98,
+          "flags": ["STANDARD_TRANSACTIONAL_DISCLOSURE"],
+          "reasoning": "Standard bank transaction notification with explicit cautionary advice ('Do not share OTP with anyone'). No credential solicitation links or coercive demands.",
+          "details": "Legitimate transactional OTP delivery pattern.",
+          "latency_ms": 520
+        },
+        "synthesis_breakdown": {
+          "weights_applied": {
+            "url_weight": 0.0,
+            "sender_weight": 0.50,
+            "intent_weight": 0.50
+          },
+          "heuristics_triggered": [
+            "Verified sender DLT registry match",
+            "Explicit anti-phishing advisory present in payload"
+          ],
+          "summary_explanation": "Communication matches verified banking gateway protocols with zero malicious indicators."
+        }
+      },
+      "processing_time_ms": 535.2
+    }
+  }
+}
