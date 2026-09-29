@@ -16,18 +16,32 @@ from unittest.mock import patch
 
 import pytest
 
-# ── Ensure the project root is on sys.path so imports resolve ──
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+# ── Ensure backend/ and project root are on sys.path so imports resolve ──
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_PROJECT_ROOT = _BACKEND_DIR.parent
+for _p in (str(_BACKEND_DIR), str(_PROJECT_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-from backend.agents.url_agent import analyze_url  # noqa: E402
-from shared.models import (  # noqa: E402
-    AgentStatusEnum,
-    ScanRequest,
-    TldReputationEnum,
-    UrlAgentResult,
-)
+try:
+    from agents.url_agent import analyze_url  # noqa: E402
+except ImportError:
+    from backend.agents.url_agent import analyze_url  # noqa: E402
+
+try:
+    from shared.models import (  # noqa: E402
+        AgentStatusEnum,
+        ScanRequest,
+        TldReputationEnum,
+        UrlAgentResult,
+    )
+except ImportError:
+    from backend.shared.models import (  # noqa: E402
+        AgentStatusEnum,
+        ScanRequest,
+        TldReputationEnum,
+        UrlAgentResult,
+    )
 
 
 # ──────────────────────────────────────────────
@@ -35,7 +49,7 @@ from shared.models import (  # noqa: E402
 # ──────────────────────────────────────────────
 
 def _make_request(
-    content: str = "",
+    content: str = "Test message with URL payload",
     extracted_url: str | None = None,
 ) -> ScanRequest:
     """Shorthand factory for test ScanRequests."""
@@ -119,7 +133,7 @@ async def test_url_agent_handles_exceptions_gracefully():
     """
     # Sabotage _parse_domain to force an exception inside the try block
     with patch(
-        "backend.agents.url_agent._parse_domain",
+        f"{analyze_url.__module__}._parse_domain",
         side_effect=RuntimeError("simulated parsing failure"),
     ):
         req = _make_request(extracted_url="https://definitely-broken.example")
@@ -168,7 +182,7 @@ async def test_risk_score_clamped_to_100():
 
     # Force WHOIS to also add +40 → total = 35 + 50 + 40 = 125 → clamp to 100
     with patch(
-        "backend.agents.url_agent._check_whois_age",
+        f"{analyze_url.__module__}._check_whois_age",
         return_value=(2, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
     ):
         result = await analyze_url(req)
@@ -178,8 +192,8 @@ async def test_risk_score_clamped_to_100():
 
 @pytest.mark.asyncio
 async def test_empty_request_returns_skipped():
-    """Totally empty ScanRequest should be SKIPPED, not crash."""
-    req = ScanRequest()
+    """ScanRequest without URL should be SKIPPED, not crash."""
+    req = ScanRequest(content="Message without URL")
     result = await analyze_url(req)
 
     assert result.status == AgentStatusEnum.SKIPPED

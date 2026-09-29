@@ -1,0 +1,26 @@
+[
+  {
+    "id": "edge_001",
+    "name": "Text Without URL (URL Agent should return SKIPPED)",
+    "payload": {
+      "content": "Hello bhai, call me when you are free.",
+      "sender": "+919811223344",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "expected_tier": "SAFE",
+    "expected_max_score": 10
+  },
+  {
+    "id": "edge_002",
+    "name": "Raw URL Without Sender (Sender Agent should handle gracefully)",
+    "payload": {
+      "content": "Check this out: https://sbi-netbanking-login.cfd",
+      "sender": null,
+      "extracted_url": "https://sbi-netbanking-login.cfd",
+      "channel": "web_url"
+    },
+    "expected_tier": "HIGH_RISK",
+    "expected_min_score": 60
+  }
+]

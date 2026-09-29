@@ -1,0 +1,43 @@
+name: 🐛 Bug Report
+description: Something is broken
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "**Fill this out completely. Vague bug reports will be closed.**"
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which component has the bug?
+      options:
+        - "Backend: URL Agent (Atharv)"
+        - "Backend: Sender Agent (Avni)"
+        - "Backend: Intent Agent (Vikas)"
+        - "Backend: Scoring Engine (Avika)"
+        - "Backend: Orchestrator (Vansh)"
+        - "Frontend: UI (Yuvraj)"
+        - "Integration: Multiple components"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe the bug clearly
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. Send this input: {...}
+        2. Expected: CRITICAL
+        3. Got: SAFE
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message / stack trace
+      render: shell

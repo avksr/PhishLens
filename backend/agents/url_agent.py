@@ -24,12 +24,20 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import tldextract
 
-from shared.models import (
-    AgentStatusEnum,
-    ScanRequest,
-    TldReputationEnum,
-    UrlAgentResult,
-)
+try:
+    from shared.models import (
+        AgentStatusEnum,
+        ScanRequest,
+        TldReputationEnum,
+        UrlAgentResult,
+    )
+except ImportError:
+    from backend.shared.models import (
+        AgentStatusEnum,
+        ScanRequest,
+        TldReputationEnum,
+        UrlAgentResult,
+    )
 
 # ──────────────────────────────────────────────
 # Module-level constants
