@@ -269,3 +269,74 @@ When you raise a PR to `dev`, GitHub Actions (`.github/workflows/ci.yml`) automa
 3. **Frontend Build:** `npm ci && npm run build` (inside `frontend/`)
 
 Ensure your tests pass locally before opening your pull request!
+
+---
+
+## 7. Full Lifecycle Roadmap (Phase 0 to Phase 5)
+
+```mermaid
+flowchart LR
+    P0["Phase 0\nArchitecture & Contracts"] --> P1["Phase 1\nCore MVP Build"]
+    P1 --> P2["Phase 2\nPipeline Integration"]
+    P2 --> P3["Phase 3\nSecurity & GIGW 3.0"]
+    P3 --> P4["Phase 4\nLive Demo & Pitch"]
+    P4 --> P5["Phase 5\nProduction Roadmap"]
+```
+
+### 🏛️ Phase 0: System Architecture & Data Contracts (Completed)
+- Technical Requirements Document (TRD), PRD, and sequence diagrams.
+- Canonical data contracts in `backend/shared/models.py` (`ScanRequest`, `ScanResponse`, `AuditTrail`).
+- Synthetic ground-truth datasets (`payloads_high_risk.json`, `payloads_safe.json`, `payloads_edge_cases.json`).
+- Reference registries: TRAI DLT headers, high-risk TLDs, top Indian banking brand domains.
+
+### ⚙️ Phase 1: Core Subsystem Implementation (Active Sprint)
+- **Avika (Done):** Dynamic weight normalization, heuristic escalations, and verdict synthesis in `backend/core/scoring_engine.py`.
+- **Atharv:** URL extraction, WHOIS domain age, and Levenshtein typosquatting in `backend/agents/url_agent.py`.
+- **Avni:** TRAI DLT header verification and 10-digit GSM bank spoofing detection in `backend/agents/sender_agent.py`.
+- **Vikas:** LLM psycholinguistic analysis (Groq LLaMA-3 / Gemini) + offline regex fallback in `backend/agents/intent_agent.py`.
+- **Vansh:** Async parallel gather supervisor with 3.5s timeout in `backend/core/orchestrator.py`.
+- **Yuvraj:** React/Vite dashboard scaffolding with dark cyber theme.
+
+### 🔗 Phase 2: Pipeline Integration & Latency Optimization
+- End-to-end wiring: `React UI` → `POST /api/v1/scan` → `orchestrator.py` → `scoring_engine.py` → `ScanResponse`.
+- Enforce hard per-agent timeout (3.5s) to guarantee sub-1000ms target latency (< 5.0s hackathon ceiling).
+- Graceful degradation: dynamic re-normalization of surviving agents if any API fails.
+- Automated end-to-end integration test suite in `backend/tests/test_pipeline.py`.
+
+### 🛡️ Phase 3: Security Hardening & GIGW 3.0 Compliance
+- **Rate Limiting:** `slowapi` middleware enforcing 30 req/min per IP.
+- **Zero-Trust Input Sanitization:** Pydantic length constraints (max 8000 chars) and HTML escaping.
+- **PII Scrubbing:** Persistent logs redact phone numbers (`987****210`) and OTP codes (`******`).
+- **Dependency Audit:** Zero high-severity CVEs via `pip-audit` and `npm audit`.
+
+### 🎤 Phase 4: Hackathon Evaluation & Live Demo Readiness
+- **Interactive Preset Scenarios:** 1-click test buttons in UI:
+  1. *Critical Scam:* Fake electricity bill cut-off with typosquatted `.top` link.
+  2. *Verified Safe:* Real HDFC Bank OTP SMS (verifying TRAI whitelist override).
+  3. *GSM Impersonation:* 10-digit personal phone claiming SBI KYC deactivation.
+- **Adversarial Resilience:** Demo works seamlessly even if internet fails (using local regex heuristics).
+- **Explainability Walkthrough:** Visual inspection drawer proving why the engine flagged the message.
+
+### 🌐 Phase 5: Post-Hackathon Production Vision (Roadmap)
+- **Chakshu & NCRP (1930) Integration:** One-click pre-formatted complaint dispatch.
+- **Cross-Report Graph Intelligence:** Neo4j graph linking shared scam phone numbers, UPI VPAs, and hosting IPs across victims.
+- **Multimodal Engine:** QR code image inspection and OCR for fake payment receipts.
+
+---
+
+## 8. Strategic Architecture Improvements & Additions
+
+### 🌟 1. Scoring Engine & Explainability Enhancements (Avika)
+- **Dual-Language Verdicts (English + Hindi):** Add `verdict_hi` and `recommendation_hi` to `ScanResponse` for rural/elderly citizen inclusivity.
+- **Confidence Rating:** Add `confidence: "HIGH" | "MEDIUM" | "LOW"` reflecting signal completeness (e.g. lowered if URL agent timed out).
+- **Citizen Dispute Feedback:** Add `POST /api/v1/dispute` to record false positive claims for continuous tuning.
+
+### 🌐 2. Vector Agent Additions
+- **UPI / VPA Payment Verification (Orchestrator):** Detect fraudulent payment handles (e.g. `refund-desk@oksbi` using personal `@ybl` handles).
+- **In-Memory Domain Cache (Atharv):** Cache WHOIS lookups in a Python dict/LRU cache to reduce latency from 1500ms to < 1ms on repeat domains.
+- **Few-Shot Hinglish Prompting (Vikas):** Add realistic Indian scam examples ("Aapka electricity bill unpaid hai, connection kat jayega") to `intent_prompt.txt`.
+
+### 🖥️ 3. Frontend Interception Enhancements (Yuvraj)
+- **Pre-Transaction Simulation Widget:** Switch between "SMS View", "WhatsApp View", and "UPI Payment View".
+- **One-Click 1930 Report Generator:** Copy pre-formatted incident summary ready to paste into `cybercrime.gov.in`.
+
