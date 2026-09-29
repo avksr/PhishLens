@@ -1,0 +1,57 @@
+{
+  "_description": "Canonical domain mapping for major Indian banks, fintechs, government portals, and ecommerce.",
+  "brands": {
+    "sbi": {
+      "name": "State Bank of India",
+      "official_domains": ["onlinesbi.sbi", "sbi.co.in", "bank.sbi", "sbicard.com"]
+    },
+    "hdfc": {
+      "name": "HDFC Bank",
+      "official_domains": ["hdfcbank.com", "hdfc.com", "netbanking.hdfcbank.com"]
+    },
+    "icici": {
+      "name": "ICICI Bank",
+      "official_domains": ["icicibank.com", "infinity.icicibank.com"]
+    },
+    "axis": {
+      "name": "Axis Bank",
+      "official_domains": ["axisbank.com"]
+    },
+    "kotak": {
+      "name": "Kotak Mahindra Bank",
+      "official_domains": ["kotak.com"]
+    },
+    "pnb": {
+      "name": "Punjab National Bank",
+      "official_domains": ["pnbindia.in", "netpnb.com"]
+    },
+    "paytm": {
+      "name": "Paytm",
+      "official_domains": ["paytm.com", "paytmbank.com"]
+    },
+    "phonepe": {
+      "name": "PhonePe",
+      "official_domains": ["phonepe.com"]
+    },
+    "googlepay": {
+      "name": "Google Pay",
+      "official_domains": ["pay.google.com"]
+    },
+    "amazon": {
+      "name": "Amazon India",
+      "official_domains": ["amazon.in", "amazon.com"]
+    },
+    "flipkart": {
+      "name": "Flipkart",
+      "official_domains": ["flipkart.com"]
+    },
+    "income_tax": {
+      "name": "Income Tax Department",
+      "official_domains": ["incometax.gov.in", "tin-nsdl.com"]
+    },
+    "uidai": {
+      "name": "UIDAI Aadhaar",
+      "official_domains": ["uidai.gov.in", "myaadhaar.uidai.gov.in"]
+    }
+  }
+}

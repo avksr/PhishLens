@@ -1,0 +1,38 @@
+[
+  {
+    "id": "hr_001",
+    "name": "SBI KYC Phishing with Typosquatted Domain and GSM Sender",
+    "payload": {
+      "content": "URGENT: SBI customer! Your account 4321 is blocked today. To unblock immediately submit your Aadhaar & Pan details at https://sbi-kyc-verify.top or call 9876543210. Failing which account deactivated within 2 hours.",
+      "sender": "+919876543210",
+      "extracted_url": "https://sbi-kyc-verify.top",
+      "channel": "sms"
+    },
+    "expected_tier": "CRITICAL",
+    "expected_min_score": 85
+  },
+  {
+    "id": "hr_002",
+    "name": "Electricity Power Cut Extortion (Hinglish)",
+    "payload": {
+      "content": "Dear consumer your electricity power will be disconnected tonight at 9.30 pm from electricity office because your previous month bill was not update. Please immediately contact our electricity officer 8250912345.",
+      "sender": "+918250912345",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "expected_tier": "HIGH_RISK",
+    "expected_min_score": 70
+  },
+  {
+    "id": "hr_003",
+    "name": "Part-Time Job Telegram Scam",
+    "payload": {
+      "content": "Congratulations! You have been selected for part-time remote work. Like 3 YouTube videos and earn Rs 3500 daily. Join Telegram: https://t.me/quick-earn-daily-bonus",
+      "sender": "+917001234567",
+      "extracted_url": "https://t.me/quick-earn-daily-bonus",
+      "channel": "whatsapp"
+    },
+    "expected_tier": "HIGH_RISK",
+    "expected_min_score": 65
+  }
+]
