@@ -16,8 +16,7 @@ from shared.models import (
     RiskTierEnum,
     ActionRequiredEnum,
     AgentStatusEnum,
-    IntentAgentResult,
-    DetectedIntentEnum
+    IntentAgentResult
 )
 from core.orchestrator import run_pipeline
 from core.db_logger import mask_phone_number, mask_pii_content, audit_logger
@@ -27,7 +26,10 @@ from core.db_logger import mask_phone_number, mask_pii_content, audit_logger
 async def test_orchestrator_e2e_critical_sbi_scam():
     """Verify that orchestrator executes all agents in parallel within sub-1000ms SLA."""
     req = ScanRequest(
-        content="Dear Customer, Your SBI account is blocked. Verify OTP and submit PAN at https://sbi-kyc-verify.top within 2 hours.",
+        content=(
+            "Dear Customer, Your SBI account is blocked. Verify OTP and submit PAN "
+            "at https://sbi-kyc-verify.top within 2 hours."
+        ),
         sender="+919823145678",
         extracted_url="https://sbi-kyc-verify.top",
         channel=ChannelEnum.SMS
@@ -52,7 +54,7 @@ async def test_orchestrator_e2e_critical_sbi_scam():
 async def test_orchestrator_agent_timeout_supervisor():
     """Verify that when an agent exceeds 3.5s SLA timeout, fallback is returned without crashing."""
     async def slow_mock_intent(req):
-        await asyncio.sleep(4.0) # Exceeds 3.5s timeout
+        await asyncio.sleep(4.0)  # Exceeds 3.5s timeout
         return IntentAgentResult()
 
     req = ScanRequest(
@@ -61,7 +63,7 @@ async def test_orchestrator_agent_timeout_supervisor():
         channel=ChannelEnum.SMS
     )
 
-    with patch("core.orchestrator.AGENT_TIMEOUT_SECONDS", 0.05): # Use 50ms for fast test execution
+    with patch("core.orchestrator.AGENT_TIMEOUT_SECONDS", 0.05):  # Use 50ms for fast test execution
         with patch("core.orchestrator.analyze_intent", slow_mock_intent):
             resp: ScanResponse = await run_pipeline(req)
             assert resp.audit_trail.intent_analysis.status == AgentStatusEnum.ERROR
@@ -91,8 +93,8 @@ async def test_db_logger_async_write():
         sender="+919876543210",
         channel=ChannelEnum.SMS
     )
-    resp: ScanResponse = await run_pipeline(req)
-    
+    _ = await run_pipeline(req)
+
     # Allow background log task to commit
     await asyncio.sleep(0.1)
 

@@ -1,6 +1,10 @@
+import os
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import router as api_router
+
+FRONTEND_HTML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html"))
 
 app = FastAPI(
     title="PhishLens API (ScamShield AI)",
@@ -22,7 +26,10 @@ app.include_router(api_router)
 
 
 @app.get("/")
+@app.get("/demo")
 def root():
+    if os.path.exists(FRONTEND_HTML):
+        return FileResponse(FRONTEND_HTML)
     return {
         "name": "PhishLens API",
         "description": "Pre-Transaction Scam Interception Engine",

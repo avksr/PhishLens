@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishLens — Real-Time Scam Interception Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #070B14;
+      --card-bg: rgba(15, 23, 42, 0.75);
+      --card-border: rgba(56, 189, 248, 0.15);
+      --cyan: #00F0FF;
+      --cyan-glow: rgba(0, 240, 255, 0.35);
+      --red: #FF3366;
+      --red-glow: rgba(255, 51, 102, 0.4);
+      --orange: #FF9900;
+      --amber: #F59E0B;
+      --green: #10B981;
+      --green-glow: rgba(16, 185, 129, 0.35);
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      --font-ui: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #111e38 0%, var(--bg-dark) 70%);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background grid */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      position: relative;
+      z-index: 10;
+      padding: 1.25rem 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      background: rgba(7, 11, 20, 0.8);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .logo-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #00F0FF 0%, #0284C7 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      box-shadow: 0 0 20px var(--cyan-glow);
+    }
+
+    .brand-title h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(90deg, #FFFFFF, var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-title p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .header-badges {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .tag-live {
+      color: var(--green);
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .tag-live::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.3); }
+    }
+
+    main {
+      position: relative;
+      z-index: 10;
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem 2.5rem;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    .glass-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      transition: border-color 0.3s ease;
+    }
+
+    /* Preset Scenarios */
+    .section-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--cyan);
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.6rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .preset-btn {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 0.65rem 0.75rem;
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .preset-btn:hover {
+      background: rgba(0, 240, 255, 0.12);
+      border-color: var(--cyan);
+      transform: translateY(-2px);
+    }
+
+    .preset-btn small {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .input-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: rgba(11, 19, 36, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .btn-scan {
+      width: 100%;
+      background: linear-gradient(135deg, #00F0FF 0%, #0077FE 100%);
+      color: #070B14;
+      font-family: var(--font-ui);
+      font-size: 1.05rem;
+      font-weight: 800;
+      padding: 0.95rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 0 25px var(--cyan-glow);
+      transition: all 0.25s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      margin-top: 0.5rem;
+    }
+
+    .btn-scan:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 35px rgba(0, 240, 255, 0.6);
+    }
+
+    .btn-scan:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Right Column: Speedometer & Results */
+    .results-col {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .gauge-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem 0.5rem;
+      position: relative;
+    }
+
+    .gauge-svg {
+      width: 280px;
+      height: 160px;
+      overflow: visible;
+    }
+
+    .gauge-bg {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 18;
+      stroke-linecap: round;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke-width: 18;
+      stroke-linecap: round;
+      stroke-dasharray: 408;
+      stroke-dashoffset: 408;
+      transition: stroke-dashoffset 1s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.5s ease;
+    }
+
+    .needle {
+      transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+      transform-origin: 150px 145px;
+    }
+
+    .score-readout {
+      text-align: center;
+      margin-top: -15px;
+    }
+
+    .score-number {
+      font-family: var(--font-mono);
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1;
+      text-shadow: 0 0 30px currentColor;
+    }
+
+    .score-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-top: 0.25rem;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: 1rem;
+      justify-content: center;
+    }
+
+    .tier-badge {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.4rem 1rem;
+      border-radius: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .tier-SAFE { background: rgba(16, 185, 129, 0.15); color: var(--green); border: 1px solid var(--green); }
+    .tier-CAUTION { background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid var(--amber); }
+    .tier-HIGH_RISK { background: rgba(255, 153, 0, 0.15); color: var(--orange); border: 1px solid var(--orange); }
+    .tier-CRITICAL { background: rgba(255, 51, 102, 0.2); color: var(--red); border: 1px solid var(--red); animation: borderGlow 1.2s infinite alternate; }
+
+    @keyframes borderGlow {
+      from { box-shadow: 0 0 10px rgba(255, 51, 102, 0.3); }
+      to { box-shadow: 0 0 25px rgba(255, 51, 102, 0.7); }
+    }
+
+    /* Bilingual Tab Card */
+    .bilingual-card {
+      position: relative;
+    }
+
+    .lang-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.5rem;
+    }
+
+    .lang-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-ui);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .lang-tab.active {
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--cyan);
+    }
+
+    .verdict-headline {
+      font-size: 1.15rem;
+      font-weight: 700;
+      line-height: 1.4;
+      margin-bottom: 0.75rem;
+    }
+
+    .recommendation-box {
+      background: rgba(0, 0, 0, 0.3);
+      border-left: 3px solid var(--cyan);
+      border-radius: 0 8px 8px 0;
+      padding: 0.85rem 1rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: #E2E8F0;
+    }
+
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .audit-cell {
+      background: rgba(11, 19, 36, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 0.85rem;
+      text-align: center;
+    }
+
+    .audit-cell h4 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+
+    .audit-cell .score {
+      font-family: var(--font-mono);
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0.25rem 0;
+    }
+
+    .audit-cell .sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Full-Screen Interception Modal */
+    .interception-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(7, 11, 20, 0.85);
+      backdrop-filter: blur(14px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .interception-modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .interception-modal {
+      background: linear-gradient(165deg, rgba(30, 15, 25, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+      border: 2px solid var(--red);
+      border-radius: 20px;
+      max-width: 650px;
+      width: 100%;
+      padding: 2.25rem;
+      box-shadow: 0 0 60px rgba(255, 51, 102, 0.45);
+      position: relative;
+      animation: modalSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes modalSlide {
+      from { transform: scale(0.9) translateY(20px); }
+      to { transform: scale(1) translateY(0); }
+    }
+
+    .modal-banner {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .modal-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 14px;
+      background: rgba(255, 51, 102, 0.2);
+      border: 1px solid var(--red);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+    }
+
+    .modal-banner-text h2 {
+      font-size: 1.35rem;
+      color: var(--red);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .modal-banner-text p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .modal-warning-en, .modal-warning-hi {
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 0.85rem;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .modal-warning-hi {
+      font-family: var(--font-ui);
+      color: #F87171;
+      border-left: 3px solid var(--red);
+    }
+
+    .modal-actions {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 0.85rem;
+      margin-top: 1.5rem;
+    }
+
+    .btn-report-1930 {
+      background: linear-gradient(135deg, var(--red) 0%, #B91C1C 100%);
+      color: white;
+      font-family: var(--font-ui);
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 0.85rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 0 20px rgba(255, 51, 102, 0.3);
+      transition: all 0.2s ease;
+    }
+
+    .btn-report-1930:hover {
+      box-shadow: 0 0 30px rgba(255, 51, 102, 0.6);
+      transform: translateY(-1px);
+    }
+
+    .btn-dismiss {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-weight: 600;
+      font-size: 0.92rem;
+      padding: 0.85rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-dismiss:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: rgba(16, 185, 129, 0.9);
+      color: #070B14;
+      font-weight: 700;
+      font-size: 0.88rem;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      z-index: 2000;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="logo-badge">🛡️</div>
+      <div class="brand-title">
+        <h1>PhishLens</h1>
+        <p>ScamShield AI — Pre-Transaction Interception Layer</p>
+      </div>
+    </div>
+    <div class="header-badges">
+      <div class="tag tag-live" id="status-tag">Engine Ready (< 15ms)</div>
+      <div class="tag">GIGW 3.0 Zero-Trust</div>
+      <div class="tag">Bilingual (EN / HI)</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Column: Input Form & Presets -->
+    <div class="glass-card">
+      <div class="section-title">⚡ 1-Click Evaluation Presets</div>
+      <div class="presets-grid">
+        <button class="preset-btn" id="preset-sbi">
+          🚨 SBI KYC Spoof
+          <small>GSM + Fake .top Link</small>
+        </button>
+        <button class="preset-btn" id="preset-electricity">
+          ⚡ Electricity Cutoff
+          <small>Personal GSM + Panic</small>
+        </button>
+        <button class="preset-btn" id="preset-safe">
+          🛡️ Verified HDFC OTP
+          <small>TRAI DLT Verified Header</small>
+        </button>
+        <button class="preset-btn" id="preset-arrest">
+          👮 Digital Arrest
+          <small>CBI / Police Extortion</small>
+        </button>
+        <button class="preset-btn" id="preset-upi">
+          💸 Fake UPI Refund
+          <small>Fraudulent Collect VPA</small>
+        </button>
+      </div>
+
+      <div class="input-group">
+        <label for="msg-content">Message / Prompt Content (SMS, WhatsApp, UPI Text)</label>
+        <textarea id="msg-content" placeholder="Paste incoming communication text here..."></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="input-group">
+          <label for="sender-input">Sender (Phone Number or TRAI Header)</label>
+          <input type="text" id="sender-input" placeholder="e.g. +919823145678 or VM-SBIINB" />
+        </div>
+        <div class="input-group">
+          <label for="url-input">Extracted Link / Web URL</label>
+          <input type="text" id="url-input" placeholder="e.g. https://sbi-kyc-verify.top" />
+        </div>
+      </div>
+
+      <button class="btn-scan" id="btn-scan">
+        <span>🔍 Intercept & Evaluate Threat</span>
+      </button>
+    </div>
+
+    <!-- Right Column: Gauge, Tier & Bilingual Verdict -->
+    <div class="results-col">
+      <div class="glass-card gauge-wrapper">
+        <div class="section-title" style="align-self: flex-start; margin-bottom: 0;">🎯 Real-Time Composite Risk Index</div>
+        
+        <svg class="gauge-svg" viewBox="0 0 300 170">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#10B981" />
+              <stop offset="40%" stop-color="#F59E0B" />
+              <stop offset="70%" stop-color="#FF9900" />
+              <stop offset="100%" stop-color="#FF3366" />
+            </linearGradient>
+          </defs>
+          <!-- Background arc: 180 degrees (from 180 to 0) -->
+          <path class="gauge-bg" d="M 30,145 A 120,120 0 0,1 270,145" />
+          <path class="gauge-fill" id="gauge-fill" d="M 30,145 A 120,120 0 0,1 270,145" stroke="url(#gaugeGrad)" />
+          
+          <!-- Needle -->
+          <g class="needle" id="gauge-needle" style="transform: rotate(-90deg);">
+            <line x1="150" y1="145" x2="150" y2="40" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" />
+            <circle cx="150" cy="145" r="9" fill="#00F0FF" stroke="#FFFFFF" stroke-width="2" />
+          </g>
+        </svg>
+
+        <div class="score-readout">
+          <div class="score-number" id="score-val" style="color: var(--cyan);">--</div>
+          <div class="score-label" id="score-label">Awaiting Ingestion</div>
+        </div>
+
+        <div class="badge-row">
+          <div class="tier-badge" id="tier-badge">READY</div>
+          <div class="tag" id="confidence-badge">HIGH CONFIDENCE</div>
+          <div class="tag" id="latency-badge">< 1 ms</div>
+        </div>
+      </div>
+
+      <!-- Bilingual Verdict Card -->
+      <div class="glass-card bilingual-card">
+        <div class="lang-tabs">
+          <button class="lang-tab active" id="tab-en">English</button>
+          <button class="lang-tab" id="tab-hi">हिंदी (Hindi)</button>
+        </div>
+
+        <div class="verdict-headline" id="verdict-text">
+          Select a preset scenario above or enter a message to simulate real-time interception.
+        </div>
+
+        <div class="recommendation-box" id="rec-text">
+          PhishLens monitors SMS headers, domain typosquatting, and coercive intent simultaneously.
+        </div>
+
+        <!-- Vector Breakdown -->
+        <div class="audit-grid">
+          <div class="audit-cell">
+            <h4>🔗 URL Vector</h4>
+            <div class="score" id="score-url" style="color: var(--cyan);">--</div>
+            <div class="sub" id="sub-url">Awaiting URL</div>
+          </div>
+          <div class="audit-cell">
+            <h4>👤 Sender Vector</h4>
+            <div class="score" id="score-sender" style="color: var(--cyan);">--</div>
+            <div class="sub" id="sub-sender">Awaiting Sender</div>
+          </div>
+          <div class="audit-cell">
+            <h4>🧠 Intent Vector</h4>
+            <div class="score" id="score-intent" style="color: var(--cyan);">--</div>
+            <div class="sub" id="sub-intent">Awaiting Intent</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Full-Screen Interception Modal -->
+  <div class="interception-modal-overlay" id="interception-modal">
+    <div class="interception-modal">
+      <div class="modal-banner">
+        <div class="modal-icon">🛑</div>
+        <div class="modal-banner-text">
+          <h2>PHISHLENS TRANSACTION INTERCEPTED</h2>
+          <p>Critical Cyber-Threat Vector Blocked in Pre-Transaction Buffer</p>
+        </div>
+      </div>
+
+      <div class="modal-warning-en" id="modal-en">
+        <strong>CRITICAL FRAUD DETECTED:</strong> Phishing URL combined with personal GSM bank impersonation. Do NOT click external links, enter UPI PIN, or share OTP under any circumstances.
+      </div>
+
+      <div class="modal-warning-hi" id="modal-hi">
+        <strong>चेतावनी:</strong> यह संदेश पूर्णतः फर्जी है। किसी भी परिस्थिति में लिंक न खोलें, OTP साझा न करें और न ही UPI पिन दर्ज करें। तुरंत 1930 पर रिपोर्ट करें।
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-report-1930" id="btn-copy-1930">
+          📋 Copy 1930 Complaint Report
+        </button>
+        <button class="btn-dismiss" id="btn-dismiss-modal">
+          Inspect Audit Trail
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">📋 Pre-formatted 1930 report copied to clipboard!</div>
+
+  <script>
+    const API_ENDPOINT = "/api/v1/scan";
+
+    // Elements
+    const msgInput = document.getElementById("msg-content");
+    const senderInput = document.getElementById("sender-input");
+    const urlInput = document.getElementById("url-input");
+    const btnScan = document.getElementById("btn-scan");
+
+    const scoreVal = document.getElementById("score-val");
+    const scoreLabel = document.getElementById("score-label");
+    const tierBadge = document.getElementById("tier-badge");
+    const confidenceBadge = document.getElementById("confidence-badge");
+    const latencyBadge = document.getElementById("latency-badge");
+    const gaugeFill = document.getElementById("gauge-fill");
+    const gaugeNeedle = document.getElementById("gauge-needle");
+
+    const verdictText = document.getElementById("verdict-text");
+    const recText = document.getElementById("rec-text");
+    const scoreUrl = document.getElementById("score-url");
+    const scoreSender = document.getElementById("score-sender");
+    const scoreIntent = document.getElementById("score-intent");
+    const subUrl = document.getElementById("sub-url");
+    const subSender = document.getElementById("sub-sender");
+    const subIntent = document.getElementById("sub-intent");
+
+    const tabEn = document.getElementById("tab-en");
+    const tabHi = document.getElementById("tab-hi");
+
+    const modal = document.getElementById("interception-modal");
+    const modalEn = document.getElementById("modal-en");
+    const modalHi = document.getElementById("modal-hi");
+    const btnCopy1930 = document.getElementById("btn-copy-1930");
+    const btnDismissModal = document.getElementById("btn-dismiss-modal");
+    const toast = document.getElementById("toast");
+
+    let currentScanResponse = null;
+    let activeLang = "EN";
+
+    // Presets
+    const PRESETS = {
+      sbi: {
+        content: "Dear Customer, Your SBI account has been suspended due to pending KYC update. Please verify OTP and submit PAN immediately within 2 hours at https://sbi-kyc-verify.top to avoid permanent deactivation.",
+        sender: "+919823145678",
+        url: "https://sbi-kyc-verify.top"
+      },
+      electricity: {
+        content: "Dear consumer, your electricity power will be disconnected tonight at 9:30 PM from the power station because your previous month bill was not updated. Please immediately contact our officer at 9876543210.",
+        sender: "+919876543210",
+        url: ""
+      },
+      safe: {
+        content: "647209 is your secret OTP for transaction of Rs. 4,500.00 at Amazon India using HDFC Bank NetBanking. Valid for 10 mins. Do not share OTP with anyone.",
+        sender: "VM-HDFCBK",
+        url: ""
+      },
+      arrest: {
+        content: "NOTICE OF DIGITAL ARREST: This is the Cyber Crime Cell and CBI Supreme Court division. An illegal parcel containing prohibited items has been intercepted under your Aadhaar number. A non-bailable warrant is issued. Contact immediately to avoid police custody.",
+        sender: "+917894561230",
+        url: ""
+      },
+      upi: {
+        content: "Electricity Board Official Refund: You have an excess bill refund of Rs 1,450 approved. Click to approve collect request or authorize refund via UPI at electricity-board@paytm immediately.",
+        sender: "+919988776655",
+        url: ""
+      }
+    };
+
+    function loadPreset(key) {
+      const p = PRESETS[key];
+      if (!p) return;
+      msgInput.value = p.content;
+      senderInput.value = p.sender;
+      urlInput.value = p.url;
+      triggerScan();
+    }
+
+    document.getElementById("preset-sbi").onclick = () => loadPreset("sbi");
+    document.getElementById("preset-electricity").onclick = () => loadPreset("electricity");
+    document.getElementById("preset-safe").onclick = () => loadPreset("safe");
+    document.getElementById("preset-arrest").onclick = () => loadPreset("arrest");
+    document.getElementById("preset-upi").onclick = () => loadPreset("upi");
+
+    tabEn.onclick = () => {
+      activeLang = "EN";
+      tabEn.classList.add("active");
+      tabHi.classList.remove("active");
+      renderBilingualText();
+    };
+
+    tabHi.onclick = () => {
+      activeLang = "HI";
+      tabHi.classList.add("active");
+      tabEn.classList.remove("active");
+      renderBilingualText();
+    };
+
+    function renderBilingualText() {
+      if (!currentScanResponse) return;
+      if (activeLang === "EN") {
+        verdictText.textContent = currentScanResponse.verdict || "No verdict available";
+        recText.textContent = currentScanResponse.recommendation || "No recommendation available";
+      } else {
+        verdictText.textContent = currentScanResponse.verdict_hi || currentScanResponse.verdict;
+        recText.textContent = currentScanResponse.recommendation_hi || currentScanResponse.recommendation;
+      }
+    }
+
+    async function triggerScan() {
+      const content = msgInput.value.trim();
+      if (!content) {
+        alert("Please enter message content or choose a preset!");
+        return;
+      }
+
+      btnScan.disabled = true;
+      btnScan.innerHTML = "<span>⚙️ Running Multi-Vector Synthesis...</span>";
+
+      const payload = {
+        content: content,
+        sender: senderInput.value.trim() || null,
+        extracted_url: urlInput.value.trim() || null,
+        channel: "sms"
+      };
+
+      try {
+        const res = await fetch(API_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status + " " + res.statusText);
+        }
+
+        const data = await res.json();
+        currentScanResponse = data;
+        renderResults(data);
+
+      } catch (err) {
+        console.error("Scan error:", err);
+        alert("Error executing scan: " + err.message);
+      } finally {
+        btnScan.disabled = false;
+        btnScan.innerHTML = "<span>🔍 Intercept & Evaluate Threat</span>";
+      }
+    }
+
+    btnScan.onclick = triggerScan;
+
+    function renderResults(data) {
+      const score = data.overall_risk_score;
+      const tier = data.risk_tier;
+
+      // Update score display
+      scoreVal.textContent = score;
+      let scoreColor = "var(--green)";
+      if (score >= 78) scoreColor = "var(--red)";
+      else if (score >= 50) scoreColor = "var(--orange)";
+      else if (score >= 25) scoreColor = "var(--amber)";
+      scoreVal.style.color = scoreColor;
+      scoreLabel.textContent = `Score: ${score}/100`;
+
+      // Animate Needle & Arc
+      // Full arc length is approximately 377px.
+      // angle rotates from -90 deg (score 0) to +90 deg (score 100)
+      const angle = -90 + (score / 100) * 180;
+      gaugeNeedle.style.transform = `rotate(${angle}deg)`;
+      const offset = 408 - (score / 100) * 408;
+      gaugeFill.style.strokeDashoffset = offset;
+
+      // Badges
+      tierBadge.className = `tier-badge tier-${tier}`;
+      tierBadge.textContent = tier.replace("_", " ");
+      confidenceBadge.textContent = (data.confidence || "HIGH") + " CONFIDENCE";
+      latencyBadge.textContent = `${data.processing_time_ms} ms`;
+
+      // Bilingual text
+      renderBilingualText();
+
+      // Vector breakdown
+      const audit = data.audit_trail || {};
+      const urlA = audit.url_analysis || {};
+      const senderA = audit.sender_analysis || {};
+      const intentA = audit.intent_analysis || {};
+
+      scoreUrl.textContent = urlA.status === "SKIPPED" ? "N/A" : `${Math.round(urlA.risk_score || 0)}`;
+      scoreUrl.style.color = (urlA.risk_score || 0) > 50 ? "var(--red)" : "var(--cyan)";
+      subUrl.textContent = urlA.target_brand ? `Brand: ${urlA.target_brand}` : (urlA.status === "SKIPPED" ? "No URL" : "Clean Link");
+
+      scoreSender.textContent = `${Math.round(senderA.risk_score || 0)}`;
+      scoreSender.style.color = (senderA.risk_score || 0) > 50 ? "var(--red)" : "var(--cyan)";
+      subSender.textContent = senderA.sender_category || "Sender OK";
+
+      scoreIntent.textContent = `${Math.round(intentA.risk_score || 0)}`;
+      scoreIntent.style.color = (intentA.risk_score || 0) > 50 ? "var(--red)" : "var(--cyan)";
+      subIntent.textContent = intentA.detected_intent || "Benign";
+
+      // If Critical, show Interception Modal!
+      if (tier === "CRITICAL") {
+        modalEn.innerHTML = `<strong>CRITICAL FRAUD DETECTED:</strong> ${data.verdict}. ${data.recommendation}`;
+        modalHi.innerHTML = `<strong>चेतावनी (1930 Cyber Cell):</strong> ${data.verdict_hi || data.verdict}. ${data.recommendation_hi || data.recommendation}`;
+        modal.classList.add("active");
+      }
+    }
+
+    btnDismissModal.onclick = () => {
+      modal.classList.remove("active");
+    };
+
+    btnCopy1930.onclick = () => {
+      if (!currentScanResponse) return;
+      const d = currentScanResponse;
+      const report = `🚨 NCRP / 1930 CYBERCRIME INCIDENT REPORT
+----------------------------------------------
+Scan ID: ${d.scan_id}
+Timestamp: ${d.timestamp}
+Threat Level: ${d.risk_tier} (Risk Score: ${d.overall_risk_score}/100)
+Action Taken: PRE-TRANSACTION BLOCKED
+
+Executive Verdict:
+${d.verdict}
+
+हिंदी विवरण:
+${d.verdict_hi}
+
+Target Citizen Advice:
+${d.recommendation}
+
+Reported via PhishLens Pre-Transaction Defense Shield.`;
+
+      navigator.clipboard.writeText(report).then(() => {
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 3000);
+      });
+    };
+
+    // Auto-load SBI preset on first load for demonstration
+    window.onload = () => {
+      loadPreset("sbi");
+    };
+  </script>
+</body>
+</html>

@@ -194,7 +194,11 @@ def compute_score(
 
     # Rule 5: Certified TRAI DLT Verified Transactional Communication (Safe Override)
     is_official_trai = sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER
-    if is_official_trai and url_r.status == AgentStatusEnum.SKIPPED and (intent_r.detected_intent == DetectedIntentEnum.BENIGN or intent_r.risk_score <= 20):
+    is_safe_intent = (
+        intent_r.detected_intent == DetectedIntentEnum.BENIGN
+        or intent_r.risk_score <= 20
+    )
+    if is_official_trai and url_r.status == AgentStatusEnum.SKIPPED and is_safe_intent:
         final_score = min(final_score, 12.0)
         heuristics.append("BENIGN_VERIFICATION: Verified TRAI DLT transactional header with no risk signals")
 
