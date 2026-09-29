@@ -96,6 +96,9 @@ class SenderAgentResult(BaseModel):
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
+    # Added by Avni — sender_agent.py audit fields (optional, backward-compatible)
+    raw_sender: Optional[str] = None
+    normalised_sender: Optional[str] = None
 
 
 class IntentAgentResult(BaseModel):
