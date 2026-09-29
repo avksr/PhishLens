@@ -1,33 +1,211 @@
 {
-  "_description": "TRAI DLT certified sender prefix whitelist for major Indian financial institutions, utilities, and government services.",
-  "registered_headers": {
-    "SBIINB": { "entity": "State Bank of India", "category": "BANK", "legit": true },
-    "SBIBNK": { "entity": "State Bank of India", "category": "BANK", "legit": true },
-    "SBISMS": { "entity": "State Bank of India", "category": "BANK", "legit": true },
-    "HDFCBK": { "entity": "HDFC Bank", "category": "BANK", "legit": true },
-    "HDFCLD": { "entity": "HDFC Bank Loans", "category": "BANK", "legit": true },
-    "ICICIB": { "entity": "ICICI Bank", "category": "BANK", "legit": true },
-    "ICICIT": { "entity": "ICICI Bank Transactional", "category": "BANK", "legit": true },
-    "AXISBK": { "entity": "Axis Bank", "category": "BANK", "legit": true },
-    "KOTAKB": { "entity": "Kotak Mahindra Bank", "category": "BANK", "legit": true },
-    "PNBSMS": { "entity": "Punjab National Bank", "category": "BANK", "legit": true },
-    "BOBTXN": { "entity": "Bank of Baroda", "category": "BANK", "legit": true },
-    "CANBNK": { "entity": "Canara Bank", "category": "BANK", "legit": true },
-    "INDUSB": { "entity": "IndusInd Bank", "category": "BANK", "legit": true },
-    "PAYTMB": { "entity": "Paytm Payments Bank", "category": "PAYMENT", "legit": true },
-    "GPAYIN": { "entity": "Google Pay India", "category": "PAYMENT", "legit": true },
-    "PHNPAY": { "entity": "PhonePe", "category": "PAYMENT", "legit": true },
-    "UIDAI": { "entity": "Unique Identification Authority of India (Aadhaar)", "category": "GOVERNMENT", "legit": true },
-    "INCOMET": { "entity": "Income Tax Department of India", "category": "GOVERNMENT", "legit": true },
-    "EPFOHO": { "entity": "Employees Provident Fund Organisation", "category": "GOVERNMENT", "legit": true },
-    "VODAIN": { "entity": "Vodafone Idea Telecom", "category": "TELECOM", "legit": true },
-    "AIRTEL": { "entity": "Bharti Airtel", "category": "TELECOM", "legit": true },
-    "JIONET": { "entity": "Reliance Jio", "category": "TELECOM", "legit": true }
+  "_meta": {
+    "description": "TRAI DLT Certified Sender Header Whitelist for PhishLens / ScamShield AI",
+    "format": "principal_entity_code -> { brand_name, category, operator_prefixes }",
+    "last_updated": "2026-09-01",
+    "source": "TRAI DLT Platform (https://www.trai.gov.in/), public sender-header disclosures",
+    "note": "Operator prefixes (VM, AX, AD, VK, JK, TM, BW, TA, AT) are assigned by telecom operators. The 6-letter principal entity code uniquely identifies the registered brand."
   },
-  "valid_operator_prefixes": [
-    "VM", "VK", "VN", "VA", "VP", "VD", "VF", "VG", "VI",
-    "AX", "AD", "AF", "AP", "AB",
-    "BZ", "BA", "BW", "BP",
-    "JD", "JM", "JR", "JS", "JX"
-  ]
+  "registry": {
+    "SBIINB": {
+      "brand_name": "State Bank of India",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "HDFCBK": {
+      "brand_name": "HDFC Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "ICICIB": {
+      "brand_name": "ICICI Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "AXISBK": {
+      "brand_name": "Axis Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "PNBSMS": {
+      "brand_name": "Punjab National Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "KOTAKB": {
+      "brand_name": "Kotak Mahindra Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "BOBSMS": {
+      "brand_name": "Bank of Baroda",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "CANBNK": {
+      "brand_name": "Canara Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "INDBNK": {
+      "brand_name": "Indian Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "UCOBNK": {
+      "brand_name": "UCO Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "IOBSMS": {
+      "brand_name": "Indian Overseas Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "UNIONB": {
+      "brand_name": "Union Bank of India",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "YESBNK": {
+      "brand_name": "Yes Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "IDBIBN": {
+      "brand_name": "IDBI Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "RBLBNK": {
+      "brand_name": "RBL Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "IDFCBK": {
+      "brand_name": "IDFC First Bank",
+      "category": "Banking",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "PAYTMB": {
+      "brand_name": "Paytm Payments Bank",
+      "category": "Fintech / Payments Bank",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "PHONEPE": {
+      "brand_name": "PhonePe",
+      "category": "Fintech / UPI",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "GOOGPY": {
+      "brand_name": "Google Pay",
+      "category": "Fintech / UPI",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "AMZNPY": {
+      "brand_name": "Amazon Pay",
+      "category": "Fintech / UPI",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "AIRBNK": {
+      "brand_name": "Airtel Payments Bank",
+      "category": "Telecom / Payments Bank",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "JIOFIN": {
+      "brand_name": "Jio Financial Services",
+      "category": "Fintech",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "UIDAIT": {
+      "brand_name": "UIDAI (Aadhaar Authority of India)",
+      "category": "Government / KYC",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "INCOTX": {
+      "brand_name": "Income Tax Department of India",
+      "category": "Government / Tax",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "GSTNIN": {
+      "brand_name": "GSTN (Goods and Services Tax Network)",
+      "category": "Government / Tax",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "NSDLPN": {
+      "brand_name": "NSDL (PAN Services)",
+      "category": "Government / KYC",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "MSEPCL": {
+      "brand_name": "MSEDCL (Maharashtra State Electricity)",
+      "category": "Utility / Power",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "BESCOM": {
+      "brand_name": "BESCOM (Bangalore Electricity Supply Company)",
+      "category": "Utility / Power",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "TNEBSM": {
+      "brand_name": "TNEB (Tamil Nadu Electricity Board)",
+      "category": "Utility / Power",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "AIRTEL": {
+      "brand_name": "Airtel (Telecom)",
+      "category": "Telecom",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "JIOMSG": {
+      "brand_name": "Jio (Reliance Telecom)",
+      "category": "Telecom",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "BSNLSM": {
+      "brand_name": "BSNL (Bharat Sanchar Nigam Limited)",
+      "category": "Telecom",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "VODAFN": {
+      "brand_name": "Vodafone Idea (Vi)",
+      "category": "Telecom",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "IRCTCS": {
+      "brand_name": "IRCTC (Indian Railways Catering and Tourism Corporation)",
+      "category": "Government / Transport",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "FLIPKT": {
+      "brand_name": "Flipkart",
+      "category": "E-commerce",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "AMZNIN": {
+      "brand_name": "Amazon India",
+      "category": "E-commerce",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "SWIGGY": {
+      "brand_name": "Swiggy",
+      "category": "Food Delivery",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "ZOMATO": {
+      "brand_name": "Zomato",
+      "category": "Food Delivery",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "OLACBS": {
+      "brand_name": "Ola Cabs",
+      "category": "Mobility",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "UBERIN": {
+      "brand_name": "Uber India",
+      "category": "Mobility",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    }
+  }
 }
