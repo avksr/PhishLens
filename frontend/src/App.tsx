@@ -21,7 +21,7 @@ export default function App() {
   const [showModal,  setShowModal]  = useState(false);
   const [scanCount,  setScanCount]  = useState(0);
 
-  const treatment = result ? getUiTreatment(result.risk_tier) : null;
+  const treatment = result ? getUiTreatment(result.risk_tier, result.action_required) : null;
 
   // ── Scan handlers ─────────────────────────────────────────
 
@@ -29,7 +29,7 @@ export default function App() {
     setResult(r);
     setIsLoading(false);
     setScanCount(n => n + 1);
-    const t = getUiTreatment(r.risk_tier);
+    const t = getUiTreatment(r.risk_tier, r.action_required);
     if (t.showModal) setShowModal(true);
   };
 

@@ -295,14 +295,15 @@ export async function scanMessage(req: ScanRequest): Promise<ScanResponse> {
  * Maps risk_tier → UI rendering decisions.
  * Only CRITICAL triggers the InterceptionModal.
  */
-export function getUiTreatment(tier: RiskTier): UiTreatment {
+export function getUiTreatment(tier: RiskTier, action_required?: string): UiTreatment {
+  const isBlock = action_required === 'BLOCK_TRANSACTION' || tier === 'CRITICAL' || tier === 'HIGH_RISK';
   switch (tier) {
     case 'SAFE':
       return { showModal: false, accentColor: '#00E676', label: 'SAFE' };
     case 'CAUTION':
       return { showModal: false, accentColor: '#FFB800', label: 'CAUTION' };
     case 'HIGH_RISK':
-      return { showModal: false, accentColor: '#FF6B00', label: 'HIGH RISK' };
+      return { showModal: isBlock, accentColor: '#FF6B00', label: 'HIGH RISK' };
     case 'CRITICAL':
       return { showModal: true, accentColor: '#FF3366', label: 'CRITICAL' };
   }
