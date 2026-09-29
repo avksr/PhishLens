@@ -88,7 +88,7 @@ async def test_url_agent_legitimate_bank_url():
 
     # Patch WHOIS so tests don't make real network calls
     with patch(
-        "backend.agents.url_agent._check_whois_age",
+        f"{analyze_url.__module__}._check_whois_age",
         return_value=(365, 0.0, []),
     ):
         result = await analyze_url(req)
@@ -111,7 +111,7 @@ async def test_url_agent_typosquatting_phishing_url():
     req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
     with patch(
-        "backend.agents.url_agent._check_whois_age",
+        f"{analyze_url.__module__}._check_whois_age",
         return_value=(5, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
     ):
         result = await analyze_url(req)
@@ -160,7 +160,7 @@ async def test_url_extracted_from_content_body():
     req = _make_request(content=msg)
 
     with patch(
-        "backend.agents.url_agent._check_whois_age",
+        f"{analyze_url.__module__}._check_whois_age",
         return_value=(None, 0.0, []),
     ):
         result = await analyze_url(req)
