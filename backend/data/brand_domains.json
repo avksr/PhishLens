@@ -177,5 +177,85 @@
       "incometax.gov.in",
       "incometaxindia.gov.in"
     ]
+  },
+  "AIRTEL": {
+    "brand_name": "Airtel",
+    "keywords": ["airtel", "bhartiairtel"],
+    "official_domains": [
+      "airtel.in",
+      "airtel.com",
+      "airtelpayments.com",
+      "wynk.in",
+      "airtelxstream.in"
+    ]
+  },
+  "JIO": {
+    "brand_name": "Jio",
+    "keywords": ["jio", "reliance", "jiophone"],
+    "official_domains": [
+      "jio.com",
+      "jiomoney.com",
+      "jiocinema.com",
+      "jiomart.com",
+      "jiosecurity.com"
+    ]
+  },
+  "VI": {
+    "brand_name": "Vi (Vodafone Idea)",
+    "keywords": ["vodafone", "idea", "myvi"],
+    "official_domains": [
+      "myvi.in",
+      "vodafone.in",
+      "ideacellular.com"
+    ]
+  },
+  "BSNL": {
+    "brand_name": "BSNL",
+    "keywords": ["bsnl"],
+    "official_domains": [
+      "bsnl.co.in",
+      "bsnl.in",
+      "portal.bsnl.in"
+    ]
+  },
+  "MTNL": {
+    "brand_name": "MTNL",
+    "keywords": ["mtnl"],
+    "official_domains": [
+      "mtnl.in",
+      "mtnldelhi.in",
+      "mtnlmumbai.in"
+    ]
+  },
+  "BESCOM": {
+    "brand_name": "BESCOM",
+    "keywords": ["bescom"],
+    "official_domains": [
+      "bescom.karnataka.gov.in",
+      "bescom.co.in"
+    ]
+  },
+  "MSEDCL": {
+    "brand_name": "MSEDCL",
+    "keywords": ["msedcl", "mahadiscom"],
+    "official_domains": [
+      "mahadiscom.in",
+      "msedcl.in"
+    ]
+  },
+  "TATAPOWER": {
+    "brand_name": "Tata Power",
+    "keywords": ["tatapower", "tata power"],
+    "official_domains": [
+      "tatapower.com",
+      "tatapower-ddl.com"
+    ]
+  },
+  "ADANI_ELECTRICITY": {
+    "brand_name": "Adani Electricity",
+    "keywords": ["adanielectricity", "adani electricity"],
+    "official_domains": [
+      "adanielectricity.in"
+    ]
   }
 }
