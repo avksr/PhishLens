@@ -74,3 +74,39 @@ def test_scan_response_serialization():
     assert resp.risk_tier == RiskTierEnum.CRITICAL
     assert resp.action_required == ActionRequiredEnum.BLOCK_TRANSACTION
     assert resp.audit_trail.url_analysis.risk_score == 95.0
+    # Backward compatibility / Auto-derived PRD Output Contract fields
+    assert resp.risk_score == 92
+    assert resp.verdict_category.value == "LIKELY_SCAM"
+    assert resp.recommended_action == "Do not share OTP or click links"
+    assert resp.audit_id is not None
+    assert isinstance(resp.reasons, list)
+    assert isinstance(resp.evidence, list)
+
+
+def test_prd_output_contract_explicit():
+    """Verify that ScanResponse accepts and validates explicit PRD Section 8 contract fields."""
+    from shared.models import PrdVerdictEnum, EvidenceItem
+    evidence = [
+        EvidenceItem(
+            tool="url_agent",
+            status="SUCCESS",
+            finding="Domain sbi-kyc.top typosquats official brand State Bank of India",
+            raw_result={"risk_score": 95.0}
+        )
+    ]
+    resp = ScanResponse(
+        verdict_category=PrdVerdictEnum.LIKELY_SCAM,
+        reasons=["High-risk suspicious domain mimicking SBI."],
+        evidence=evidence,
+        risk_score=94,
+        recommended_action="Do not open any link and report to 1930.",
+        audit_id="audit_abc_123"
+    )
+    assert resp.verdict_category == PrdVerdictEnum.LIKELY_SCAM
+    assert resp.risk_score == 94
+    assert resp.overall_risk_score == 94
+    assert resp.reasons[0].startswith("High-risk")
+    assert resp.evidence[0].tool == "url_agent"
+    assert resp.audit_id == "audit_abc_123"
+    assert resp.recommended_action == "Do not open any link and report to 1930."
+
