@@ -605,6 +605,14 @@ def _check_typosquatting(
     label_lower = domain_label.lower()
     full_lower = registered_domain.lower()
 
+    # Pre-check: If domain is in ANY brand's official domains, it is authentic
+    all_official = set()
+    for info in brand_data.values():
+        all_official.update(d.lower() for d in info.get("official_domains", []))
+
+    if full_lower in all_official:
+        return False, None, 0.0, []
+
     for _brand_key, info in brand_data.items():
         brand_name: str = info.get("brand_name", _brand_key)
         keywords: List[str] = [k.lower() for k in info.get("keywords", [])]
@@ -624,11 +632,12 @@ def _check_typosquatting(
 
         # Pass 2 — Levenshtein similarity against each official domain
         for official in official_domains:
-            ratio = _levenshtein_ratio(full_lower, official)
-            if ratio >= _SIMILARITY_THRESHOLD:
-                # Don't flag exact matches
-                if full_lower == official:
-                    return False, None, 0.0, []
+            if full_lower == official:
+                return False, None, 0.0, []
+            off_label = official.split(".")[0]
+            ratio_label = _levenshtein_ratio(label_lower, off_label)
+            ratio_full = _levenshtein_ratio(full_lower, official)
+            if ratio_label >= 0.78 or ratio_full >= 0.78:
                 return (
                     True,
                     brand_name,

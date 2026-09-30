@@ -11,6 +11,12 @@ from core.limiter import limiter
 from api.routes import router as api_router
 
 logger = logging.getLogger("phishlens.api")
+<<<<<<< HEAD
+=======
+
+# GIGW 3.0 / DDoS Compliance: 30 requests per minute rate-limiter per client IP
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+>>>>>>> origin/main
 
 FRONTEND_HTML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html"))
 
@@ -38,6 +44,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 # Register slowapi state, handler, and middleware
 app.state.limiter = limiter
+
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
