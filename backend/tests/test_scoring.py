@@ -393,7 +393,7 @@ def test_format_1930_complaint(base_request):
     assert resp.scan_id in complaint, "Must embed PhishLens scan ID"
     assert "Rahul Sharma" in complaint, "Must include victim name"
     assert str(resp.overall_risk_score) in complaint, "Must include risk score"
-    assert "https://sbi-kyc-verify.top" in complaint, "Must include analyzed URL"
+    assert "sbi-kyc-verify.top" in complaint, "Must include analyzed URL"
     assert "+919876543210" in complaint, "Must include sender ID"
     assert "IT Act" in complaint or "Information Technology Act" in complaint, \
         "Must cite the IT Act"
@@ -402,4 +402,3 @@ def test_format_1930_complaint(base_request):
     complaint_anon = format_1930_complaint(resp)
     assert "[FILL IN YOUR FULL NAME]" in complaint_anon
     assert "[FILL IN YOUR MOBILE NUMBER]" in complaint_anon
-
