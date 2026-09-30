@@ -97,10 +97,17 @@ def _determine_confidence(
     upi_r: Optional[UpiAgentResult] = None
 ) -> ConfidenceLevelEnum:
     """
-    Calculates epistemic certainty based on active signal consensus and failure modes.
-    - HIGH: Decisive critical escalation or all vectors returned SUCCESS without error.
-    - MEDIUM: 1 vector timed out / errored or URL was naturally skipped.
-    - LOW: Multiple vectors encountered failures.
+    Signal Completeness / Confidence Rating.
+    Calculates epistemic certainty based on active vs. skipped/errored vectors.
+
+    Formula (mandatory 3 agents only; UPI is optional and weighted separately):
+      active_count      = agents with SUCCESS status
+      non_active_count  = agents with ERROR or SKIPPED status
+
+    HIGH   → decisive heuristic fired (CRITICAL_ESCALATION / BENIGN_VERIFICATION)
+             OR all 3 mandatory agents returned SUCCESS.
+    MEDIUM → exactly 1 mandatory agent was SKIPPED or ERRORed.
+    LOW    → 2 or more mandatory agents were SKIPPED or ERRORed.
     """
     has_decisive_escalation = any(
         "CRITICAL_ESCALATION" in h or "BENIGN_VERIFICATION" in h
@@ -109,17 +116,72 @@ def _determine_confidence(
     if has_decisive_escalation:
         return ConfidenceLevelEnum.HIGH
 
-    agents = [url_r, sender_r, intent_r]
-    if upi_r and upi_r.status != AgentStatusEnum.SKIPPED:
-        agents.append(upi_r)
+    # Count inactive (SKIPPED or ERROR) among the 3 mandatory agents only
+    mandatory_agents = [url_r, sender_r, intent_r]
+    non_active_count = sum(
+        1 for a in mandatory_agents
+        if a.status in (AgentStatusEnum.ERROR, AgentStatusEnum.SKIPPED)
+    )
 
-    error_count = sum(1 for a in agents if a.status == AgentStatusEnum.ERROR)
-    if error_count >= 2:
+    if non_active_count >= 2:
         return ConfidenceLevelEnum.LOW
-    elif error_count == 1 or url_r.status == AgentStatusEnum.SKIPPED:
+    elif non_active_count == 1:
         return ConfidenceLevelEnum.MEDIUM
 
     return ConfidenceLevelEnum.HIGH
+
+
+def _build_fail_secure_response(
+    req: ScanRequest,
+    url_r: UrlAgentResult,
+    sender_r: SenderAgentResult,
+    intent_r: IntentAgentResult,
+    upi_r: Optional[UpiAgentResult],
+    latency_ms: float
+) -> ScanResponse:
+    """
+    Fail-Secure Safety Net.
+    Returns CAUTION / Score=35 / WARN_USER when all 3 mandatory agents have
+    timed out or crashed — prevents a false SAFE verdict on a total pipeline failure.
+    """
+    synthesis = SynthesisBreakdown(
+        weights_applied={"url_weight": 0.0, "sender_weight": 0.0, "intent_weight": 0.0},
+        heuristics_triggered=[
+            "FAIL_SECURE: All 3 mandatory agents timed out or crashed"
+        ],
+        summary_explanation=(
+            "Pipeline entered fail-secure mode. All three independent analysis agents "
+            "(URL, Sender, Intent) returned ERROR or exceeded the 3.5s timeout SLA. "
+            "Score defaulted to 35 (CAUTION) to prevent a false-safe classification."
+        )
+    )
+    audit_trail = AuditTrail(
+        url_analysis=url_r,
+        sender_analysis=sender_r,
+        intent_analysis=intent_r,
+        upi_analysis=upi_r,
+        synthesis_breakdown=synthesis
+    )
+    return ScanResponse(
+        overall_risk_score=35,
+        risk_tier=RiskTierEnum.CAUTION,
+        confidence=ConfidenceLevelEnum.LOW,
+        verdict="Analysis Unavailable — Pipeline Error",
+        verdict_hi="विश्लेषण उपलब्ध नहीं — तकनीकी त्रुटि",
+        recommendation=(
+            "All automated analysis agents failed to respond. Exercise extreme caution. "
+            "If uncertain, do NOT proceed with any payment or link click. "
+            "Dial 1930 or visit cybercrime.gov.in for assistance."
+        ),
+        recommendation_hi=(
+            "सभी स्वचालित विश्लेषण एजेंट प्रतिक्रिया देने में विफल रहे। अत्यधिक सावधानी बरतें। "
+            "किसी भी भुगतान या लिंक पर क्लिक करने से पहले 1930 डायल करें "
+            "या cybercrime.gov.in पर जाएं।"
+        ),
+        action_required=ActionRequiredEnum.WARN_USER,
+        audit_trail=audit_trail,
+        processing_time_ms=latency_ms
+    )
 
 
 def compute_score(
@@ -142,6 +204,21 @@ def compute_score(
 
     # Step 1: Dynamic Weight Calculation
     weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+
+    # ── Fail-Secure Safety Net ────────────────────────────────────────────────
+    # If ALL 3 mandatory agents failed/timed-out, every weight collapses to 0.0
+    # and the weighted sum would silently produce score=0 → falsely SAFE.
+    # Short-circuit here and return CAUTION/35/WARN_USER instead.
+    _all_mandatory_failed = (
+        url_r.status == AgentStatusEnum.ERROR
+        and sender_r.status == AgentStatusEnum.ERROR
+        and intent_r.status == AgentStatusEnum.ERROR
+    )
+    if _all_mandatory_failed:
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        return _build_fail_secure_response(req, url_r, sender_r, intent_r, upi_r, latency_ms)
+    # ── End Fail-Secure ───────────────────────────────────────────────────────
+
     w_url = weights.get("url_weight", 0.0)
     w_sender = weights.get("sender_weight", 0.0)
     w_intent = weights.get("intent_weight", 0.0)
@@ -194,7 +271,11 @@ def compute_score(
 
     # Rule 5: Certified TRAI DLT Verified Transactional Communication (Safe Override)
     is_official_trai = sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER
-    if is_official_trai and url_r.status == AgentStatusEnum.SKIPPED and (intent_r.detected_intent == DetectedIntentEnum.BENIGN or intent_r.risk_score <= 20):
+    is_safe_intent = (
+        intent_r.detected_intent == DetectedIntentEnum.BENIGN
+        or intent_r.risk_score <= 20
+    )
+    if is_official_trai and url_r.status == AgentStatusEnum.SKIPPED and is_safe_intent:
         final_score = min(final_score, 12.0)
         heuristics.append("BENIGN_VERIFICATION: Verified TRAI DLT transactional header with no risk signals")
 
