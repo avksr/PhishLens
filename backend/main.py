@@ -3,17 +3,20 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from core.limiter import limiter
 from api.routes import router as api_router
 
 logger = logging.getLogger("phishlens.api")
+<<<<<<< HEAD
+=======
 
 # GIGW 3.0 / DDoS Compliance: 30 requests per minute rate-limiter per client IP
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
+>>>>>>> origin/main
 
 FRONTEND_HTML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html"))
 
