@@ -2,9 +2,13 @@
 PhishLens - Verdict & Recommendation Generator
 Owner: AVIKA
 Generates human-readable, explainable scam verdicts and actionable intervention advisories.
+Includes the 1930 Cyber Cell Complaint Generator for cybercrime.gov.in / NCRP portal.
 """
 
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List, Optional
+from datetime import datetime, timezone
 from shared.models import (
     RiskTierEnum,
     ActionRequiredEnum,
@@ -13,6 +17,9 @@ from shared.models import (
     IntentAgentResult,
     UpiAgentResult
 )
+
+if TYPE_CHECKING:
+    from shared.models import ScanResponse
 
 
 def generate_verdict(
@@ -206,3 +213,131 @@ def build_explanation_summary(
         parts.append("All vector signals evaluate within benign baseline parameters.")
 
     return " ".join(parts)
+
+
+def format_1930_complaint(
+    scan_response: "ScanResponse",
+    victim_name: Optional[str] = None,
+    victim_phone: Optional[str] = None,
+    incident_date: Optional[str] = None,
+) -> str:
+    """
+    1930 Cyber Cell Complaint Generator.
+
+    Formats a copy-ready plain-text complaint block for the National Cyber Crime
+    Reporting Portal (NCRP 2.0) at cybercrime.gov.in, aligned with the Ministry
+    of Home Affairs / I4C format for online financial fraud complaints.
+
+    Args:
+        scan_response:  Completed ScanResponse from PhishLens pipeline.
+        victim_name:    Victim's full name (or leave None for a fill-in template).
+        victim_phone:   Victim's contact number (or None for template placeholder).
+        incident_date:  ISO-format incident date string; defaults to scan timestamp.
+
+    Returns:
+        A copy-ready plain-text complaint (English) with Sections A–E.
+    """
+    DIVIDER = "\u2550" * 64
+
+    # ── Pull audit trail fields ───────────────────────────────────────────────
+    at = scan_response.audit_trail
+    url_a = at.url_analysis
+    snd_a = at.sender_analysis
+    int_a = at.intent_analysis
+    upi_a = at.upi_analysis
+    syn   = at.synthesis_breakdown
+
+    # Friendly display values
+    url_analyzed   = url_a.url_analyzed   or "N/A"
+    url_score      = f"{url_a.risk_score:.0f}"
+    url_flags      = ", ".join(url_a.flags) if url_a.flags else "None"
+
+    sender_id      = snd_a.sender_analyzed or "N/A"
+    sender_cat     = snd_a.sender_category.value if hasattr(snd_a.sender_category, "value") else str(snd_a.sender_category)
+    sender_flags   = ", ".join(snd_a.flags) if snd_a.flags else "None"
+
+    intent_label   = int_a.detected_intent.value if hasattr(int_a.detected_intent, "value") else str(int_a.detected_intent)
+    intent_score   = f"{int_a.risk_score:.0f}"
+    tactics        = ", ".join(int_a.manipulation_tactics) if int_a.manipulation_tactics else "None"
+
+    upi_section = ""
+    if upi_a and upi_a.detected_vpa:
+        upi_vpa   = upi_a.detected_vpa
+        upi_score = f"{upi_a.risk_score:.0f}"
+        upi_flags = ", ".join(upi_a.flags) if upi_a.flags else "None"
+        upi_section = (
+            f"\nUPI Handle  : {upi_vpa}"
+            f"\nUPI Risk    : {upi_score}/100"
+            f"\nUPI Flags   : {upi_flags}"
+        )
+
+    incident_dt = incident_date or scan_response.timestamp
+    risk_tier_val = (
+        scan_response.risk_tier.value
+        if hasattr(scan_response.risk_tier, "value")
+        else str(scan_response.risk_tier)
+    )
+    action_val = (
+        scan_response.action_required.value
+        if hasattr(scan_response.action_required, "value")
+        else str(scan_response.action_required)
+    )
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    complaint = f"""{DIVIDER}
+CYBER CRIME COMPLAINT — NATIONAL CYBER CRIME REPORTING PORTAL
+Helpline  : 1930 (24\u00d77 National Cyber Crime Helpline)
+Portal    : https://cybercrime.gov.in
+PhishLens Scan Reference : {scan_response.scan_id}
+Generated : {generated_at}
+{DIVIDER}
+
+SECTION A — COMPLAINANT DETAILS
+Name            : {victim_name or "[FILL IN YOUR FULL NAME]"}
+Contact Number  : {victim_phone or "[FILL IN YOUR MOBILE NUMBER]"}
+Incident Date   : {incident_dt}
+
+SECTION B — INCIDENT DESCRIPTION
+I am writing to report a suspected cybercrime / online financial fraud.
+I received a suspicious communication that was automatically flagged as
+HIGH RISK by PhishLens real-time scam interception analysis.
+
+Threat Verdict    : {scan_response.verdict}
+Risk Score        : {scan_response.overall_risk_score}/100
+Threat Category   : {risk_tier_val}
+Confidence Level  : {scan_response.confidence}
+Recommended Action: {action_val}
+
+SECTION C — TECHNICAL EVIDENCE (PhishLens Audit Trail)
+Scan ID       : {scan_response.scan_id}
+Scan Time     : {scan_response.timestamp}
+
+URL Analyzed  : {url_analyzed}
+URL Risk Score: {url_score}/100
+URL Flags     : {url_flags}
+
+Sender ID     : {sender_id}
+Sender Type   : {sender_cat}
+Sender Flags  : {sender_flags}
+
+Intent        : {intent_label}
+Intent Score  : {intent_score}/100
+Tactics Used  : {tactics}{upi_section}
+
+SECTION D — AUTOMATED ANALYSIS SUMMARY
+{syn.summary_explanation}
+
+Heuristics Triggered:
+{chr(10).join(f"  \u2022 {h}" for h in syn.heuristics_triggered) if syn.heuristics_triggered else "  None"}
+
+SECTION E — DECLARATION
+I declare that the above information is true and correct to the best of my
+knowledge. I request that appropriate legal action be taken against the
+perpetrators under the Information Technology Act, 2000 (Section 66C, 66D),
+Indian Penal Code Section 420, or any other applicable cybercrime statutes.
+
+For urgent assistance: Dial 1930 (24\u00d77 National Cyber Crime Helpline)
+Online complaint    : https://cybercrime.gov.in
+{DIVIDER}"""
+
+    return complaint
