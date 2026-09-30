@@ -245,26 +245,35 @@ def format_1930_complaint(
     snd_a = at.sender_analysis
     int_a = at.intent_analysis
     upi_a = at.upi_analysis
-    syn   = at.synthesis_breakdown
+    syn = at.synthesis_breakdown
 
     # Friendly display values
-    url_analyzed   = url_a.url_analyzed   or "N/A"
-    url_score      = f"{url_a.risk_score:.0f}"
-    url_flags      = ", ".join(url_a.flags) if url_a.flags else "None"
+    url_analyzed = url_a.url_analyzed or "N/A"
+    url_score = f"{url_a.risk_score:.0f}"
+    url_flags = ", ".join(url_a.flags) if url_a.flags else "None"
 
-    sender_id      = snd_a.sender_analyzed or "N/A"
-    sender_cat     = snd_a.sender_category.value if hasattr(snd_a.sender_category, "value") else str(snd_a.sender_category)
-    sender_flags   = ", ".join(snd_a.flags) if snd_a.flags else "None"
+    sender_id = snd_a.sender_analyzed or "N/A"
+    sender_cat = (
+        snd_a.sender_category.value
+        if hasattr(snd_a.sender_category, "value")
+        else str(snd_a.sender_category)
+    )
+    sender_flags = ", ".join(snd_a.flags) if snd_a.flags else "None"
 
-    intent_label   = int_a.detected_intent.value if hasattr(int_a.detected_intent, "value") else str(int_a.detected_intent)
-    intent_score   = f"{int_a.risk_score:.0f}"
-    tactics        = ", ".join(int_a.manipulation_tactics) if int_a.manipulation_tactics else "None"
+    intent_label = (
+        int_a.detected_intent.value
+        if hasattr(int_a.detected_intent, "value")
+        else str(int_a.detected_intent)
+    )
+    intent_score = f"{int_a.risk_score:.0f}"
+    tactics = ", ".join(int_a.manipulation_tactics) if int_a.manipulation_tactics else "None"
 
     upi_section = ""
     if upi_a and upi_a.detected_vpa:
-        upi_vpa   = upi_a.detected_vpa
+        upi_vpa = upi_a.detected_vpa
         upi_score = f"{upi_a.risk_score:.0f}"
         upi_flags = ", ".join(upi_a.flags) if upi_a.flags else "None"
+
         upi_section = (
             f"\nUPI Handle  : {upi_vpa}"
             f"\nUPI Risk    : {upi_score}/100"

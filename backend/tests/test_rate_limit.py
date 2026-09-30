@@ -1,8 +1,8 @@
 import pytest
-import asyncio
 import httpx
 
 from main import app
+
 
 @pytest.mark.asyncio
 async def test_rate_limiting_slowapi_middleware():

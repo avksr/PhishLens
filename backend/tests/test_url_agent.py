@@ -750,8 +750,6 @@ class TestWhoisFallback:
         """
         Any WHOIS exception (not just timeout) must fall back gracefully.
         """
-        import asyncio as aio
-
         req = _make_request(extracted_url="https://suspicious.xyz/phish")
 
         # Patch at the internal level so the full pipeline runs but
@@ -772,7 +770,7 @@ class TestWhoisFallback:
     async def test_fallback_with_high_risk_tld_adds_to_score(self):
         """
         End-to-end: when WHOIS times out on a .top domain, the fallback
-        penalty should be added to the risk score on top of the TLD + 
+        penalty should be added to the risk score on top of the TLD +
         typosquatting signals.
         """
         req = _make_request(extracted_url="https://sbi-kyc-verify.top")

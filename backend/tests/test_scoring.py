@@ -257,12 +257,18 @@ def test_fail_secure_all_agents_failed(base_request):
     Fail-Secure Safety Net: When all 3 mandatory agents ERROR out (e.g., timeout/crash),
     scoring must return CAUTION/35/WARN_USER/LOW instead of falsely defaulting to SAFE/0.
     """
-    url_r   = UrlAgentResult(status=AgentStatusEnum.ERROR,   risk_score=0.0,
-                              flags=["URL_AGENT_FAILED"], latency_ms=3500.0)
-    sender_r = SenderAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0,
-                                  flags=["SENDER_AGENT_FAILED"], latency_ms=3500.0)
-    intent_r = IntentAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0,
-                                  flags=["INTENT_AGENT_FAILED"], latency_ms=3500.0)
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.ERROR, risk_score=0.0,
+        flags=["URL_AGENT_FAILED"], latency_ms=3500.0
+    )
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.ERROR, risk_score=0.0,
+        flags=["SENDER_AGENT_FAILED"], latency_ms=3500.0
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.ERROR, risk_score=0.0,
+        flags=["INTENT_AGENT_FAILED"], latency_ms=3500.0
+    )
 
     resp = compute_score(base_request, url_r, sender_r, intent_r)
 
@@ -298,41 +304,41 @@ def test_confidence_signal_completeness(base_request):
     mandatory vectors, not just error-only counts.
     """
     # ── Scenario 1: All 3 active → HIGH (no decisive escalation path) ─────────
-    url_ok   = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
-    snd_ok   = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
-    int_ok   = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    url_ok = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    snd_ok = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    int_ok = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
     resp_all = compute_score(base_request, url_ok, snd_ok, int_ok)
     assert resp_all.confidence == ConfidenceLevelEnum.HIGH, \
         "All 3 agents SUCCESS → HIGH confidence"
 
     # ── Scenario 2: 1 SKIPPED (natural: no URL) → MEDIUM ────────────────────
     url_skip = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
-    snd_ok2  = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
-    int_ok2  = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    snd_ok2 = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    int_ok2 = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
     resp_med = compute_score(base_request, url_skip, snd_ok2, int_ok2)
     assert resp_med.confidence == ConfidenceLevelEnum.MEDIUM, \
         "1 SKIPPED agent → MEDIUM confidence"
 
     # ── Scenario 3: 1 ERROR (timed out) → MEDIUM ─────────────────────────────
-    url_err  = UrlAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
-    snd_ok3  = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
-    int_ok3  = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
-    resp_m2  = compute_score(base_request, url_err, snd_ok3, int_ok3)
+    url_err = UrlAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
+    snd_ok3 = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    int_ok3 = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=30.0)
+    resp_m2 = compute_score(base_request, url_err, snd_ok3, int_ok3)
     assert resp_m2.confidence == ConfidenceLevelEnum.MEDIUM, \
         "1 ERRORed agent → MEDIUM confidence"
 
     # ── Scenario 4: 2 ERRORed → LOW ──────────────────────────────────────────
-    url_err2  = UrlAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
-    snd_err2  = SenderAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
-    int_ok4   = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
-    resp_low  = compute_score(base_request, url_err2, snd_err2, int_ok4)
+    url_err2 = UrlAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
+    snd_err2 = SenderAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
+    int_ok4 = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
+    resp_low = compute_score(base_request, url_err2, snd_err2, int_ok4)
     assert resp_low.confidence == ConfidenceLevelEnum.LOW, \
         "2 ERRORed agents → LOW confidence"
 
     # ── Scenario 5: 1 SKIPPED + 1 ERROR → LOW ────────────────────────────────
     url_skip2 = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
-    snd_err3  = SenderAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
-    int_ok5   = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
+    snd_err3 = SenderAgentResult(status=AgentStatusEnum.ERROR, risk_score=0.0)
+    int_ok5 = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
     resp_low2 = compute_score(base_request, url_skip2, snd_err3, int_ok5)
     assert resp_low2.confidence == ConfidenceLevelEnum.LOW, \
         "1 SKIPPED + 1 ERRORed → LOW confidence"
