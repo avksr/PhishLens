@@ -253,7 +253,7 @@ class TestWhoisCache:
         with patch(
             "backend.agents.url_agent.whois",
             create=True,
-        ) as mock_whois_module:
+        ):
             # Mock the whois module at the import level
             import types
             mock_mod = types.ModuleType("whois")
