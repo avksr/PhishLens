@@ -2,7 +2,7 @@
   "_meta": {
     "description": "TRAI DLT Certified Sender Header Whitelist for PhishLens / ScamShield AI",
     "format": "principal_entity_code -> { brand_name, category, operator_prefixes }",
-    "last_updated": "2026-09-01",
+    "last_updated": "2026-09-30",
     "source": "TRAI DLT Platform (https://www.trai.gov.in/), public sender-header disclosures",
     "note": "Operator prefixes (VM, AX, AD, VK, JK, TM, BW, TA, AT) are assigned by telecom operators. The 6-letter principal entity code uniquely identifies the registered brand."
   },
@@ -205,6 +205,41 @@
     "UBERIN": {
       "brand_name": "Uber India",
       "category": "Mobility",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "EPFOHO": {
+      "brand_name": "EPFO (Employees' Provident Fund Organisation)",
+      "category": "Government / Pension",
+      "operator_prefixes": ["VM", "AX", "AD", "CP", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "MTOUCH": {
+      "brand_name": "India Post Payments Bank (IPPB)",
+      "category": "Government / Payments Bank",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "TRAISM": {
+      "brand_name": "TRAI (Telecom Regulatory Authority of India)",
+      "category": "Government / Telecom Regulator",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "NDMAIN": {
+      "brand_name": "NDMA (National Disaster Management Authority)",
+      "category": "Government / Emergency",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "PMJNBY": {
+      "brand_name": "PMJDY / Jan Dhan Yojana (Ministry of Finance)",
+      "category": "Government / Financial Inclusion",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "COVIDV": {
+      "brand_name": "CoWIN / National Health Authority",
+      "category": "Government / Health",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "NABARD": {
+      "brand_name": "NABARD (National Bank for Agriculture and Rural Development)",
+      "category": "Government / Agriculture Finance",
       "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
     }
   }

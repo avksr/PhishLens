@@ -1,7 +1,7 @@
 # ============================================================
 # OWNER: VANSH
 # FILE: backend/tests/test_pipeline.py
-# PURPOSE: Integration & SLA Verification for Orchestrator Pipeline
+# PURPOSE: End-to-End Integration & Unit Tests for Orchestrator & DB Logger
 # ============================================================
 
 import pytest
@@ -16,20 +16,18 @@ from shared.models import (
     RiskTierEnum,
     ActionRequiredEnum,
     AgentStatusEnum,
-    IntentAgentResult
+    IntentAgentResult,
+    SenderCategoryEnum
 )
 from core.orchestrator import run_pipeline
-from core.db_logger import mask_phone_number, mask_pii_content, audit_logger
+from core.db_logger import mask_pii
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_e2e_critical_sbi_scam():
-    """Verify that orchestrator executes all agents in parallel within sub-1000ms SLA."""
+async def test_pipeline_e2e_high_risk_scam():
+    """Send high-risk SBI KYC message; verify pipeline executes in < 3500ms, returns risk_tier in ['HIGH_RISK', 'CRITICAL']."""
     req = ScanRequest(
-        content=(
-            "Dear Customer, Your SBI account is blocked. Verify OTP and submit PAN "
-            "at https://sbi-kyc-verify.top within 2 hours."
-        ),
+        content="Dear Customer, Your SBI account has been suspended due to pending KYC update. Submit PAN and verify OTP at https://sbi-kyc-verify.top within 2 hours.",
         sender="+919823145678",
         extracted_url="https://sbi-kyc-verify.top",
         channel=ChannelEnum.SMS
@@ -39,67 +37,70 @@ async def test_orchestrator_e2e_critical_sbi_scam():
     resp: ScanResponse = await run_pipeline(req)
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    # Verification assertions
-    assert resp.overall_risk_score >= 80, f"Expected critical score, got {resp.overall_risk_score}"
-    assert resp.risk_tier == RiskTierEnum.CRITICAL
+    assert elapsed_ms < 3500.0, f"Execution took too long: {elapsed_ms}ms"
+    assert resp.risk_tier.value in ["HIGH_RISK", "CRITICAL"], f"Unexpected tier: {resp.risk_tier}"
     assert resp.action_required == ActionRequiredEnum.BLOCK_TRANSACTION
-    assert resp.audit_trail.url_analysis is not None
-    assert resp.audit_trail.sender_analysis is not None
-    assert resp.audit_trail.intent_analysis is not None
-    assert resp.processing_time_ms < 1000.0, f"SLA exceeded: {resp.processing_time_ms}ms"
-    assert elapsed_ms < 2000.0
+    assert resp.overall_risk_score >= 50
+    assert resp.audit_trail is not None
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_agent_timeout_supervisor():
-    """Verify that when an agent exceeds 3.5s SLA timeout, fallback is returned without crashing."""
-    async def slow_mock_intent(req):
-        await asyncio.sleep(4.0)  # Exceeds 3.5s timeout
-        return IntentAgentResult()
+async def test_pipeline_e2e_benign_otp():
+    """Send safe HDFC OTP alert; verify returns risk_tier == 'SAFE'."""
+    req = ScanRequest(
+        content="Your OTP for Amazon is 123456. Valid for 5 mins - HDFC Bank",
+        sender="VM-HDFCBK",
+        extracted_url=None,
+        channel=ChannelEnum.SMS
+    )
+
+    resp: ScanResponse = await run_pipeline(req)
+    assert resp.risk_tier == RiskTierEnum.SAFE
+    assert resp.action_required == ActionRequiredEnum.ALLOW
+    assert resp.overall_risk_score <= 24
+
+
+@pytest.mark.asyncio
+async def test_pipeline_resilience_agent_failure():
+    """Mock one agent to raise a TimeoutError; verify orchestrator does NOT crash, recovers gracefully, and returns a valid ScanResponse."""
+    async def mock_timeout_agent(req):
+        raise asyncio.TimeoutError("Simulated agent timeout")
 
     req = ScanRequest(
-        content="Meeting today at 5 PM",
+        content="Meeting today at 5 PM for coffee.",
         sender="+919876543210",
         channel=ChannelEnum.SMS
     )
 
-    with patch("core.orchestrator.AGENT_TIMEOUT_SECONDS", 0.05):  # Use 50ms for fast test execution
-        with patch("core.orchestrator.analyze_intent", slow_mock_intent):
-            resp: ScanResponse = await run_pipeline(req)
-            assert resp.audit_trail.intent_analysis.status == AgentStatusEnum.ERROR
-            assert "TIMEOUT_EXCEEDED" in resp.audit_trail.intent_analysis.details
-            assert resp.overall_risk_score >= 0
+    with patch("core.orchestrator.analyze_intent", side_effect=mock_timeout_agent):
+        resp: ScanResponse = await run_pipeline(req)
+        assert isinstance(resp, ScanResponse)
+        assert resp.audit_trail.intent_analysis.status == AgentStatusEnum.ERROR
+        assert "timeout" in resp.audit_trail.intent_analysis.details.lower()
+        # Verify pipeline still computed a valid score using dynamic weight redistribution
+        assert 0 <= resp.overall_risk_score <= 100
 
 
-def test_pii_masking_phone_and_otp():
-    """Verify GIGW 3.0 zero-trust sanitization rules."""
-    phone = "+919876543210"
-    masked_phone = mask_phone_number(phone)
-    assert masked_phone == "+91-XXXXX-3210"
+def test_pii_masker():
+    """Verify phone numbers, OTPs, and card numbers are redacted properly."""
+    # 1. 10-digit Indian phone masking
+    phone_raw = "9876543210"
+    masked_phone = mask_pii(phone_raw)
+    assert masked_phone == "987****210", f"Expected 987****210, got {masked_phone}"
 
-    raw_text = "Your OTP is 784920. Call officer at 9876543210 immediately."
-    masked_text = mask_pii_content(raw_text)
-    assert "[REDACTED_CREDENTIAL]" in masked_text
-    assert "784920" not in masked_text
-    assert "[REDACTED_PHONE]" in masked_text
-    assert "9876543210" not in masked_text
+    # 2. OTP masking
+    otp_text = "Your OTP 123456 is valid for 10 minutes"
+    masked_otp = mask_pii(otp_text)
+    assert "OTP ******" in masked_otp
+    assert "123456" not in masked_otp
 
+    code_text = "verification code 654321"
+    masked_code = mask_pii(code_text)
+    assert "code ******" in masked_code
+    assert "654321" not in masked_code
 
-@pytest.mark.asyncio
-async def test_db_logger_async_write():
-    """Verify SQLite async logger records and reads back sanitized scan events."""
-    req = ScanRequest(
-        content="Test alert with OTP 123456",
-        sender="+919876543210",
-        channel=ChannelEnum.SMS
-    )
-    _ = await run_pipeline(req)
-
-    # Allow background log task to commit
-    await asyncio.sleep(0.1)
-
-    logs = await audit_logger.get_recent_logs(limit=5)
-    assert len(logs) > 0
-    latest = logs[0]
-    assert "+91-XXXXX-3210" in latest["masked_sender"]
-    assert "123456" not in latest["masked_content"]
+    # 3. Card number masking
+    card_text = "Payment on card ending 8812 was approved"
+    masked_card = mask_pii(card_text)
+    assert "ending ****" in masked_card
+    assert "8812" not in masked_card

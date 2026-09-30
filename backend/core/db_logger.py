@@ -1,152 +1,157 @@
 # ============================================================
 # OWNER: VANSH
 # FILE: backend/core/db_logger.py
-# PURPOSE: SQLite Audit Logger with GIGW 3.0 Zero-Trust PII Masking
+# PURPOSE: Async SQLite Audit Logger with GIGW 3.0 Zero PII Leakage
 # ============================================================
 
 import os
 import re
-import json
 import sqlite3
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Optional
+
+try:
+    import aiosqlite
+    HAS_AIOSQLITE = True
+except ImportError:
+    HAS_AIOSQLITE = False
 
 from shared.models import ScanResponse, ScanRequest
 
 logger = logging.getLogger("phishlens.db_logger")
 
-DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(DB_DIR, "audit_scans.db")
+DB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(DB_DIR, "phishlens_audit.db")
 
-PHONE_PATTERN = re.compile(r'(\+?91[\-\s]?)?([6-9]\d{5})(\d{4})\b')
-OTP_PATTERN = re.compile(r'\b(?<!\w)(\d{4,6})(?!\w)\b')
+# Regex patterns for GIGW 3.0 PII Sanitization
+# 1. Indian 10-digit mobile number: e.g., 9876543210 -> 987****210
+PHONE_RE = re.compile(r'(?<!\d)([6-9]\d{2})(\d{4})(\d{3})(?!\d)')
+# Also with country code: +919876543210 -> +91987****210
+PHONE_WITH_CC_RE = re.compile(r'(\+?91[\-\s]?)([6-9]\d{2})(\d{4})(\d{3})(?!\d)')
+
+# 2. OTP numbers: e.g. "OTP 123456" -> "OTP ******", "code 654321" -> "code ******"
+OTP_RE = re.compile(r'\b(otp|code|pin|verification\s+code)[\s:]+(\d{4,8})\b', re.IGNORECASE)
+
+# 3. Credit/Debit Card numbers: e.g. "ending 8812" -> "ending ****", 16-digit cards
+CARD_ENDING_RE = re.compile(r'\b(ending\s+in\s+|ending\s+)(\d{4})\b', re.IGNORECASE)
+CARD_16_RE = re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b')
 
 
-def mask_phone_number(sender: Optional[str]) -> str:
-    """Mask 10-digit Indian mobile numbers preserving only last 4 digits."""
-    if not sender:
-        return "UNKNOWN"
-    cleaned = re.sub(r'[\s\-]', '', sender)
-    if re.search(r'[6-9]\d{9}$', cleaned):
-        last4 = cleaned[-4:]
-        return f"+91-XXXXX-{last4}"
-    return sender
-
-
-def mask_pii_content(content: str) -> str:
-    """Scrub OTPs, passwords, and personal phone numbers from text payload."""
-    if not content:
+def mask_pii(text: Optional[str]) -> str:
+    """
+    GIGW 3.0 Zero PII Leakage Function:
+    - Masks 10-digit Indian mobile numbers (9876543210 -> 987****210)
+    - Masks OTP numbers (OTP 123456 or code 654321 -> OTP ******)
+    - Masks credit/debit card numbers (ending 8812 -> ending ****)
+    """
+    if not text:
         return ""
-    # Scrub 10-digit phones
-    scrubbed = re.sub(r'\b[6-9]\d{9}\b', '[REDACTED_PHONE]', content)
-    # Scrub 4 to 6-digit standalone codes/pins
-    scrubbed = OTP_PATTERN.sub('[REDACTED_CREDENTIAL]', scrubbed)
-    return scrubbed
+
+    result = str(text)
+
+    # 1. Mask card endings and 16-digit card numbers
+    result = CARD_ENDING_RE.sub(r'\1****', result)
+    result = CARD_16_RE.sub(r'****-****-****-****', result)
+
+    # 2. Mask OTP numbers
+    result = OTP_RE.sub(lambda m: f"{m.group(1)} " + ("*" * len(m.group(2))), result)
+
+    # 3. Mask 10-digit Indian mobile numbers (with or without +91 prefix)
+    result = PHONE_WITH_CC_RE.sub(r'\1\2****\4', result)
+    result = PHONE_RE.sub(r'\1****\3', result)
+
+    return result
 
 
-class AuditLogger:
-    def __init__(self, db_path: str = DB_PATH):
-        self.db_path = db_path
-        self._init_db_sync()
-
-    def _init_db_sync(self):
-        """Create audit log schema if not already present."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS scan_logs (
-                        scan_id TEXT PRIMARY KEY,
-                        timestamp TEXT,
-                        channel TEXT,
-                        masked_sender TEXT,
-                        masked_content TEXT,
-                        overall_risk_score INTEGER,
-                        risk_tier TEXT,
-                        action_required TEXT,
-                        verdict TEXT,
-                        recommendation TEXT,
-                        processing_time_ms REAL,
-                        audit_trail_json TEXT
-                    )
-                """)
-                conn.commit()
-        except Exception as e:
-            logger.error(f"Failed to initialize SQLite database at {self.db_path}: {e}")
-
-    async def log_scan(self, response: ScanResponse, raw_req: ScanRequest):
-        """Asynchronously record PII-sanitized scan event."""
-        masked_sender = mask_phone_number(raw_req.sender)
-        masked_content = mask_pii_content(raw_req.content)
-        audit_trail_json = json.dumps(response.audit_trail.model_dump())
-
+async def init_db():
+    """Ensure scan_audit table exists using aiosqlite or sqlite3."""
+    sql = """
+    CREATE TABLE IF NOT EXISTS scan_audit (
+        scan_id TEXT PRIMARY KEY,
+        timestamp TEXT,
+        sender_masked TEXT,
+        content_masked TEXT,
+        overall_risk_score INTEGER,
+        risk_tier TEXT,
+        action_required TEXT,
+        verdict TEXT,
+        latency_ms REAL
+    )
+    """
+    if HAS_AIOSQLITE:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(sql)
+            await db.commit()
+    else:
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            self._insert_log_sync,
-            response.scan_id,
-            response.timestamp,
-            raw_req.channel.value if hasattr(raw_req.channel, "value") else str(raw_req.channel),
-            masked_sender,
-            masked_content,
-            response.overall_risk_score,
-            response.risk_tier.value,
-            response.action_required.value,
-            response.verdict,
-            response.recommendation,
-            response.processing_time_ms,
-            audit_trail_json
+        def _sync_init():
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute(sql)
+                conn.commit()
+        await loop.run_in_executor(None, _sync_init)
+
+
+# Initialize schema immediately on module load
+try:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scan_audit (
+                scan_id TEXT PRIMARY KEY,
+                timestamp TEXT,
+                sender_masked TEXT,
+                content_masked TEXT,
+                overall_risk_score INTEGER,
+                risk_tier TEXT,
+                action_required TEXT,
+                verdict TEXT,
+                latency_ms REAL
+            )
+        """)
+        conn.commit()
+except Exception as e:
+    logger.warning(f"Could not initialize DB schema: {e}")
+
+
+async def log_scan_audit(resp: ScanResponse, req: ScanRequest):
+    """
+    Asynchronously write PII-sanitized scan audit record to SQLite database.
+    """
+    try:
+        sender_masked = mask_pii(req.sender)
+        content_masked = mask_pii(req.content)
+        risk_tier_val = resp.risk_tier.value if hasattr(resp.risk_tier, "value") else str(resp.risk_tier)
+        action_val = resp.action_required.value if hasattr(resp.action_required, "value") else str(resp.action_required)
+
+        query = """
+        INSERT OR REPLACE INTO scan_audit (
+            scan_id, timestamp, sender_masked, content_masked,
+            overall_risk_score, risk_tier, action_required, verdict, latency_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        params = (
+            resp.scan_id,
+            resp.timestamp,
+            sender_masked,
+            content_masked,
+            resp.overall_risk_score,
+            risk_tier_val,
+            action_val,
+            resp.verdict,
+            resp.processing_time_ms
         )
 
-    def _insert_log_sync(
-        self, scan_id, timestamp, channel, masked_sender, masked_content,
-        score, tier, action, verdict, recommendation, latency, audit_json
-    ):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO scan_logs (
-                    scan_id, timestamp, channel, masked_sender, masked_content,
-                    overall_risk_score, risk_tier, action_required, verdict,
-                    recommendation, processing_time_ms, audit_trail_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    scan_id, timestamp, channel, masked_sender, masked_content,
-                    score, tier, action, verdict, recommendation, latency, audit_json
-                )
-            )
-            conn.commit()
+        if HAS_AIOSQLITE:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(query, params)
+                await db.commit()
+        else:
+            loop = asyncio.get_running_loop()
+            def _insert():
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute(query, params)
+                    conn.commit()
+            await loop.run_in_executor(None, _insert)
 
-    async def get_recent_logs(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Retrieve recent scans for audit dashboard."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._get_recent_logs_sync, limit)
-
-    def _get_recent_logs_sync(self, limit: int) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                "SELECT * FROM scan_logs ORDER BY timestamp DESC LIMIT ?", (limit,)
-            )
-            rows = cursor.fetchall()
-            results = []
-            for r in rows:
-                results.append({
-                    "scan_id": r["scan_id"],
-                    "timestamp": r["timestamp"],
-                    "channel": r["channel"],
-                    "masked_sender": r["masked_sender"],
-                    "masked_content": r["masked_content"],
-                    "overall_risk_score": r["overall_risk_score"],
-                    "risk_tier": r["risk_tier"],
-                    "action_required": r["action_required"],
-                    "verdict": r["verdict"],
-                    "recommendation": r["recommendation"],
-                    "processing_time_ms": r["processing_time_ms"],
-                    "audit_trail": json.loads(r["audit_trail_json"] or "{}")
-                })
-            return results
-
-
-audit_logger = AuditLogger()
+    except Exception as exc:
+        logger.error(f"Error logging scan to SQLite: {exc}", exc_info=True)
