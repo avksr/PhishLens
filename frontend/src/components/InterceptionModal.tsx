@@ -3,7 +3,7 @@
 //  Full-screen hard-block for CRITICAL risk tier
 // ────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ScanResponse } from '../lib/types';
 
 // ── Countdown hook ────────────────────────────────────────────
@@ -40,6 +40,37 @@ export function InterceptionModal({ result, onAbort, onProceedAnyway }: Intercep
   const COUNTDOWN = 8;
   const countdown = useCountdown(COUNTDOWN, true);
   const proceedEnabled = countdown === 0;
+
+  const [reportCopied, setReportCopied] = useState(false);
+  const reportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup report timer on unmount
+  useEffect(() => {
+    return () => { if (reportTimerRef.current) clearTimeout(reportTimerRef.current); };
+  }, []);
+
+  // ── 1930 Report → clipboard + visual feedback ────────────
+  const handleAbortAndReport = useCallback(() => {
+    const urlField = result.audit_trail.url_analysis.url_analyzed;
+    const report = [
+      'Suspected Scam Report (1930)',
+      `Sender: ${result.audit_trail.sender_analysis.sender_analyzed ?? 'Unknown'}`,
+      `Message: ${result.verdict}`,
+      `Suspicious URL: ${urlField ?? 'N/A'}`,
+      `AI Threat Analysis: ${result.recommendation}`,
+    ].join('\n');
+
+    navigator.clipboard.writeText(report).then(() => {
+      setReportCopied(true);
+      reportTimerRef.current = setTimeout(() => {
+        setReportCopied(false);
+        onAbort();
+      }, 3000);
+    }, () => {
+      // Clipboard write failed — still abort
+      onAbort();
+    });
+  }, [result, onAbort]);
 
   // Trap focus inside modal
   const modalRef = useRef<HTMLDivElement>(null);
@@ -242,27 +273,36 @@ export function InterceptionModal({ result, onAbort, onProceedAnyway }: Intercep
               <button
                 id="modal-abort-btn"
                 type="button"
-                onClick={onAbort}
+                onClick={handleAbortAndReport}
+                disabled={reportCopied}
                 style={{
                   width: '100%', padding: '15px 24px', borderRadius: '11px', border: 'none',
-                  background: `linear-gradient(135deg, ${isHighRisk ? '#FF6B00' : '#FF3366'}, ${isHighRisk ? '#FF3366' : '#CC002A'})`,
+                  background: reportCopied
+                    ? 'linear-gradient(135deg, #00E676, #00C853)'
+                    : `linear-gradient(135deg, ${isHighRisk ? '#FF6B00' : '#FF3366'}, ${isHighRisk ? '#FF3366' : '#CC002A'})`,
                   color: '#fff', fontSize: '15px', fontWeight: 800,
                   fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
-                  cursor: 'pointer', letterSpacing: '0.2px',
-                  boxShadow: `0 0 24px ${borderColor}50, 0 4px 16px rgba(0,0,0,0.5)`,
+                  cursor: reportCopied ? 'default' : 'pointer', letterSpacing: '0.2px',
+                  boxShadow: reportCopied
+                    ? '0 0 24px rgba(0,230,118,0.5), 0 4px 16px rgba(0,0,0,0.5)'
+                    : `0 0 24px ${borderColor}50, 0 4px 16px rgba(0,0,0,0.5)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                  transition: 'all 0.3s ease',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                  e.currentTarget.style.boxShadow = `0 0 36px ${borderColor}70, 0 6px 20px rgba(0,0,0,0.6)`;
+                  if (!reportCopied) {
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = `0 0 36px ${borderColor}70, 0 6px 20px rgba(0,0,0,0.6)`;
+                  }
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = `0 0 24px ${borderColor}50, 0 4px 16px rgba(0,0,0,0.5)`;
+                  if (!reportCopied) {
+                    e.currentTarget.style.boxShadow = `0 0 24px ${borderColor}50, 0 4px 16px rgba(0,0,0,0.5)`;
+                  }
                 }}
               >
-                🛑 Abort Transaction &amp; Report
+                {reportCopied ? '✅ Report Copied! Dial 1930' : <>🛑 Abort Transaction &amp; Report</>}
               </button>
 
               {/* Secondary — Proceed anyway (with countdown friction) */}

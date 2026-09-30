@@ -292,21 +292,20 @@ export async function scanMessage(req: ScanRequest): Promise<ScanResponse> {
 // ── UI Treatment Helper ───────────────────────────────────────
 
 /**
- * Maps risk_tier → UI rendering decisions.
- * Only CRITICAL triggers the InterceptionModal.
+ * Maps risk_tier + action_required → UI rendering decisions.
+ * The full-screen InterceptionModal triggers ONLY when
+ * action_required === 'BLOCK_TRANSACTION'.
  */
-export function getUiTreatment(tier: RiskTier, _action_required?: string): UiTreatment {
-  // Only CRITICAL triggers the full-screen InterceptionModal.
-  // HIGH_RISK shows a persistent inline card instead (handled by App).
-  // Decision is based solely on risk_tier, never action_required.
+export function getUiTreatment(tier: RiskTier, action_required?: string): UiTreatment {
+  const showModal = action_required === 'BLOCK_TRANSACTION';
   switch (tier) {
     case 'SAFE':
       return { showModal: false, accentColor: '#00E676', label: 'SAFE' };
     case 'CAUTION':
       return { showModal: false, accentColor: '#FFB800', label: 'CAUTION' };
     case 'HIGH_RISK':
-      return { showModal: false, accentColor: '#FF6B00', label: 'HIGH RISK' };
+      return { showModal, accentColor: '#FF6B00', label: 'HIGH RISK' };
     case 'CRITICAL':
-      return { showModal: true, accentColor: '#FF3366', label: 'CRITICAL' };
+      return { showModal, accentColor: '#FF3366', label: 'CRITICAL' };
   }
 }
