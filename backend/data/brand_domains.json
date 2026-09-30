@@ -295,6 +295,23 @@
       "indiapost.gov.in",
       "ippbonline.com"
     ]
+  },
+  "SWIGGY": {
+    "brand_name": "Swiggy",
+    "keywords": ["swiggy"],
+    "official_domains": [
+      "swiggy.com",
+      "swiggy.in"
+    ]
+  },
+  "ZOMATO": {
+    "brand_name": "Zomato",
+    "keywords": ["zomato"],
+    "official_domains": [
+      "zomato.com",
+      "zomato.in"
+    ]
   }
 }
+
 

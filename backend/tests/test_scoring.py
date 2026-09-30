@@ -7,6 +7,7 @@ from shared.models import (
     IntentAgentResult,
     UpiAgentResult,
     RiskTierEnum,
+    PrdVerdictEnum,
     ActionRequiredEnum,
     AgentStatusEnum,
     SenderCategoryEnum,
@@ -408,3 +409,122 @@ def test_format_1930_complaint(base_request):
     complaint_anon = format_1930_complaint(resp)
     assert "[FILL IN YOUR FULL NAME]" in complaint_anon
     assert "[FILL IN YOUR MOBILE NUMBER]" in complaint_anon
+
+
+def test_prd_output_contract_fields(base_request):
+    """Verify that ScanResponse complies with PRD v1.0 Section 8 Output Contract."""
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=90.0,
+        is_typosquatting=True,
+        target_brand="SBI"
+    )
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=85.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=80.0,
+        detected_intent=DetectedIntentEnum.KYC_VERIFICATION
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+
+    # 1. PRD Verdict Category (SAFE, SUSPICIOUS, LIKELY_SCAM)
+    assert resp.verdict_category == PrdVerdictEnum.LIKELY_SCAM
+    assert resp.overall_risk_score >= 66
+
+    # 2. Aliases for audit and risk score
+    assert resp.audit_id is not None
+    assert resp.audit_id == resp.scan_id
+    assert resp.risk_score == resp.overall_risk_score
+
+    # 3. Plain language reasons (max 5, ordered by weight)
+    assert isinstance(resp.reasons, list)
+    assert 1 <= len(resp.reasons) <= 5
+    assert all(isinstance(r, str) and len(r) > 0 for r in resp.reasons)
+
+    # 4. Structured evidence list
+    assert isinstance(resp.evidence, list)
+    assert len(resp.evidence) >= 3
+    for ev in resp.evidence:
+        assert "tool" in ev
+        assert "status" in ev
+        assert "finding" in ev
+        assert "raw_result" in ev
+
+    # 5. Recommended action citing official helpline
+    assert isinstance(resp.recommended_action, str)
+    assert "1930" in resp.recommended_action or "cybercrime.gov.in" in resp.recommended_action
+
+
+def test_benign_trai_otp_override(base_request):
+    """Verify genuine bank OTP with official TRAI DLT header scores SAFE (<= 25)."""
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+        sender_analyzed="VM-HDFCBK"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    assert resp.overall_risk_score <= 25
+    assert resp.verdict_category == PrdVerdictEnum.SAFE
+    assert resp.risk_tier == RiskTierEnum.SAFE
+    assert resp.action_required == ActionRequiredEnum.ALLOW
+
+
+def test_benign_delivery_with_reputable_domain(base_request):
+    """Verify legitimate food delivery notification with clean URL scores SAFE."""
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=0.0,
+        domain="swiggy.com",
+        tld_reputation=TldReputationEnum.REPUTABLE
+    )
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+        sender_analyzed="AD-SWIGGY"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    assert resp.overall_risk_score <= 20
+    assert resp.verdict_category == PrdVerdictEnum.SAFE
+    assert resp.risk_tier == RiskTierEnum.SAFE
+
+
+def test_benign_personal_conversation(base_request):
+    """Verify casual friend/family message without fraud signals scores SAFE."""
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=10.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        sender_analyzed="+919811223344"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=0.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    assert resp.overall_risk_score <= 20
+    assert resp.verdict_category == PrdVerdictEnum.SAFE
+    assert resp.risk_tier == RiskTierEnum.SAFE
+
