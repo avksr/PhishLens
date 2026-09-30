@@ -3,13 +3,424 @@
 # FILE: backend/agents/intent_agent.py
 # PURPOSE: LLM Psycholinguistic Intent Analysis Agent
 #   - Detects psychological manipulation (urgency, fear, coercion)
-#   - Supports Hinglish messages
-#   - Uses Groq (LLaMA3) or Gemini Flash API
-# IMPORTS: from shared.models import ScanRequest, IntentAgentResult
+#   - Supports Hinglish and Indian digital fraud vectors
+#   - Uses Groq (llama-3.1-8b-instant) or Gemini Flash API with 2.5s SLA timeout
+#   - Resilient local heuristic fallback engine on failure/offline
+#   - Never raises an unhandled exception (Fail-Safe)
 # ============================================================
 
-from shared.models import ScanRequest, IntentAgentResult
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import re
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from shared.models import (
+    ScanRequest,
+    IntentAgentResult,
+    AgentStatusEnum,
+    DetectedIntentEnum
+)
+
+logger = logging.getLogger("phishlens.intent_agent")
+
+# Strict per-agent LLM SLA timeout (seconds)
+LLM_TIMEOUT_SECONDS: float = 2.5
+
+# Prompts directory and system prompt path
+_PROMPTS_DIR: Path = Path(__file__).resolve().parent.parent / "prompts"
+_INTENT_PROMPT_PATH: Path = _PROMPTS_DIR / "intent_prompt.txt"
+
+_DEFAULT_SYSTEM_PROMPT: str = (
+    "You are a Tier-1 Cybersecurity Threat Intelligence & Psycholinguistic Fraud Analyst "
+    "specializing in Indian digital payment, SMS, WhatsApp, and banking scams (including Hinglish).\n"
+    "Evaluate manipulation vectors: Panic/Urgency, Coercive Authority, Credential/Identity Theft, Lottery/Job Scams.\n"
+    "Return pure JSON with fields: risk_score (0-100), detected_intent, manipulation_tactics, confidence, "
+    "flags, reasoning, details."
+)
+
+# ─────────────────────────────────────────────────────────────
+# Regex Patterns for Local Resilient Heuristic Fallback
+# ─────────────────────────────────────────────────────────────
+
+# Panic & False Urgency: +40.0 risk
+_PANIC_URGENCY_PATTERNS = [
+    re.compile(r"\bwithin\s+\d+\s*(?:hours?|hrs?|minutes?|mins?|days?)\b", re.IGNORECASE),
+    re.compile(r"\bblocked\s+today\b", re.IGNORECASE),
+    re.compile(r"\bdeactivated\s+today\b", re.IGNORECASE),
+    re.compile(r"\bpower\s+cut\s+tonight\b", re.IGNORECASE),
+    re.compile(r"\bdisconnected\s+tonight(?:\s+at\s+9[\.:]30\s*(?:pm|am))?\b", re.IGNORECASE),
+    re.compile(r"\b(?:power|electricity)\s+(?:will\s+be\s+)?disconnected\b", re.IGNORECASE),
+    re.compile(r"\b(?:immediately|urgent|urgently)\b", re.IGNORECASE),
+    re.compile(r"\b(?:account|card|sim)\s+(?:is\s+)?(?:blocked|suspended|deactivated|frozen)\b", re.IGNORECASE),
+    re.compile(r"\bfailing\s+which\b", re.IGNORECASE),
+]
+
+# Coercive Authority & Legal Threats: +45.0 risk
+_COERCIVE_AUTHORITY_PATTERNS = [
+    re.compile(r"\barrest\s+warrant\b", re.IGNORECASE),
+    re.compile(r"\bpolice\s+station\b", re.IGNORECASE),
+    re.compile(r"\bcbi\s+officer\b", re.IGNORECASE),
+    re.compile(r"\bcourt\s+summons\b", re.IGNORECASE),
+    re.compile(r"\bcyber\s*(?:crime\s*)?cell\b", re.IGNORECASE),
+    re.compile(r"\belectricity\s+officer\b", re.IGNORECASE),
+    re.compile(r"\b(?:contact|call|reach)\s+(?:our\s+)?(?:electricity\s+)?officer\b", re.IGNORECASE),
+    re.compile(r"\bdigital\s+arrest\b", re.IGNORECASE),
+    re.compile(r"\b(?:rbi|trai|customs|income\s*tax)\s+department\b", re.IGNORECASE),
+]
+
+# Credential & PII Harvesting: +45.0 risk
+_CREDENTIAL_HARVEST_PATTERNS = [
+    re.compile(r"\bsubmit\s+(?:your\s+)?pan\b", re.IGNORECASE),
+    re.compile(r"\bverify\s+(?:your\s+)?aadhaar\b", re.IGNORECASE),
+    re.compile(r"\bshare\s+(?:your\s+)?otp\b", re.IGNORECASE),
+    re.compile(r"\b(?:verify|enter|forward|send)\s+(?:your\s+)?otp\b", re.IGNORECASE),
+    re.compile(r"\bupdate\s+(?:your\s+)?kyc\b", re.IGNORECASE),
+    re.compile(r"\b(?:complete|submit)\s+(?:your\s+)?kyc\b", re.IGNORECASE),
+    re.compile(r"\bunblock\s+(?:your\s+)?account\b", re.IGNORECASE),
+    re.compile(r"\bnetbanking\s+password\b", re.IGNORECASE),
+    re.compile(r"\b(?:aadhaar|pan)\s+(?:&|and)?\s*(?:pan|aadhaar|details)\b", re.IGNORECASE),
+]
+
+# Lottery / Part-Time Job Advance Scams: +35.0 risk
+_LOTTERY_JOB_PATTERNS = [
+    re.compile(r"\bkbc\s+lottery\b", re.IGNORECASE),
+    re.compile(r"\bwon\s+(?:rs\.?\s*)?\d+\s*lakh\b", re.IGNORECASE),
+    re.compile(r"\bpart-?time\s+job\b", re.IGNORECASE),
+    re.compile(r"\blike\s+(?:\d+\s+)?(?:youtube\s+)?videos\b", re.IGNORECASE),
+    re.compile(r"\bearn\s+(?:rs\.?\s*)?\d+\s*daily\b", re.IGNORECASE),
+    re.compile(r"\btelegram\b", re.IGNORECASE),
+    re.compile(r"\bcongratulations!?\s+you\s+have\s+(?:been\s+selected|won)\b", re.IGNORECASE),
+]
+
+# Benign Baseline Markers
+_BENIGN_PATTERNS = [
+    re.compile(r"\b(?:do\s+not|never)\s+share\s+(?:this\s+|your\s+)?otp\b", re.IGNORECASE),
+    re.compile(r"\bvalid\s+for\s+\d+\s*mins?\b", re.IGNORECASE),
+    re.compile(r"\byour\s+otp\s+for\s+.*is\s+\d+\b", re.IGNORECASE),
+    re.compile(r"\barriving\s+in\s+\d+\s*mins?\b", re.IGNORECASE),
+    re.compile(r"\btrack\s+your\s+(?:rider|order)\b", re.IGNORECASE),
+]
+
+
+def _load_system_prompt() -> str:
+    """Reads system prompt from file if present, else returns fallback default."""
+    if _INTENT_PROMPT_PATH.is_file():
+        try:
+            return _INTENT_PROMPT_PATH.read_text(encoding="utf-8")
+        except Exception as err:
+            logger.warning(f"Could not read intent prompt file: {err}")
+    return _DEFAULT_SYSTEM_PROMPT
+
+
+def _is_usable_key(key: Optional[str]) -> bool:
+    """Checks whether an API key is present and not a dummy/placeholder value."""
+    if not key:
+        return False
+    cleaned = key.strip()
+    lower = cleaned.lower()
+    if (
+        not cleaned
+        or lower.startswith("your_")
+        or "dummy" in lower
+        or "test" in lower
+        or "fake" in lower
+        or "placeholder" in lower
+        or len(cleaned) < 20
+    ):
+        return False
+    return True
+
+
+def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, List[str], List[str], str]:
+    """
+    Evaluates text against Indian fraud psycholinguistic heuristic rules.
+    Returns: (risk_score, detected_intent, manipulation_tactics, flags, reasoning)
+    """
+    risk_score = 0.0
+    manipulation_tactics: List[str] = []
+    flags: List[str] = []
+    candidate_intents: List[DetectedIntentEnum] = []
+
+    # 1. Panic & False Urgency (+40.0)
+    has_urgency = any(p.search(content) for p in _PANIC_URGENCY_PATTERNS)
+    if has_urgency:
+        risk_score += 40.0
+        manipulation_tactics.append("False Urgency Trigger")
+        flags.append("PSYCHOLOGICAL_URGENCY_TRIGGER")
+        candidate_intents.append(DetectedIntentEnum.PANIC_URGENCY)
+
+    # 2. Coercive Authority & Legal Threats (+45.0)
+    has_authority = any(p.search(content) for p in _COERCIVE_AUTHORITY_PATTERNS)
+    if has_authority:
+        risk_score += 45.0
+        manipulation_tactics.append("Coercive Authority Threat")
+        flags.append("AUTHORITY_COERCION_FLAG")
+        candidate_intents.append(DetectedIntentEnum.FINANCIAL_EXTORTION)
+
+    # 3. Credential & PII Harvesting (+45.0)
+    has_credential = any(p.search(content) for p in _CREDENTIAL_HARVEST_PATTERNS)
+    if has_credential:
+        risk_score += 45.0
+        manipulation_tactics.append("Credential / KYC Solicitation")
+        if re.search(r"\botp\b", content, re.IGNORECASE):
+            flags.append("OTP_HARVEST_FLAG")
+            candidate_intents.append(DetectedIntentEnum.OTP_HARVEST)
+        else:
+            flags.append("UNVERIFIED_KYC_SOLICITATION")
+            candidate_intents.append(DetectedIntentEnum.KYC_VERIFICATION)
+
+    # 4. Lottery / Part-Time Job Advance Scams (+35.0)
+    has_lottery = any(p.search(content) for p in _LOTTERY_JOB_PATTERNS)
+    if has_lottery:
+        risk_score += 35.0
+        manipulation_tactics.append("Fraudulent Incentive / Advance Fee")
+        flags.append("LOTTERY_JOB_SCAM_FLAG")
+        candidate_intents.append(DetectedIntentEnum.LOTTERY_REWARD)
+
+    # Determine final intent and score
+    if manipulation_tactics:
+        if DetectedIntentEnum.OTP_HARVEST in candidate_intents:
+            final_intent = DetectedIntentEnum.OTP_HARVEST
+        elif DetectedIntentEnum.KYC_VERIFICATION in candidate_intents:
+            final_intent = DetectedIntentEnum.KYC_VERIFICATION
+        elif DetectedIntentEnum.FINANCIAL_EXTORTION in candidate_intents:
+            final_intent = DetectedIntentEnum.FINANCIAL_EXTORTION
+        elif DetectedIntentEnum.PANIC_URGENCY in candidate_intents:
+            final_intent = DetectedIntentEnum.PANIC_URGENCY
+        elif DetectedIntentEnum.LOTTERY_REWARD in candidate_intents:
+            final_intent = DetectedIntentEnum.LOTTERY_REWARD
+        else:
+            final_intent = DetectedIntentEnum.SUSPICIOUS
+
+        reasoning = (
+            f"Heuristic detection triggered {len(manipulation_tactics)} social engineering marker(s): "
+            f"{', '.join(manipulation_tactics)}."
+        )
+    else:
+        has_benign_marker = any(p.search(content) for p in _BENIGN_PATTERNS)
+        final_intent = DetectedIntentEnum.BENIGN
+        risk_score = 5.0 if has_benign_marker else 0.0
+        if has_benign_marker:
+            flags.append("STANDARD_TRANSACTIONAL_DISCLOSURE")
+        reasoning = "Standard communication with no coercive demands or social engineering indicators observed."
+
+    clamped_score = max(0.0, min(100.0, risk_score))
+    return clamped_score, final_intent, manipulation_tactics, flags, reasoning
+
+
+async def _analyze_with_groq(content: str, system_prompt: str, api_key: str) -> Optional[Dict[str, Any]]:
+    """Invokes Groq LLaMA-3.1-8b-instant with JSON mode and 2.5s SLA timeout."""
+    from groq import AsyncGroq
+
+    client = AsyncGroq(api_key=api_key)
+    chat_completion = await asyncio.wait_for(
+        client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.0,
+            response_format={"type": "json_object"},
+        ),
+        timeout=LLM_TIMEOUT_SECONDS,
+    )
+    raw_text = chat_completion.choices[0].message.content
+    if raw_text:
+        return json.loads(raw_text)
+    return None
+
+
+async def _analyze_with_gemini(content: str, system_prompt: str, api_key: str) -> Optional[Dict[str, Any]]:
+    """Invokes Google Gemini 1.5 Flash with JSON mode and 2.5s SLA timeout."""
+    import google.generativeai as genai
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=system_prompt,
+        generation_config={
+            "response_mime_type": "application/json",
+            "temperature": 0.0,
+        },
+    )
+    response = await asyncio.wait_for(
+        model.generate_content_async(content),
+        timeout=LLM_TIMEOUT_SECONDS,
+    )
+    if response and response.text:
+        return json.loads(response.text)
+    return None
+
+
+def _parse_llm_json_result(data: Dict[str, Any]) -> IntentAgentResult:
+    """Parses raw JSON from LLM into a validated IntentAgentResult."""
+    raw_score = data.get("risk_score", 0.0)
+    try:
+        risk_score = float(raw_score)
+    except (TypeError, ValueError):
+        risk_score = 0.0
+    risk_score = max(0.0, min(100.0, risk_score))
+
+    intent_raw = str(data.get("detected_intent", "BENIGN")).strip().upper()
+    try:
+        detected_intent = DetectedIntentEnum(intent_raw)
+    except ValueError:
+        if "PANIC" in intent_raw or "URGENCY" in intent_raw:
+            detected_intent = DetectedIntentEnum.PANIC_URGENCY
+        elif "EXTORTION" in intent_raw or "ARREST" in intent_raw:
+            detected_intent = DetectedIntentEnum.FINANCIAL_EXTORTION
+        elif "LOTTERY" in intent_raw or "JOB" in intent_raw or "REWARD" in intent_raw:
+            detected_intent = DetectedIntentEnum.LOTTERY_REWARD
+        elif "KYC" in intent_raw:
+            detected_intent = DetectedIntentEnum.KYC_VERIFICATION
+        elif "OTP" in intent_raw:
+            detected_intent = DetectedIntentEnum.OTP_HARVEST
+        elif "BENIGN" in intent_raw or "SAFE" in intent_raw:
+            detected_intent = DetectedIntentEnum.BENIGN
+        else:
+            detected_intent = DetectedIntentEnum.SUSPICIOUS
+
+    tactics_raw = data.get("manipulation_tactics", [])
+    if isinstance(tactics_raw, list):
+        tactics = [str(t) for t in tactics_raw if t]
+    elif tactics_raw:
+        tactics = [str(tactics_raw)]
+    else:
+        tactics = []
+
+    raw_conf = data.get("confidence", 0.90)
+    try:
+        confidence = float(raw_conf)
+    except (TypeError, ValueError):
+        confidence = 0.90
+    confidence = max(0.0, min(1.0, confidence))
+
+    flags_raw = data.get("flags", [])
+    if isinstance(flags_raw, list):
+        flags = [str(f) for f in flags_raw if f]
+    elif flags_raw:
+        flags = [str(flags_raw)]
+    else:
+        flags = []
+
+    reasoning = str(data.get("reasoning", ""))
+    details = str(data.get("details", "Analyzed via primary LLM engine"))
+
+    return IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=risk_score,
+        detected_intent=detected_intent,
+        manipulation_tactics=tactics,
+        confidence=confidence,
+        flags=flags,
+        reasoning=reasoning,
+        details=details,
+    )
 
 
 async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
-    raise NotImplementedError("Vikas: Implement this function in intent_agent.py")
+    """
+    Analyzes psycholinguistic manipulation vectors in incoming message text.
+
+    Execution Flow:
+    1. Validates input request and handles empty/blank payloads gracefully.
+    2. Attempts primary LLM analysis via Groq (llama-3.1-8b-instant) or Gemini (gemini-1.5-flash).
+    3. Enforces 2.5s SLA timeout on all LLM calls.
+    4. Falls back seamlessly to local regex heuristic engine on timeout, error, or missing keys.
+    5. Clamps risk score to [0.0, 100.0] and records latency_ms.
+    6. Fail-Safe: Guarantees zero unhandled exceptions.
+    """
+    start_time = time.perf_counter()
+
+    try:
+        # Guard: check empty or blank content
+        if not req or not req.content or not req.content.strip():
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            return IntentAgentResult(
+                status=AgentStatusEnum.SKIPPED,
+                risk_score=0.0,
+                detected_intent=DetectedIntentEnum.BENIGN,
+                manipulation_tactics=[],
+                confidence=1.0,
+                flags=[],
+                reasoning="No message content provided for intent analysis.",
+                details="Skipped: Empty content payload.",
+                latency_ms=elapsed_ms,
+            )
+
+        content = req.content.strip()
+        system_prompt = _load_system_prompt()
+
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+
+        llm_data: Optional[Dict[str, Any]] = None
+
+        if _is_usable_key(groq_key):
+            try:
+                llm_data = await _analyze_with_groq(content, system_prompt, groq_key)
+            except Exception as e:
+                logger.warning(f"Groq intent analysis failed or timed out: {e}")
+
+        if not llm_data and _is_usable_key(gemini_key):
+            try:
+                llm_data = await _analyze_with_gemini(content, system_prompt, gemini_key)
+            except Exception as e:
+                logger.warning(f"Gemini intent analysis failed or timed out: {e}")
+
+        # If LLM succeeded, parse and return
+        if llm_data:
+            result = _parse_llm_json_result(llm_data)
+            result.latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            return result
+
+        # Fallback to local resilient heuristic engine
+        score, intent, tactics, flags, reasoning = _run_heuristic_fallback(content)
+        elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        return IntentAgentResult(
+            status=AgentStatusEnum.SUCCESS,
+            risk_score=score,
+            detected_intent=intent,
+            manipulation_tactics=tactics,
+            confidence=0.85,
+            flags=flags,
+            reasoning=reasoning,
+            details="Analyzed via local resilient heuristic engine",
+            latency_ms=elapsed_ms,
+        )
+
+    except Exception as exc:
+        logger.error(f"Unhandled exception in analyze_intent: {exc}", exc_info=True)
+        elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        try:
+            score, intent, tactics, flags, reasoning = _run_heuristic_fallback(req.content if req else "")
+            return IntentAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                risk_score=score,
+                detected_intent=intent,
+                manipulation_tactics=tactics,
+                confidence=0.85,
+                flags=flags,
+                reasoning=reasoning,
+                details="Analyzed via local resilient heuristic engine",
+                latency_ms=elapsed_ms,
+            )
+        except Exception:
+            return IntentAgentResult(
+                status=AgentStatusEnum.ERROR,
+                risk_score=0.0,
+                detected_intent=DetectedIntentEnum.BENIGN,
+                manipulation_tactics=[],
+                confidence=0.0,
+                flags=["INTENT_AGENT_FAILED"],
+                reasoning=f"Agent exception: {str(exc)}",
+                details=f"ERROR: {str(exc)}",
+                latency_ms=elapsed_ms,
+            )
