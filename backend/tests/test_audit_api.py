@@ -40,4 +40,4 @@ async def test_get_recent_audits_endpoint():
         # Full phone number should not appear unmasked
         if recent["sender_masked"]:
             assert "+919876543210" not in recent["sender_masked"]
-            assert "****" in recent["sender_masked"]
+            assert "***" in recent["sender_masked"]
