@@ -11,3 +11,4 @@ aiosqlite==0.20.0
 pytest==8.2.2
 pytest-asyncio==0.23.7
 flake8==7.1.0
+slowapi>=0.1.9
