@@ -193,11 +193,74 @@ export default function App() {
               </div>
             )}
 
+            {/* ── HIGH_RISK inline warning card (not full-screen modal) ── */}
+            {result && result.risk_tier === 'HIGH_RISK' && (
+              <div
+                role="alert"
+                style={{
+                  background: '#0B0F19',
+                  border: '1px solid #FF6B0055',
+                  borderRadius: '14px',
+                  padding: '20px 22px',
+                  boxShadow: '0 0 24px rgba(255,107,0,0.12), 0 4px 20px rgba(0,0,0,0.5)',
+                  animation: 'pl-fadein 0.35s ease',
+                }}
+              >
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '10px', fontSize: '20px',
+                      background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.35)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }} aria-hidden>⚠️</div>
+                    <div>
+                      <p style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+                        HIGH RISK DETECTED
+                      </p>
+                      <p style={{ margin: 0, fontSize: '11px', color: '#4B5563', fontFamily: 'JetBrains Mono, monospace' }}>
+                        Score: {result.overall_risk_score}/100 · {result.processing_time_ms.toFixed(0)}ms
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: '5px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: 800,
+                    fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.8px',
+                    color: '#FF6B00', background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.35)',
+                  }}>
+                    HIGH RISK
+                  </div>
+                </div>
+
+                {/* Recommendation */}
+                <div style={{
+                  padding: '12px 14px', borderRadius: '9px', marginBottom: '14px',
+                  background: 'rgba(255,107,0,0.06)', border: '1px solid rgba(255,107,0,0.2)',
+                }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#F1F5F9', fontFamily: 'Inter, sans-serif', lineHeight: '1.6', fontWeight: 500 }}>
+                    {result.recommendation}
+                  </p>
+                </div>
+
+                {/* Verdict */}
+                <p style={{
+                  margin: 0, fontSize: '12px', color: '#94A3B8',
+                  fontFamily: 'JetBrains Mono, monospace', lineHeight: '1.5',
+                  padding: '8px 12px', borderRadius: '8px',
+                  background: '#111827', border: '1px solid #1F2937',
+                }}>
+                  <span style={{ color: '#4B5563' }}>verdict: </span>
+                  {result.verdict}
+                </p>
+              </div>
+            )}
+
             {/* Audit Trail */}
             {result && (
               <AuditTrailDrawer
                 auditTrail={result.audit_trail}
                 recommendation={result.recommendation}
+                processingTimeMs={result.processing_time_ms}
               />
             )}
           </div>
@@ -255,6 +318,7 @@ export default function App() {
       <style>{`
         @keyframes pl-pulse   { 0%,100%{opacity:1} 50%{opacity:.35} }
         @keyframes pl-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        @keyframes pl-fadein  { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
       `}</style>
     </div>
   );

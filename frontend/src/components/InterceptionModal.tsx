@@ -13,8 +13,7 @@ function useCountdown(seconds: number, active: boolean) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!active) { setRemaining(seconds); return; }
-    setRemaining(seconds);
+    if (!active) return;
     intervalRef.current = setInterval(() => {
       setRemaining(prev => {
         if (prev <= 1) { clearInterval(intervalRef.current!); return 0; }
@@ -38,13 +37,9 @@ export interface InterceptionModalProps {
 // ── Component ─────────────────────────────────────────────────
 
 export function InterceptionModal({ result, onAbort, onProceedAnyway }: InterceptionModalProps) {
-  const [proceedEnabled, setProceedEnabled] = useState(false);
   const COUNTDOWN = 8;
   const countdown = useCountdown(COUNTDOWN, true);
-
-  useEffect(() => {
-    if (countdown === 0) setProceedEnabled(true);
-  }, [countdown]);
+  const proceedEnabled = countdown === 0;
 
   // Trap focus inside modal
   const modalRef = useRef<HTMLDivElement>(null);

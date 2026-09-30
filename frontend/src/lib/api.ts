@@ -20,7 +20,7 @@ const MOCK_RESPONSES: ScanResponse[] = [
   {
     scan_id: 'c7a8b3e1-9524-4f0e-b7d6-ec2d79d501b4',
     timestamp: new Date().toISOString(),
-    overall_risk_score: 92,
+    overall_risk_score: 92, 
     risk_tier: 'CRITICAL',
     verdict: 'Confirmed Impersonation & Credential Harvesting Attack',
     recommendation:
@@ -113,7 +113,7 @@ const MOCK_RESPONSES: ScanResponse[] = [
       },
       sender_analysis: {
         status: 'SUCCESS',
-        sender_analyzed: '+918250912345',
+        sender_analyzed: '+919812345678',
         risk_score: 82,
         is_spoofed_header: false,
         sender_category: 'PERSONAL_GSM',
@@ -280,7 +280,7 @@ export async function scanMessage(req: ScanRequest): Promise<ScanResponse> {
     }
 
     return response.json() as Promise<ScanResponse>;
-  } catch (_err) {
+  } catch {
     // Backend offline → graceful demo fallback
     console.warn('[PhishLens] Backend unreachable — using offline mock response');
     // Simulate network latency
@@ -295,15 +295,17 @@ export async function scanMessage(req: ScanRequest): Promise<ScanResponse> {
  * Maps risk_tier → UI rendering decisions.
  * Only CRITICAL triggers the InterceptionModal.
  */
-export function getUiTreatment(tier: RiskTier, action_required?: string): UiTreatment {
-  const isBlock = action_required === 'BLOCK_TRANSACTION' || tier === 'CRITICAL' || tier === 'HIGH_RISK';
+export function getUiTreatment(tier: RiskTier, _action_required?: string): UiTreatment {
+  // Only CRITICAL triggers the full-screen InterceptionModal.
+  // HIGH_RISK shows a persistent inline card instead (handled by App).
+  // Decision is based solely on risk_tier, never action_required.
   switch (tier) {
     case 'SAFE':
       return { showModal: false, accentColor: '#00E676', label: 'SAFE' };
     case 'CAUTION':
       return { showModal: false, accentColor: '#FFB800', label: 'CAUTION' };
     case 'HIGH_RISK':
-      return { showModal: isBlock, accentColor: '#FF6B00', label: 'HIGH RISK' };
+      return { showModal: false, accentColor: '#FF6B00', label: 'HIGH RISK' };
     case 'CRITICAL':
       return { showModal: true, accentColor: '#FF3366', label: 'CRITICAL' };
   }

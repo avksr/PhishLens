@@ -6,10 +6,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { scanMessage } from '../lib/api';
 import type { ScanResponse, ScanRequest, Channel } from '../lib/types';
-import highRisk from '../../../datasets/payloads_high_risk.json';
-import safe     from '../../../datasets/payloads_safe.json';
 
-// ── Presets (pulled from actual datasets) ─────────────────────
+// ── Presets (exact demo scenarios) ────────────────────────────
 
 interface Preset {
   id: string;
@@ -20,22 +18,37 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   {
-    id: 'sbi-kyc',
-    label: 'SBI KYC Scam',
+    id: 'critical-scam',
+    label: 'Critical Scam',
     icon: '🚨',
-    payload: highRisk[0].payload as ScanRequest,
+    payload: {
+      content: 'URGENT: Your SBI account KYC will be suspended in 2 hours. Verify immediately at https://sbi-kyc-verify.top',
+      sender: '+919876543210',
+      extracted_url: 'https://sbi-kyc-verify.top',
+      channel: 'sms',
+    },
   },
   {
-    id: 'electricity',
-    label: 'Electricity Threat',
-    icon: '⚡',
-    payload: highRisk[1].payload as ScanRequest,
-  },
-  {
-    id: 'hdfc-otp',
-    label: 'Legit Bank OTP',
+    id: 'verified-safe',
+    label: 'Verified Safe',
     icon: '🛡️',
-    payload: safe[0].payload as ScanRequest,
+    payload: {
+      content: 'Your OTP for HDFC Bank transaction is 482913. Valid for 10 mins. Do not share this OTP with anyone.',
+      sender: 'VM-HDFCBK',
+      extracted_url: null,
+      channel: 'sms',
+    },
+  },
+  {
+    id: 'gsm-impersonation',
+    label: 'GSM Impersonation',
+    icon: '⚠️',
+    payload: {
+      content: 'Your electricity connection will be disconnected today due to unpaid bill. Contact immediately to avoid disconnection.',
+      sender: '+919812345678',
+      extracted_url: null,
+      channel: 'sms',
+    },
   },
 ];
 
