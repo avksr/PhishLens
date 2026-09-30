@@ -16,8 +16,6 @@ from shared.models import (
     RiskTierEnum,
     ActionRequiredEnum,
     AgentStatusEnum,
-    IntentAgentResult,
-    SenderCategoryEnum
 )
 from core.orchestrator import run_pipeline
 from core.db_logger import mask_pii
@@ -25,9 +23,12 @@ from core.db_logger import mask_pii
 
 @pytest.mark.asyncio
 async def test_pipeline_e2e_high_risk_scam():
-    """Send high-risk SBI KYC message; verify pipeline executes in < 3500ms, returns risk_tier in ['HIGH_RISK', 'CRITICAL']."""
+    """Send high-risk SBI KYC message; verify pipeline executes in < 3500ms and flags high risk."""
     req = ScanRequest(
-        content="Dear Customer, Your SBI account has been suspended due to pending KYC update. Submit PAN and verify OTP at https://sbi-kyc-verify.top within 2 hours.",
+        content=(
+            "Dear Customer, Your SBI account has been suspended due to pending KYC update. "
+            "Submit PAN and verify OTP at https://sbi-kyc-verify.top within 2 hours."
+        ),
         sender="+919823145678",
         extracted_url="https://sbi-kyc-verify.top",
         channel=ChannelEnum.SMS
@@ -62,7 +63,7 @@ async def test_pipeline_e2e_benign_otp():
 
 @pytest.mark.asyncio
 async def test_pipeline_resilience_agent_failure():
-    """Mock one agent to raise a TimeoutError; verify orchestrator does NOT crash, recovers gracefully, and returns a valid ScanResponse."""
+    """Mock agent TimeoutError; verify orchestrator does NOT crash and returns ScanResponse."""
     async def mock_timeout_agent(req):
         raise asyncio.TimeoutError("Simulated agent timeout")
 

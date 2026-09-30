@@ -617,6 +617,63 @@
       opacity: 1;
       transform: translateY(0);
     }
+
+    /* Audit Log Modal */
+    .audit-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      padding: 1.5rem;
+    }
+    .audit-modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .audit-modal-card {
+      background: #0d1527;
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      box-shadow: 0 0 50px rgba(0, 240, 255, 0.15);
+      border-radius: 16px;
+      max-width: 950px;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .audit-table-wrap {
+      overflow-y: auto;
+      padding: 1rem 1.5rem;
+    }
+    .audit-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      font-family: var(--font-mono);
+    }
+    .audit-table th {
+      text-align: left;
+      padding: 0.75rem 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--cyan);
+      font-family: var(--font-ui);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .audit-table td {
+      padding: 0.65rem 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+    }
   </style>
 </head>
 <body>
@@ -630,9 +687,10 @@
       </div>
     </div>
     <div class="header-badges">
-      <div class="tag tag-live" id="status-tag">Engine Ready (< 15ms)</div>
+      <div class="tag tag-live" id="status-tag">Engine Ready (&lt; 15ms)</div>
       <div class="tag">GIGW 3.0 Zero-Trust</div>
       <div class="tag">Bilingual (EN / HI)</div>
+      <button class="tag" id="btn-open-audit" style="cursor: pointer; background: rgba(0, 240, 255, 0.15); border: 1px solid var(--cyan); color: var(--cyan); font-weight: 700;">📑 Live Audit Feed</button>
     </div>
   </header>
 
@@ -790,6 +848,40 @@
 
   <div class="toast" id="toast">📋 Pre-formatted 1930 report copied to clipboard!</div>
 
+  <!-- Audit Log Modal -->
+  <div class="audit-modal-overlay" id="audit-modal">
+    <div class="audit-modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+        <div>
+          <h3 style="font-size: 1.15rem; color: #fff; display: flex; align-items: center; gap: 8px;">📑 Tamper-Evident Audit Feed <span style="font-size: 0.75rem; background: rgba(0,240,255,0.15); color: var(--cyan); padding: 2px 8px; border-radius: 4px; font-family: var(--font-mono);">GIGW 3.0 PII MASKED</span></h3>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">Live inspection buffer querying SQLite audit storage via /api/v1/audit/recent</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-refresh-audit" style="background: rgba(0, 240, 255, 0.15); color: var(--cyan); border: 1px solid var(--cyan); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600;">🔄 Refresh</button>
+          <button id="btn-close-audit" style="background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600;">✕ Close</button>
+        </div>
+      </div>
+      <div class="audit-table-wrap">
+        <table class="audit-table">
+          <thead>
+            <tr>
+              <th style="width: 140px;">Timestamp</th>
+              <th style="width: 130px;">Sender</th>
+              <th>Content (PII Masked)</th>
+              <th style="width: 70px; text-align: center;">Score</th>
+              <th style="width: 100px; text-align: center;">Tier</th>
+              <th style="width: 80px; text-align: right;">Latency</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table-body">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading scan audit records...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
   <script>
     const API_ENDPOINT = "/api/v1/scan";
 
@@ -826,8 +918,15 @@
     const btnDismissModal = document.getElementById("btn-dismiss-modal");
     const toast = document.getElementById("toast");
 
+    const auditModal = document.getElementById("audit-modal");
+    const btnOpenAudit = document.getElementById("btn-open-audit");
+    const btnCloseAudit = document.getElementById("btn-close-audit");
+    const btnRefreshAudit = document.getElementById("btn-refresh-audit");
+    const auditTableBody = document.getElementById("audit-table-body");
+
     let currentScanResponse = null;
     let activeLang = "EN";
+
 
     // Presets
     const PRESETS = {
@@ -1028,10 +1127,61 @@ Reported via PhishLens Pre-Transaction Defense Shield.`;
       });
     };
 
+    // ── Audit Log Management (GIGW 3.0 SQLite Feed) ──
+    async function loadAuditLogs() {
+      auditTableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--cyan); padding: 1.5rem;">Fetching records from /api/v1/audit/recent...</td></tr>`;
+      try {
+        const res = await fetch("/api/v1/audit/recent?limit=15");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (!data || data.length === 0) {
+          auditTableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No scans recorded yet. Run an evaluation to see live audit logs.</td></tr>`;
+          return;
+        }
+        auditTableBody.innerHTML = data.map(item => {
+          let tierColor = "#10B981";
+          if (item.risk_tier === "CRITICAL") tierColor = "#FF3366";
+          else if (item.risk_tier === "HIGH_RISK") tierColor = "#FF9900";
+          else if (item.risk_tier === "CAUTION") tierColor = "#F59E0B";
+
+          const cleanTime = (item.timestamp || "").substring(11, 19) || item.timestamp;
+          const cleanSender = item.sender_masked || "N/A";
+          const rawContent = item.content_masked || "";
+          const snippet = rawContent.length > 60 ? rawContent.substring(0, 60) + "..." : rawContent;
+
+          return `<tr>
+            <td style="color: var(--text-muted);">${cleanTime}</td>
+            <td style="color: var(--cyan); font-weight: 600;">${cleanSender}</td>
+            <td title="${rawContent.replace(/"/g, '&quot;')}">${snippet}</td>
+            <td style="text-align: center; font-weight: 700; color: ${tierColor};">${item.overall_risk_score}</td>
+            <td style="text-align: center;"><span style="background: ${tierColor}20; color: ${tierColor}; border: 1px solid ${tierColor}50; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">${item.risk_tier}</span></td>
+            <td style="text-align: right; color: var(--text-muted);">${Math.round(item.latency_ms || 0)}ms</td>
+          </tr>`;
+        }).join("");
+      } catch (err) {
+        auditTableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #FF3366; padding: 1.5rem;">Failed to load audit records: ${err.message}</td></tr>`;
+      }
+    }
+
+    if (btnOpenAudit) {
+      btnOpenAudit.onclick = () => {
+        auditModal.classList.add("active");
+        loadAuditLogs();
+      };
+    }
+    if (btnCloseAudit) btnCloseAudit.onclick = () => auditModal.classList.remove("active");
+    if (btnRefreshAudit) btnRefreshAudit.onclick = () => loadAuditLogs();
+    if (auditModal) {
+      auditModal.onclick = (e) => {
+        if (e.target === auditModal) auditModal.classList.remove("active");
+      };
+    }
+
     // Auto-load SBI preset on first load for demonstration
     window.onload = () => {
       loadPreset("sbi");
     };
   </script>
+
 </body>
 </html>

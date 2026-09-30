@@ -257,5 +257,44 @@
     "official_domains": [
       "adanielectricity.in"
     ]
+  },
+  "BSES": {
+    "brand_name": "BSES Delhi",
+    "keywords": ["bses", "bsesdelhi"],
+    "official_domains": [
+      "bsesdelhi.com"
+    ]
+  },
+  "UPPCL": {
+    "brand_name": "UPPCL Electricity",
+    "keywords": ["uppcl", "up energy"],
+    "official_domains": [
+      "uppcl.org",
+      "upenergy.in"
+    ]
+  },
+  "TANGEDCO": {
+    "brand_name": "TANGEDCO Tamil Nadu",
+    "keywords": ["tangedco"],
+    "official_domains": [
+      "tangedco.gov.in"
+    ]
+  },
+  "IRCTC": {
+    "brand_name": "IRCTC Indian Railways",
+    "keywords": ["irctc", "indianrail"],
+    "official_domains": [
+      "irctc.co.in",
+      "indianrail.gov.in"
+    ]
+  },
+  "INDIAPOST": {
+    "brand_name": "India Post / IPPB",
+    "keywords": ["indiapost", "ippb"],
+    "official_domains": [
+      "indiapost.gov.in",
+      "ippbonline.com"
+    ]
   }
 }
+
