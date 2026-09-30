@@ -94,6 +94,7 @@ async def init_db():
             await db.commit()
     else:
         loop = asyncio.get_running_loop()
+
         def _sync_init():
             with sqlite3.connect(DB_PATH) as conn:
                 conn.execute(sql)
@@ -156,6 +157,7 @@ async def log_scan_audit(resp: ScanResponse, req: ScanRequest):
                 await db.commit()
         else:
             loop = asyncio.get_running_loop()
+
             def _insert():
                 with sqlite3.connect(DB_PATH) as conn:
                     conn.execute(query, params)
@@ -164,3 +166,37 @@ async def log_scan_audit(resp: ScanResponse, req: ScanRequest):
 
     except Exception as exc:
         logger.error(f"Error logging scan to SQLite: {exc}", exc_info=True)
+
+
+async def get_recent_scans(limit: int = 10) -> list[dict]:
+    """
+    Retrieve recent PII-sanitized audit records for evaluator inspection.
+    """
+    limit = max(1, min(limit, 50))
+    query = """
+    SELECT scan_id, timestamp, sender_masked, content_masked,
+           overall_risk_score, risk_tier, action_required, verdict, latency_ms
+    FROM scan_audit
+    ORDER BY timestamp DESC
+    LIMIT ?
+    """
+    try:
+        if HAS_AIOSQLITE:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(query, (limit,)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        else:
+            loop = asyncio.get_running_loop()
+
+            def _fetch():
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(query, (limit,))
+                    return [dict(row) for row in cursor.fetchall()]
+            return await loop.run_in_executor(None, _fetch)
+    except Exception as exc:
+        logger.error(f"Error reading scan audits from SQLite: {exc}", exc_info=True)
+        return []

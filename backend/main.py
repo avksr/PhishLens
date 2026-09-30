@@ -1,6 +1,7 @@
 import os
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+import logging
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -8,6 +9,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from core.limiter import limiter
 from api.routes import router as api_router
+
+logger = logging.getLogger("phishlens.api")
 
 FRONTEND_HTML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html"))
 
@@ -17,10 +20,27 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Register slowapi state, handler, and middleware for GIGW 3.0 DDoS compliance
+
+# GIGW 3.0 & CERT-In Zero Information Leakage Exception Handler:
+# Ensures raw stack traces and server-side file paths are never exposed to the client.
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled server error on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred during request processing. Please try again later.",
+            "path": request.url.path
+        }
+    )
+
+
+# Register slowapi state, handler, and middleware
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
 
 # Enable CORS for frontend integration
 app.add_middleware(
