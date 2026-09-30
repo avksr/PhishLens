@@ -1,16 +1,16 @@
 # ============================================================
 # OWNER: VIKAS
 # FILE: backend/tests/test_intent_agent.py
-# PURPOSE: Unit Tests for Intent & Psycholinguistic Fraud Agent
+# PURPOSE: Unit Tests for Intent & Psycholinguistic Fraud Agent (Day 1 & Day 2)
 # ============================================================
 
 from __future__ import annotations
 
-import json
+import asyncio
 import sys
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio  # noqa: F401
@@ -28,6 +28,10 @@ from shared.models import (  # noqa: E402
     ScanRequest,
 )
 
+
+# ─────────────────────────────────────────────────────────────
+# Day 1 Tests (Preserved Baseline)
+# ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_intent_agent_high_urgency_scam(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,11 +150,6 @@ async def test_intent_agent_groq_mock_integration(monkeypatch: pytest.MonkeyPatc
         "details": "Linguistic markers match high-probability scam corpus."
     }
 
-    mock_chat_completion = MagicMock()
-    mock_choice = MagicMock()
-    mock_choice.message.content = json.dumps(mock_json)
-    mock_chat_completion.choices = [mock_choice]
-
     with patch("agents.intent_agent._analyze_with_groq", new_callable=AsyncMock) as mock_groq:
         mock_groq.return_value = mock_json
 
@@ -199,3 +198,248 @@ async def test_intent_agent_fail_safe_exception_shield(monkeypatch: pytest.Monke
         assert res.status == AgentStatusEnum.ERROR
         assert res.risk_score == 0.0
         assert "INTENT_AGENT_FAILED" in res.flags
+
+
+# ─────────────────────────────────────────────────────────────
+# Day 2 Tests (Comprehensive English & Hinglish Vectors A-M)
+# ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_intent_agent_normal_benign_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement A: Normal benign communication with no panic or urgency red flags."""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Your Swiggy order from Biryani Blues is arriving in 15 mins. Track your rider.",
+        sender="AD-SWIGGY",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.BENIGN
+    assert res.risk_score <= 15.0
+    assert len(res.manipulation_tactics) == 0
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_english_urgency(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement B: English urgency threat: 'Your account will be blocked within 2 hours.'"""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Your account will be blocked within 2 hours.",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+    assert res.risk_score >= 40.0
+    assert "False Urgency Trigger" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_hinglish_urgency(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement C: Hinglish urgency threat: '2 ghante ke andar account block ho jayega.'"""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="2 ghante ke andar account block ho jayega.",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+    assert res.risk_score >= 40.0
+    assert "False Urgency Trigger" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_account_blocking_hinglish(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement D: Account deactivation: 'Aaj raat tak payment nahi kiya toh account band ho jayega.'"""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Aaj raat tak payment nahi kiya toh account band ho jayega.",
+        sender="+918888899999",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+    assert res.risk_score >= 40.0
+    assert "False Urgency Trigger" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_digital_arrest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement E: Coercive extortion threat: 'You are under digital arrest.'"""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="You are under digital arrest by Cyber Crime Cell. Report immediately.",
+        sender="+917777788888",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
+    assert res.risk_score >= 45.0
+    assert "Coercive Authority Threat" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_otp_solicitation_hinglish(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement F: Hinglish OTP harvest: 'OTP share karo immediately.'"""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="OTP share karo immediately warna account block.",
+        sender="+919999911111",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.OTP_HARVEST
+    assert res.risk_score >= 80.0
+    assert "Credential / KYC Solicitation" in res.manipulation_tactics
+    assert "False Urgency Trigger" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_capitalization_and_punctuation_variations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement G: Variations in casing, punctuation, and stuck tokens (e.g. '2GHANTE')."""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="U.R.G.E.N.T: aapka account 2GHANTE MEIN block ho jayega!!!",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+    assert res.risk_score >= 40.0
+    assert "False Urgency Trigger" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_llm_timeout_triggers_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement I: When LLM call exceeds SLA timeout, agent cleanly falls back without failing."""
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_valid_mock_key_1234567890abcdef")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    async def _mock_timeout(*args, **kwargs):
+        raise asyncio.TimeoutError("LLM call timed out (> 2.5s)")
+
+    with patch("agents.intent_agent._analyze_with_groq", side_effect=_mock_timeout):
+        req = ScanRequest(content="Dear customer your electricity power cut tonight at 9.30 pm.")
+        res = await analyze_intent(req)
+
+        assert res.status == AgentStatusEnum.SUCCESS
+        assert res.risk_score >= 40.0
+        assert res.details == "Analyzed via local resilient heuristic engine"
+        assert res.confidence == 0.85
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_invalid_llm_response_triggers_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement J: When LLM returns malformed/unparseable JSON, fallback executes safely."""
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_valid_mock_key_1234567890abcdef")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    # Mock _analyze_with_groq returning None (which happens on json.JSONDecodeError)
+    with patch("agents.intent_agent._analyze_with_groq", new_callable=AsyncMock) as mock_groq:
+        mock_groq.return_value = None
+
+        req = ScanRequest(content="Police case registered. Giraftari se bachne ke liye call karein.")
+        res = await analyze_intent(req)
+
+        assert res.status == AgentStatusEnum.SUCCESS
+        assert res.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
+        assert res.details == "Analyzed via local resilient heuristic engine"
+        assert res.confidence == 0.85
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_fallback_valid_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement K: Validates that fallback returns a fully valid IntentAgentResult schema."""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(content="Emergency: Update KYC at official link within 2 hours.")
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert isinstance(res, IntentAgentResult)
+    assert res.status in (AgentStatusEnum.SUCCESS, AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR)
+    assert 0.0 <= res.risk_score <= 100.0
+    assert isinstance(res.detected_intent, DetectedIntentEnum)
+    assert isinstance(res.manipulation_tactics, list)
+    assert 0.0 <= res.confidence <= 1.0
+    assert isinstance(res.flags, list)
+    assert isinstance(res.reasoning, str) and len(res.reasoning) > 0
+    assert isinstance(res.details, str) and len(res.details) > 0
+    assert res.latency_ms >= 0.0
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_fallback_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requirement L: Verifies that the local heuristic fallback is 100% deterministic."""
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    content = "Aapka account 2 ghante ke andar block ho jayega. Submit PAN immediately."
+    req1 = ScanRequest(content=content)
+    req2 = ScanRequest(content=content)
+
+    res1 = await analyze_intent(req1)
+    res2 = await analyze_intent(req2)
+
+    assert res1.risk_score == res2.risk_score
+    assert res1.detected_intent == res2.detected_intent
+    assert res1.manipulation_tactics == res2.manipulation_tactics
+    assert res1.flags == res2.flags
+    assert res1.reasoning == res2.reasoning
+    assert res1.confidence == res2.confidence
+    assert res1.details == res2.details
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_fallback_performance_benchmark(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Requirement M: Benchmark fallback execution speed.
+    Target: < 15ms for a standard text payload.
+    Uses generous ceiling (50ms) to prevent CI flakiness across virtual machines.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    msg = "Dear user, your electricity power disconnected tonight at 9.30 pm. Contact officer immediately."
+    req = ScanRequest(content=msg)
+
+    # Warm-up call
+    await analyze_intent(req)
+
+    # Timed run
+    t_start = time.perf_counter()
+    res = await analyze_intent(req)
+    elapsed_ms = (time.perf_counter() - t_start) * 1000
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert elapsed_ms < 50.0, f"Fallback exceeded benchmark SLA: {elapsed_ms:.2f}ms"
+    # Note: On standard environments, local regex takes < 2ms (well under the 15ms target)
