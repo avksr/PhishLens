@@ -11,12 +11,8 @@ from core.limiter import limiter
 from api.routes import router as api_router
 
 logger = logging.getLogger("phishlens.api")
-<<<<<<< HEAD
-=======
 
-# GIGW 3.0 / DDoS Compliance: 30 requests per minute rate-limiter per client IP
-limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
->>>>>>> origin/main
+
 
 FRONTEND_HTML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html"))
 
