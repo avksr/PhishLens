@@ -2,10 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Request
 from shared.models import ScanRequest, ScanResponse
 from core.orchestrator import run_pipeline
 from core.db_logger import get_recent_scans
-<<<<<<< HEAD
 from core.limiter import limiter
-=======
->>>>>>> origin/main
 
 router = APIRouter(prefix="/api/v1", tags=["Scan & Interception"])
 
