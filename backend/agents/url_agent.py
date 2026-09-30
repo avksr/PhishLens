@@ -9,18 +9,28 @@ Performs multi-signal analysis of URLs extracted from suspicious messages:
   5. WHOIS domain-age check with LRU cache (graceful degradation on failure)
   6. Score normalisation and latency tracking
 
+Optimisations (v2):
+  - In-memory TTL-aware LRU domain-result cache: repeat domain lookups
+    return in <1 ms instead of re-running all analysis stages.
+  - Zero-downtime WHOIS fallback: RDAP/WHOIS timeouts degrade to local
+    TLD reputation scoring with a configurable penalty — no unhandled
+    exceptions ever propagate.
+
 Author : Atharv (URL Agent team)
 """
 
 from __future__ import annotations
 
 import asyncio
+import collections
 import functools
 import json
 import logging
 import re
+import threading
 import time
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -62,6 +72,7 @@ _RISK_HIGH_RISK_TLD = 35.0
 _RISK_TYPOSQUATTING = 50.0
 _RISK_NEW_DOMAIN = 40.0
 _RISK_HOMOGLYPH = 45.0
+_RISK_WHOIS_TIMEOUT_PENALTY = 15.0  # penalty when WHOIS fails but TLD is high-risk
 
 # WHOIS timeout (seconds)
 _WHOIS_TIMEOUT = 1.5
@@ -71,6 +82,10 @@ _NEW_DOMAIN_THRESHOLD_DAYS = 30
 
 # Minimum Levenshtein similarity ratio to flag as lookalike
 _SIMILARITY_THRESHOLD = 0.55
+
+# Domain-result cache settings
+_DOMAIN_CACHE_MAXSIZE = 4096
+_DOMAIN_CACHE_TTL_SECONDS = 300  # 5-minute TTL
 
 # ──────────────────────────────────────────────
 # Homoglyph / Confusable character map
@@ -161,6 +176,118 @@ def _load_brand_data() -> Dict:
         pass
     _brand_data_cache = data
     return data
+
+
+# ──────────────────────────────────────────────
+# In-Memory TTL-aware LRU Domain-Result Cache
+# ──────────────────────────────────────────────
+# Caches *complete* domain analysis results (TLD, typosquatting, homoglyph,
+# WHOIS — all signals) keyed by registered_domain.  Repeat scans of the
+# same domain skip every analysis stage and return in <1 ms.
+
+@dataclass(frozen=True)
+class _DomainCacheEntry:
+    """Immutable snapshot of a full domain analysis result."""
+    risk_score: float
+    tld_rep: "TldReputationEnum"  # forward ref resolved at runtime
+    is_typo: bool
+    target_brand: Optional[str]
+    is_homoglyph: bool
+    homoglyph_brand: Optional[str]
+    age_days: Optional[int]
+    flags: Tuple[str, ...]  # frozen for hashability
+    tld_delta: float
+    typo_delta: float
+    homoglyph_delta: float
+    age_delta: float
+    created_at: float = field(default_factory=time.monotonic)
+
+
+class _DomainResultCache:
+    """
+    Thread-safe, TTL-aware LRU cache for domain analysis results.
+
+    Parameters
+    ----------
+    maxsize : int
+        Maximum number of entries. Eviction follows LRU order.
+    ttl : float
+        Time-to-live in seconds.  Entries older than this are treated
+        as misses and evicted on access.
+    """
+
+    __slots__ = ("_maxsize", "_ttl", "_store", "_lock",
+                 "_hits", "_misses")
+
+    def __init__(self, maxsize: int = _DOMAIN_CACHE_MAXSIZE,
+                 ttl: float = _DOMAIN_CACHE_TTL_SECONDS) -> None:
+        self._maxsize = maxsize
+        self._ttl = ttl
+        self._store: collections.OrderedDict[str, _DomainCacheEntry] = (
+            collections.OrderedDict()
+        )
+        self._lock = threading.Lock()
+        self._hits = 0
+        self._misses = 0
+
+    # -- public API ---------------------------------------------------
+
+    def get(self, domain: str) -> Optional[_DomainCacheEntry]:
+        """Return the cached entry or ``None`` (miss / expired)."""
+        with self._lock:
+            entry = self._store.get(domain)
+            if entry is None:
+                self._misses += 1
+                return None
+            if (time.monotonic() - entry.created_at) > self._ttl:
+                # Expired — evict and treat as miss
+                del self._store[domain]
+                self._misses += 1
+                return None
+            # Move to end (most-recently-used)
+            self._store.move_to_end(domain)
+            self._hits += 1
+            return entry
+
+    def put(self, domain: str, entry: _DomainCacheEntry) -> None:
+        """Insert or update an entry, evicting LRU if at capacity."""
+        with self._lock:
+            if domain in self._store:
+                self._store.move_to_end(domain)
+            self._store[domain] = entry
+            while len(self._store) > self._maxsize:
+                self._store.popitem(last=False)  # evict oldest
+
+    def clear(self) -> None:
+        """Drop every cached entry and reset counters."""
+        with self._lock:
+            self._store.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def info(self) -> Dict[str, int]:
+        """Return cache statistics for monitoring."""
+        with self._lock:
+            return {
+                "hits": self._hits,
+                "misses": self._misses,
+                "size": len(self._store),
+                "maxsize": self._maxsize,
+            }
+
+
+# Module-level singleton
+_domain_cache = _DomainResultCache()
+
+
+def domain_cache_info() -> Dict[str, int]:
+    """Expose domain-result cache statistics for monitoring / testing."""
+    return _domain_cache.info()
+
+
+def domain_cache_clear() -> None:
+    """Clear the domain-result cache (useful for testing)."""
+    _domain_cache.clear()
 
 
 # ──────────────────────────────────────────────
@@ -512,7 +639,10 @@ def _check_typosquatting(
     return False, None, 0.0, []
 
 
-async def _check_whois_age(registered_domain: str) -> Tuple[Optional[int], float, List[str]]:
+async def _check_whois_age(
+    registered_domain: str,
+    suffix: str = "",
+) -> Tuple[Optional[int], float, List[str]]:
     """
     Look up domain creation date via the LRU-cached ``_lookup_domain_age()``.
 
@@ -520,10 +650,22 @@ async def _check_whois_age(registered_domain: str) -> Tuple[Optional[int], float
     ``_WHOIS_TIMEOUT`` second ceiling so the agent stays responsive.
     On cache hits, returns in sub-millisecond time.
 
+    **Zero-downtime fallback** — when RDAP / WHOIS times out or raises,
+    the function degrades gracefully to a local TLD reputation check:
+      * If the domain's TLD is already in the high-risk list, a
+        ``_RISK_WHOIS_TIMEOUT_PENALTY`` is applied so the overall risk
+        score still reflects suspicion.
+      * If the TLD is benign, the penalty is zero — no false positives.
+    This ensures the agent **never** raises an unhandled exception and
+    always returns a meaningful signal.
+
     Parameters
     ----------
     registered_domain : str
         The full registered domain (e.g. ``sbi-kyc-verify.top``).
+    suffix : str
+        The TLD suffix (e.g. ``top``), used for fallback scoring on
+        WHOIS failure.
 
     Returns ``(domain_age_days | None, score_delta, new_flags)``.
     """
@@ -533,8 +675,20 @@ async def _check_whois_age(registered_domain: str) -> Tuple[Optional[int], float
             loop.run_in_executor(None, _lookup_domain_age, registered_domain),
             timeout=_WHOIS_TIMEOUT,
         )
-    except (asyncio.TimeoutError, Exception):
-        return None, 0.0, []
+    except asyncio.TimeoutError:
+        logger.warning(
+            "WHOIS/RDAP timeout for '%s' (> %.1fs) — falling back to "
+            "local TLD reputation",
+            registered_domain, _WHOIS_TIMEOUT,
+        )
+        return _whois_fallback(registered_domain, suffix)
+    except Exception as exc:
+        logger.warning(
+            "WHOIS/RDAP error for '%s': %s — falling back to local TLD "
+            "reputation",
+            registered_domain, exc,
+        )
+        return _whois_fallback(registered_domain, suffix)
 
     if age_days is not None and age_days < _NEW_DOMAIN_THRESHOLD_DAYS:
         return (
@@ -545,6 +699,32 @@ async def _check_whois_age(registered_domain: str) -> Tuple[Optional[int], float
     return age_days, 0.0, []
 
 
+def _whois_fallback(
+    registered_domain: str,
+    suffix: str,
+) -> Tuple[Optional[int], float, List[str]]:
+    """
+    Local-only fallback when WHOIS/RDAP is unreachable.
+
+    If the domain's TLD sits on the high-risk list, a small penalty is
+    applied so the signal isn't silently lost.  Otherwise, return zero.
+    """
+    tlds = _load_high_risk_tlds()
+    suffix_lower = suffix.lower().lstrip(".")
+    if suffix_lower in tlds:
+        logger.info(
+            "WHOIS fallback: '%s' has high-risk TLD '.%s' — applying "
+            "%.0f-point penalty",
+            registered_domain, suffix_lower, _RISK_WHOIS_TIMEOUT_PENALTY,
+        )
+        return (
+            None,
+            _RISK_WHOIS_TIMEOUT_PENALTY,
+            [f"WHOIS_TIMEOUT_FALLBACK (high-risk TLD .{suffix_lower})"],
+        )
+    return None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]
+
+
 # ──────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────
@@ -552,6 +732,10 @@ async def _check_whois_age(registered_domain: str) -> Tuple[Optional[int], float
 async def analyze_url(req: ScanRequest) -> UrlAgentResult:
     """
     Analyse the URL in *req* and return a fully populated ``UrlAgentResult``.
+
+    Uses the in-memory TTL-aware domain-result cache (``_domain_cache``)
+    so that repeat scans of the same registered domain return in <1 ms
+    without re-running TLD, typosquatting, homoglyph, or WHOIS checks.
 
     This function **never** raises an unhandled exception.
     """
@@ -571,10 +755,33 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
         # ── Step 2: Parse domain ──
         subdomain, domain_label, registered_domain, suffix = _parse_domain(url)
 
+        # ── Step 2b: Domain-result cache probe ──
+        cached = _domain_cache.get(registered_domain)
+        if cached is not None:
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.debug(
+                "Domain cache HIT for '%s' (%.3f ms)",
+                registered_domain, elapsed,
+            )
+            return UrlAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                risk_score=round(cached.risk_score, 2),
+                url_analyzed=url,
+                domain=registered_domain,
+                tld=suffix or None,
+                tld_reputation=cached.tld_rep,
+                is_typosquatting=cached.is_typo,
+                target_brand=cached.target_brand,
+                domain_age_days=cached.age_days,
+                flags=list(cached.flags),
+                details=f"Analysed {url}; {len(cached.flags)} flag(s) raised [cached]",
+                latency_ms=round(elapsed, 2),
+            )
+
+        # ── Step 3: TLD reputation ──
         risk_score = 0.0
         flags: List[str] = []
 
-        # ── Step 3: TLD reputation ──
         tld_rep, tld_delta, tld_flags = _check_tld_reputation(suffix)
         risk_score += tld_delta
         flags.extend(tld_flags)
@@ -598,13 +805,34 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 is_typo = True
                 target_brand = homoglyph_brand
 
-        # ── Step 5: WHOIS age ──
-        age_days, age_delta, age_flags = await _check_whois_age(registered_domain)
+        # ── Step 5: WHOIS age (with zero-downtime fallback) ──
+        age_days, age_delta, age_flags = await _check_whois_age(
+            registered_domain, suffix=suffix,
+        )
         risk_score += age_delta
         flags.extend(age_flags)
 
         # ── Step 6: Normalise score ──
         risk_score = max(0.0, min(100.0, risk_score))
+
+        # ── Step 7: Populate domain-result cache ──
+        _domain_cache.put(
+            registered_domain,
+            _DomainCacheEntry(
+                risk_score=risk_score,
+                tld_rep=tld_rep,
+                is_typo=is_typo,
+                target_brand=target_brand,
+                is_homoglyph=is_homoglyph,
+                homoglyph_brand=homoglyph_brand,
+                age_days=age_days,
+                flags=tuple(flags),
+                tld_delta=tld_delta,
+                typo_delta=typo_delta,
+                homoglyph_delta=homoglyph_delta,
+                age_delta=age_delta,
+            ),
+        )
 
         elapsed = (time.perf_counter() - start) * 1000
         return UrlAgentResult(
