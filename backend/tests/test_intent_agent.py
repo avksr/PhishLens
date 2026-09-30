@@ -1,7 +1,7 @@
 # ============================================================
 # OWNER: VIKAS
 # FILE: backend/tests/test_intent_agent.py
-# PURPOSE: Unit Tests for Intent & Psycholinguistic Fraud Agent (Day 1 & Day 2)
+# PURPOSE: Unit Tests for Intent & Psycholinguistic Fraud Agent (Day 1, Day 2 & Day 3)
 # ============================================================
 
 from __future__ import annotations
@@ -443,3 +443,271 @@ async def test_intent_agent_fallback_performance_benchmark(monkeypatch: pytest.M
     assert res.status == AgentStatusEnum.SUCCESS
     assert elapsed_ms < 50.0, f"Fallback exceeded benchmark SLA: {elapsed_ms:.2f}ms"
     # Note: On standard environments, local regex takes < 2ms (well under the 15ms target)
+
+
+# ─────────────────────────────────────────────────────────────
+# Day 3 Tests (Indian Coercion, Utility & Task Scams + False Positives)
+# ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_intent_agent_electricity_scam(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 1: Indian Utility / Electricity Bill Scam.
+    Payload: "Aapka bijli bill update nahi hua, connection kat diya jayega."
+    Expected: PANIC_URGENCY, risk_score >= 40.0, False Urgency Trigger tactic.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Aapka bijli bill update nahi hua, connection kat diya jayega.",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 40.0
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+    assert "False Urgency Trigger" in res.manipulation_tactics
+    assert "PSYCHOLOGICAL_URGENCY_TRIGGER" in res.flags
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_electricity_hinglish_variation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 2: Electricity Hinglish Disconnection Variation.
+    Payload: "2 ghante ke andar bill pay karo warna light kaat di jayegi."
+    Expected: PANIC_URGENCY, risk_score >= 40.0.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="2 ghante ke andar bill pay karo warna light kaat di jayegi.",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 40.0
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+    assert "False Urgency Trigger" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_supreme_court_legal_threat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 3: Supreme Court / Legal Threat Coercion.
+    Payload: "Aapke naam pe Supreme Court ka warrant hai, abhi payment karo."
+    Expected: FINANCIAL_EXTORTION, risk_score >= 45.0, Coercive Authority Threat.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Aapke naam pe Supreme Court ka warrant hai, abhi payment karo.",
+        sender="+919988776655",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 45.0
+    assert res.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
+    assert "Coercive Authority Threat" in res.manipulation_tactics
+    assert "AUTHORITY_COERCION_FLAG" in res.flags
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_digital_arrest_variation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 4: Digital Arrest Warrant Variation.
+    Payload: "Digital arrest warrant issue hua hai."
+    Expected: FINANCIAL_EXTORTION, risk_score >= 45.0.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Digital arrest warrant issue hua hai.",
+        sender="+918877665544",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 45.0
+    assert res.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
+    assert "Coercive Authority Threat" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_youtube_telegram_task_scam(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 5: YouTube Video Like / Telegram Screenshot Scam.
+    Payload: "YouTube videos like karo aur screenshot Telegram pe bhejo."
+    Expected: LOTTERY_REWARD, risk_score >= 35.0, Fraudulent Incentive tactic.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="YouTube videos like karo aur screenshot Telegram pe bhejo.",
+        sender="+919123456780",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 35.0
+    assert res.detected_intent == DetectedIntentEnum.LOTTERY_REWARD
+    assert "Fraudulent Incentive / Advance Fee" in res.manipulation_tactics
+    assert "LOTTERY_JOB_SCAM_FLAG" in res.flags
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_telegram_earning_scam(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 6: Telegram Task / Daily Earning Fraud.
+    Payload: "Telegram task complete karo aur daily earning kamao."
+    Expected: LOTTERY_REWARD, risk_score >= 35.0.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Telegram task complete karo aur daily earning kamao.",
+        sender="+919123456781",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 35.0
+    assert res.detected_intent == DetectedIntentEnum.LOTTERY_REWARD
+    assert "Fraudulent Incentive / Advance Fee" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_task_recharge_deposit_scam(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 7: Task Recharge / Advance Fee Unlock Scam.
+    Payload: "Pehle recharge karo tab task unlock hoga."
+    Expected: LOTTERY_REWARD, risk_score >= 35.0.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="Pehle recharge karo tab task unlock hoga.",
+        sender="+919123456782",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 35.0
+    assert res.detected_intent == DetectedIntentEnum.LOTTERY_REWARD
+    assert "Fraudulent Incentive / Advance Fee" in res.manipulation_tactics
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_false_positive_youtube_video(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 8: False Positive Prevention - YouTube & Electricity in educational context.
+    Payload: "I watched a YouTube video about electricity billing."
+    Expected: BENIGN, risk_score <= 15.0, no scam tactics.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="I watched a YouTube video about electricity billing.",
+        sender="Friend",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score <= 15.0
+    assert res.detected_intent == DetectedIntentEnum.BENIGN
+    assert len(res.manipulation_tactics) == 0
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_false_positive_supreme_court_news(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 9: False Positive Prevention - Supreme Court in news/media context.
+    Payload: "The Supreme Court judgment was discussed in the news."
+    Expected: BENIGN, risk_score <= 15.0, no coercive authority flag.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="The Supreme Court judgment was discussed in the news.",
+        sender="NewsAlert",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score <= 15.0
+    assert res.detected_intent == DetectedIntentEnum.BENIGN
+    assert len(res.manipulation_tactics) == 0
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_false_positive_paid_electricity_bill(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 10: False Positive Prevention - Legitimate bill payment confirmation.
+    Payload: "I paid my electricity bill through the official app."
+    Expected: BENIGN, risk_score <= 15.0, no urgency or power cut tactics.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="I paid my electricity bill through the official app.",
+        sender="Self",
+        channel=ChannelEnum.SMS,
+    )
+    res: IntentAgentResult = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score <= 15.0
+    assert res.detected_intent == DetectedIntentEnum.BENIGN
+    assert len(res.manipulation_tactics) == 0
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_day3_extended_performance_benchmark(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 3 Test 11: Extended benchmark verifying all new Indian scam patterns run under 15ms.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    day3_messages = [
+        "Aapka bijli bill update nahi hua, connection kat diya jayega.",
+        "2 ghante ke andar bill pay karo warna light kaat di jayegi.",
+        "Aapke naam pe Supreme Court ka warrant hai, abhi payment karo.",
+        "Digital arrest warrant issue hua hai.",
+        "YouTube videos like karo aur screenshot Telegram pe bhejo.",
+        "Telegram task complete karo aur daily earning kamao.",
+        "Pehle recharge karo tab task unlock hoga.",
+        "I watched a YouTube video about electricity billing.",
+        "The Supreme Court judgment was discussed in the news.",
+        "I paid my electricity bill through the official app.",
+    ]
+
+    for msg in day3_messages:
+        req = ScanRequest(content=msg)
+        t_start = time.perf_counter()
+        res = await analyze_intent(req)
+        elapsed_ms = (time.perf_counter() - t_start) * 1000
+
+        assert res.status == AgentStatusEnum.SUCCESS
+        assert elapsed_ms < 50.0, f"Payload exceeded SLA: {elapsed_ms:.2f}ms for '{msg}'"
