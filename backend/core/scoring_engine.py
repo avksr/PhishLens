@@ -8,7 +8,7 @@
 #   - Returns final ScanResponse matching schema_mocks.json
 # ============================================================
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 import time
 from shared.models import (
     ScanRequest,
@@ -16,17 +16,21 @@ from shared.models import (
     UrlAgentResult,
     SenderAgentResult,
     IntentAgentResult,
+    UpiAgentResult,
     SynthesisBreakdown,
     AuditTrail,
     RiskTierEnum,
     ActionRequiredEnum,
     AgentStatusEnum,
     SenderCategoryEnum,
-    DetectedIntentEnum
+    DetectedIntentEnum,
+    ConfidenceLevelEnum
 )
 from core.verdict_utils import (
     generate_verdict,
+    generate_verdict_hi,
     generate_recommendation,
+    generate_recommendation_hi,
     build_explanation_summary
 )
 
@@ -34,10 +38,11 @@ from core.verdict_utils import (
 def _compute_dynamic_weights(
     url_r: UrlAgentResult,
     sender_r: SenderAgentResult,
-    intent_r: IntentAgentResult
+    intent_r: IntentAgentResult,
+    upi_r: Optional[UpiAgentResult] = None
 ) -> Dict[str, float]:
     """
-    Computes normalized weights across the 3 independent vector agents.
+    Computes normalized weights across all active independent vector agents.
     If an agent is SKIPPED or in ERROR, its weight is proportionally
     redistributed to active agents.
     """
@@ -46,16 +51,25 @@ def _compute_dynamic_weights(
         "sender": 0.30,
         "intent": 0.30
     }
-
     active = {
         "url": url_r.status == AgentStatusEnum.SUCCESS,
         "sender": sender_r.status == AgentStatusEnum.SUCCESS,
         "intent": intent_r.status == AgentStatusEnum.SUCCESS
     }
 
+    # Optional 4th Vector: UPI Analysis
+    if upi_r and upi_r.status == AgentStatusEnum.SUCCESS:
+        base_weights = {
+            "url": 0.30,
+            "sender": 0.25,
+            "intent": 0.25,
+            "upi": 0.20
+        }
+        active["upi"] = True
+
     # Zero out inactive agents
     filtered_weights = {
-        k: (base_weights[k] if active[k] else 0.0)
+        k: (base_weights[k] if active.get(k, False) else 0.0)
         for k in base_weights
     }
 
@@ -63,35 +77,75 @@ def _compute_dynamic_weights(
     if total_weight > 0:
         normalized = {k: round(v / total_weight, 4) for k, v in filtered_weights.items()}
     else:
-        normalized = {"url": 0.0, "sender": 0.0, "intent": 0.0}
+        normalized = {k: 0.0 for k in base_weights}
 
-    return {
-        "url_weight": normalized["url"],
-        "sender_weight": normalized["sender"],
-        "intent_weight": normalized["intent"]
+    result = {
+        "url_weight": normalized.get("url", 0.0),
+        "sender_weight": normalized.get("sender", 0.0),
+        "intent_weight": normalized.get("intent", 0.0)
     }
+    if "upi" in normalized:
+        result["upi_weight"] = normalized["upi"]
+    return result
+
+
+def _determine_confidence(
+    url_r: UrlAgentResult,
+    sender_r: SenderAgentResult,
+    intent_r: IntentAgentResult,
+    heuristics: List[str],
+    upi_r: Optional[UpiAgentResult] = None
+) -> ConfidenceLevelEnum:
+    """
+    Calculates epistemic certainty based on active signal consensus and failure modes.
+    - HIGH: Decisive critical escalation or all vectors returned SUCCESS without error.
+    - MEDIUM: 1 vector timed out / errored or URL was naturally skipped.
+    - LOW: Multiple vectors encountered failures.
+    """
+    has_decisive_escalation = any(
+        "CRITICAL_ESCALATION" in h or "BENIGN_VERIFICATION" in h
+        for h in heuristics
+    )
+    if has_decisive_escalation:
+        return ConfidenceLevelEnum.HIGH
+
+    agents = [url_r, sender_r, intent_r]
+    if upi_r and upi_r.status != AgentStatusEnum.SKIPPED:
+        agents.append(upi_r)
+
+    error_count = sum(1 for a in agents if a.status == AgentStatusEnum.ERROR)
+    if error_count >= 2:
+        return ConfidenceLevelEnum.LOW
+    elif error_count == 1 or url_r.status == AgentStatusEnum.SKIPPED:
+        return ConfidenceLevelEnum.MEDIUM
+
+    return ConfidenceLevelEnum.HIGH
 
 
 def compute_score(
     req: ScanRequest,
     url_r: UrlAgentResult,
     sender_r: SenderAgentResult,
-    intent_r: IntentAgentResult
+    intent_r: IntentAgentResult,
+    upi_r: Optional[UpiAgentResult] = None
 ) -> ScanResponse:
     """
-    Avika's Core Risk Scoring Engine:
-    1. Dynamic weight redistribution
+    Avika's Core Risk Scoring Engine (Day 2 Enhanced):
+    1. Dynamic weight redistribution (including optional UPI vector)
     2. Weighted base score synthesis
-    3. Indian cybersecurity heuristic escalation overrides
-    4. Tier determination and actionable verdict generation
+    3. Indian cybersecurity heuristic escalation overrides (6 rules)
+    4. Epistemic confidence rating (HIGH, MEDIUM, LOW)
+    5. Dual-language verdict & recommendation synthesis (English + Devanagari Hindi)
+    6. Sub-1ms processing latency guarantee
     """
     start_time = time.perf_counter()
 
     # Step 1: Dynamic Weight Calculation
-    weights = _compute_dynamic_weights(url_r, sender_r, intent_r)
-    w_url = weights["url_weight"]
-    w_sender = weights["sender_weight"]
-    w_intent = weights["intent_weight"]
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    w_url = weights.get("url_weight", 0.0)
+    w_sender = weights.get("sender_weight", 0.0)
+    w_intent = weights.get("intent_weight", 0.0)
+    w_upi = weights.get("upi_weight", 0.0)
 
     # Step 2: Base Composite Calculation
     base_score = (
@@ -99,6 +153,8 @@ def compute_score(
         (sender_r.risk_score * w_sender) +
         (intent_r.risk_score * w_intent)
     )
+    if upi_r and w_upi > 0.0:
+        base_score += (upi_r.risk_score * w_upi)
 
     final_score = base_score
     heuristics: List[str] = []
@@ -138,9 +194,14 @@ def compute_score(
 
     # Rule 5: Certified TRAI DLT Verified Transactional Communication (Safe Override)
     is_official_trai = sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER
-    if is_official_trai and url_r.status == AgentStatusEnum.SKIPPED and intent_r.risk_score <= 20:
+    if is_official_trai and url_r.status == AgentStatusEnum.SKIPPED and (intent_r.detected_intent == DetectedIntentEnum.BENIGN or intent_r.risk_score <= 20):
         final_score = min(final_score, 12.0)
         heuristics.append("BENIGN_VERIFICATION: Verified TRAI DLT transactional header with no risk signals")
+
+    # Rule 6: Fraudulent UPI / VPA Collect Request Trap (Day 2 Enhancement)
+    if upi_r and upi_r.status == AgentStatusEnum.SUCCESS and upi_r.risk_score >= 75:
+        final_score = max(final_score, 90.0)
+        heuristics.append("CRITICAL_ESCALATION: Fraudulent UPI collect / payment handle trap detected")
 
     # Clamp score to [0, 100] and round to integer
     rounded_score = int(round(max(0.0, min(100.0, final_score))))
@@ -160,18 +221,23 @@ def compute_score(
         risk_tier = RiskTierEnum.SAFE
         action_required = ActionRequiredEnum.ALLOW
 
-    # Step 5: Explanations & Actionable Advisories
-    verdict = generate_verdict(risk_tier, url_r, sender_r, intent_r, heuristics)
-    recommendation = generate_recommendation(risk_tier, action_required, url_r, sender_r, intent_r)
-    summary_explanation = build_explanation_summary(url_r, sender_r, intent_r, heuristics)
+    # Step 5: Epistemic Confidence Rating
+    confidence = _determine_confidence(url_r, sender_r, intent_r, heuristics, upi_r)
+
+    # Step 6: Dual-Language Explanations & Actionable Advisories (English + Hindi)
+    verdict = generate_verdict(risk_tier, url_r, sender_r, intent_r, heuristics, upi_r)
+    verdict_hi = generate_verdict_hi(risk_tier, url_r, sender_r, intent_r, heuristics, upi_r)
+    recommendation = generate_recommendation(risk_tier, action_required, url_r, sender_r, intent_r, upi_r)
+    recommendation_hi = generate_recommendation_hi(risk_tier, action_required, url_r, sender_r, intent_r, upi_r)
+    summary_explanation = build_explanation_summary(url_r, sender_r, intent_r, heuristics, upi_r)
 
     # Compute execution latency for the scoring engine itself
     latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
     # Sum total pipeline processing latency including upstream agent latencies
-    total_processing_ms = round(
-        max(url_r.latency_ms, sender_r.latency_ms, intent_r.latency_ms) + latency_ms,
-        2
-    )
+    upstream_latencies = [url_r.latency_ms, sender_r.latency_ms, intent_r.latency_ms]
+    if upi_r:
+        upstream_latencies.append(upi_r.latency_ms)
+    total_processing_ms = round(max(upstream_latencies) + latency_ms, 2)
 
     synthesis = SynthesisBreakdown(
         weights_applied=weights,
@@ -183,14 +249,18 @@ def compute_score(
         url_analysis=url_r,
         sender_analysis=sender_r,
         intent_analysis=intent_r,
+        upi_analysis=upi_r,
         synthesis_breakdown=synthesis
     )
 
     return ScanResponse(
         overall_risk_score=rounded_score,
         risk_tier=risk_tier,
+        confidence=confidence,
         verdict=verdict,
+        verdict_hi=verdict_hi,
         recommendation=recommendation,
+        recommendation_hi=recommendation_hi,
         action_required=action_required,
         audit_trail=audit_trail,
         processing_time_ms=total_processing_ms

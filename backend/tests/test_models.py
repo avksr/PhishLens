@@ -1,4 +1,3 @@
-import pytest
 from shared.models import (
     ScanRequest,
     ScanResponse,

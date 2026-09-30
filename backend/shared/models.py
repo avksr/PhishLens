@@ -7,7 +7,7 @@ Ref: schema_mocks.json
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -66,10 +66,18 @@ class DetectedIntentEnum(str, Enum):
 # --- Request Payload ---
 class ScanRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=8000, description="Raw message, email, or payment prompt text")
-    sender: Optional[str] = Field(None, description="Sender phone number or TRAI DLT header (e.g. +919876543210, VM-SBIINB)")
+    sender: Optional[str] = Field(
+        None, description="Sender phone number or TRAI DLT header (e.g. +919876543210, VM-SBIINB)"
+    )
     extracted_url: Optional[str] = Field(None, description="Pre-extracted or user-provided URL to inspect")
     channel: ChannelEnum = Field(default=ChannelEnum.SMS, description="Ingestion channel")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
+
+
+class ConfidenceLevelEnum(str, Enum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 
 
 # --- Individual Agent Result Models ---
@@ -77,6 +85,8 @@ class UrlAgentResult(BaseModel):
     status: AgentStatusEnum = AgentStatusEnum.SUCCESS
     url_analyzed: Optional[str] = None
     risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    domain: Optional[str] = None
+    tld: Optional[str] = None
     domain_age_days: Optional[int] = None
     is_typosquatting: bool = False
     target_brand: Optional[str] = None
@@ -96,6 +106,9 @@ class SenderAgentResult(BaseModel):
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
+    # Added by Avni — sender_agent.py audit fields (optional, backward-compatible)
+    raw_sender: Optional[str] = None
+    normalised_sender: Optional[str] = None
 
 
 class IntentAgentResult(BaseModel):
@@ -106,6 +119,17 @@ class IntentAgentResult(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     flags: List[str] = Field(default_factory=list)
     reasoning: str = ""
+    details: str = ""
+    latency_ms: float = 0.0
+
+
+class UpiAgentResult(BaseModel):
+    status: AgentStatusEnum = AgentStatusEnum.SUCCESS
+    risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    detected_vpa: Optional[str] = None
+    is_spoofed_merchant: bool = False
+    target_entity: Optional[str] = None
+    flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
 
@@ -125,16 +149,20 @@ class AuditTrail(BaseModel):
     url_analysis: UrlAgentResult
     sender_analysis: SenderAgentResult
     intent_analysis: IntentAgentResult
+    upi_analysis: Optional[UpiAgentResult] = None
     synthesis_breakdown: SynthesisBreakdown
 
 
 class ScanResponse(BaseModel):
     scan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     overall_risk_score: int = Field(..., ge=0, le=100)
     risk_tier: RiskTierEnum
+    confidence: ConfidenceLevelEnum = ConfidenceLevelEnum.HIGH
     verdict: str
+    verdict_hi: Optional[str] = None
     recommendation: str
+    recommendation_hi: Optional[str] = None
     action_required: ActionRequiredEnum
     audit_trail: AuditTrail
     processing_time_ms: float
