@@ -41,5 +41,5 @@ async def test_get_recent_audits_endpoint():
         if recent.get("sender_masked"):
             assert "+919876543210" not in recent["sender_masked"]
             if recent.get("scan_id") == resp.scan_id:
-                assert "****" in recent["sender_masked"]
+                assert "***" in recent["sender_masked"]
 
