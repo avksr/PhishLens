@@ -1,0 +1,109 @@
+{
+  "_meta": {
+    "description": "TRAI Commercial SMS Operator-Prefix Registry for PhishLens / ScamShield AI",
+    "format": "operator_prefix (2-letter) -> { operator_name, circles, category, active }",
+    "last_updated": "2026-09-30",
+    "source": "TRAI DLT Platform Operator Registrations (https://www.trai.gov.in/), TRAI SMS Header Guidelines",
+    "note": "Each 2-letter prefix is assigned to a specific licensed telecom operator by TRAI. A commercial SMS header MUST begin with one of these registered prefixes followed by a hyphen and a 6-letter Principal Entity code (e.g. VM-SBIINB). Any prefix NOT in this registry is either invalid or fraudulent."
+  },
+  "valid_prefixes": {
+    "VM": {
+      "operator_name": "Vodafone Idea (Vi)",
+      "circles": ["Maharashtra", "Goa", "Gujarat", "Karnataka", "Tamil Nadu", "Kerala", "Kolkata", "West Bengal", "Andhra Pradesh", "Delhi", "Rajasthan", "Uttar Pradesh (East)", "Uttar Pradesh (West)", "Madhya Pradesh", "Punjab", "Haryana", "Himachal Pradesh", "Bihar", "Odisha", "Assam", "North East", "Jammu & Kashmir"],
+      "category": "Telecom Operator",
+      "active": true,
+      "note": "Vi (Vodafone Idea) — largest prefix by registered volume"
+    },
+    "AX": {
+      "operator_name": "Airtel",
+      "circles": ["Maharashtra", "Goa", "Gujarat", "Karnataka", "Tamil Nadu", "Kerala", "Kolkata", "West Bengal", "Andhra Pradesh", "Delhi", "Rajasthan", "Uttar Pradesh (East)", "Uttar Pradesh (West)", "Madhya Pradesh", "Punjab", "Haryana", "Himachal Pradesh", "Bihar", "Odisha", "Assam", "North East", "Jammu & Kashmir"],
+      "category": "Telecom Operator",
+      "active": true,
+      "note": "Airtel — pan-India DLT operator prefix"
+    },
+    "AD": {
+      "operator_name": "Airtel Business (Enterprise)",
+      "circles": ["All India"],
+      "category": "Telecom Operator (Enterprise)",
+      "active": true,
+      "note": "Airtel enterprise / promotional messaging prefix"
+    },
+    "VK": {
+      "operator_name": "Vodafone Idea (Vi) — Enterprise",
+      "circles": ["All India"],
+      "category": "Telecom Operator (Enterprise)",
+      "active": true,
+      "note": "Vi enterprise / transactional messaging prefix"
+    },
+    "JK": {
+      "operator_name": "Jio (Reliance Jio Infocomm)",
+      "circles": ["Maharashtra", "Goa", "Gujarat", "Karnataka", "Tamil Nadu", "Kerala", "Kolkata", "West Bengal", "Andhra Pradesh", "Delhi", "Rajasthan", "Uttar Pradesh (East)", "Uttar Pradesh (West)", "Madhya Pradesh", "Punjab", "Haryana", "Himachal Pradesh", "Bihar", "Odisha", "Assam", "North East", "Jammu & Kashmir"],
+      "category": "Telecom Operator",
+      "active": true,
+      "note": "Reliance Jio — assigned prefix for DLT-registered enterprise headers"
+    },
+    "TM": {
+      "operator_name": "Tata Teleservices / Tata Communications",
+      "circles": ["All India", "Enterprise"],
+      "category": "Telecom Operator (Enterprise)",
+      "active": true,
+      "note": "Tata group DLT messaging prefix"
+    },
+    "BW": {
+      "operator_name": "BSNL (Bharat Sanchar Nigam Limited)",
+      "circles": ["All India (excluding Delhi & Mumbai served by MTNL)"],
+      "category": "Government Telecom PSU",
+      "active": true,
+      "note": "BSNL state-owned telecom DLT prefix"
+    },
+    "TA": {
+      "operator_name": "MTNL (Mahanagar Telephone Nigam Limited)",
+      "circles": ["Delhi", "Mumbai"],
+      "category": "Government Telecom PSU",
+      "active": true,
+      "note": "MTNL — serves Delhi and Mumbai circles only"
+    },
+    "AT": {
+      "operator_name": "Airtel (Alternate / Wholesale)",
+      "circles": ["All India"],
+      "category": "Telecom Operator",
+      "active": true,
+      "note": "Airtel alternate DLT prefix used for aggregator-routed transactional SMS"
+    },
+    "CP": {
+      "operator_name": "BSNL / MTNL (Cooperative / PSU Routed)",
+      "circles": ["All India"],
+      "category": "Government Telecom PSU",
+      "active": true,
+      "note": "PSU-routed cooperative messaging prefix, used for select government schemes (e.g. EPFO)"
+    }
+  },
+  "known_invalid_or_unregistered_prefixes": {
+    "BZ": {
+      "note": "BZ is NOT a registered TRAI DLT operator prefix. Any header starting with BZ- is unregistered / suspicious.",
+      "active": false
+    },
+    "XX": {
+      "note": "XX is NOT a registered TRAI DLT operator prefix.",
+      "active": false
+    },
+    "ZZ": {
+      "note": "ZZ is NOT a registered TRAI DLT operator prefix.",
+      "active": false
+    }
+  },
+  "header_validation_rules": {
+    "format": "^([A-Z]{2})-([A-Z]{6})$",
+    "operator_prefix_length": 2,
+    "entity_code_length": 6,
+    "separator": "-",
+    "case_requirement": "UPPERCASE_ONLY",
+    "notes": [
+      "Headers submitted in lowercase or mixed-case are NEVER legitimate — TRAI mandates ALL-CAPS for DLT headers.",
+      "The 2-letter operator prefix MUST match a registered operator in valid_prefixes.",
+      "The 6-letter entity code MUST be registered on the TRAI DLT platform under the given operator.",
+      "Any prefix not in valid_prefixes is unregistered and likely fraudulent.",
+      "Unicode homoglyphs in headers (e.g. Cyrillic characters mimicking Latin) are a strong spoof indicator."
+    ]
+  }
+}

@@ -18,18 +18,21 @@ from shared.models import (
     UrlAgentResult,
     SenderAgentResult,
     IntentAgentResult,
+    UpiAgentResult,
     AgentStatusEnum
 )
 from agents.url_agent import analyze_url
 from agents.sender_agent import analyze_sender
 from agents.intent_agent import analyze_intent
+from agents.upi_agent import analyze_upi
 from core.scoring_engine import compute_score
 from core.db_logger import log_scan_audit
 
 logger = logging.getLogger("phishlens.orchestrator")
 
 TIMEOUT_SECONDS = 3.5
-URL_REGEX = re.compile(r'https?://[^\s<>"]+')
+URL_REGEX = re.compile(r'https?://[^\s<>"]+')  # URL extraction
+UPI_VPA_REGEX = re.compile(r'\b[a-zA-Z0-9.\-_]{1,256}@[a-zA-Z0-9]{2,20}\b')  # UPI VPA detection
 
 
 async def safe_url(req: ScanRequest) -> UrlAgentResult:
@@ -100,11 +103,34 @@ async def safe_intent(req: ScanRequest) -> IntentAgentResult:
         )
 
 
+async def safe_upi(req: ScanRequest) -> UpiAgentResult:
+    """Supervised call for Avni's UPI VPA Agent with 3.5s timeout and error shielding."""
+    try:
+        return await asyncio.wait_for(analyze_upi(req), timeout=TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(f"UPI Agent timed out (> {TIMEOUT_SECONDS}s).")
+        return UpiAgentResult(
+            status=AgentStatusEnum.ERROR,
+            risk_score=0.0,
+            details="Agent timeout/error",
+            flags=["UPI_TIMEOUT_EXCEEDED"]
+        )
+    except Exception as exc:
+        logger.error(f"UPI Agent error: {exc}", exc_info=True)
+        return UpiAgentResult(
+            status=AgentStatusEnum.ERROR,
+            risk_score=0.0,
+            details=f"Agent timeout/error: {str(exc)}",
+            flags=["UPI_AGENT_ERROR"]
+        )
+
+
 async def run_pipeline(req: ScanRequest) -> ScanResponse:
     """
     Vansh's Core Pipeline Orchestrator:
-    Executes Atharv (URL), Avni (Sender), and Vikas (Intent) in parallel with 3.5s SLA supervisor,
-    delegates synthesis to Avika's scoring engine, and logs to SQLite audit DB.
+    Executes Atharv (URL), Avni (Sender + UPI), and Vikas (Intent) in parallel
+    with 3.5s SLA supervisor, delegates synthesis to Avika's scoring engine,
+    and logs to SQLite audit DB.
     """
     # Step 1: URL Pre-Extraction Fallback
     if req.extracted_url is None:
@@ -112,15 +138,35 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
         if url_match:
             req.extracted_url = url_match.group(0)
 
-    # Step 2: Concurrent Agent Execution (3.5s Timeout Supervisor)
-    url_r, sender_r, intent_r = await asyncio.gather(
-        safe_url(req),
-        safe_sender(req),
-        safe_intent(req)
+    # Step 1b: Determine whether to run the UPI agent
+    # Only activate if a UPI VPA pattern (@psp) is detected in content or sender.
+    has_upi_signal = bool(
+        UPI_VPA_REGEX.search(req.content)
+        or (req.sender and UPI_VPA_REGEX.search(req.sender))
     )
 
+    # Step 2: Concurrent Agent Execution (3.5s Timeout Supervisor)
+    if has_upi_signal:
+        url_r, sender_r, intent_r, upi_r = await asyncio.gather(
+            safe_url(req),
+            safe_sender(req),
+            safe_intent(req),
+            safe_upi(req),
+        )
+    else:
+        url_r, sender_r, intent_r = await asyncio.gather(
+            safe_url(req),
+            safe_sender(req),
+            safe_intent(req)
+        )
+        upi_r = UpiAgentResult(
+            status=AgentStatusEnum.SKIPPED,
+            risk_score=0.0,
+            details="No UPI VPA handle detected — agent skipped.",
+        )
+
     # Step 3: Synthesis Delegation
-    response: ScanResponse = compute_score(req, url_r, sender_r, intent_r)
+    response: ScanResponse = compute_score(req, url_r, sender_r, intent_r, upi_r)
 
     # Step 4: Asynchronous Audit Logging (non-blocking)
     try:

@@ -15,7 +15,13 @@ Responsibilities
    - Unicode homoglyph attacks (e.g. Cyrillic 'о' in place of Latin 'O').
 5. Apply an emergency-services & government whitelist to prevent false positives
    on legitimate NDMA alerts, EPFO messages, India Post Payments Bank, etc.
-6. Return a fully-populated SenderAgentResult, NEVER raise an unhandled
+6. **TRAI Circle Prefix Verification (Day-3 — AVNI)**: Validate the 2-letter
+   operator prefix of every commercial header against the TRAI/NPCI telecom
+   circle operator registry (trai_circle_prefix_registry.json).  Prefixes that
+   are absent from the registry, or marked inactive (e.g. BZ), are flagged as
+   UNREGISTERED_TRAI_CIRCLE_PREFIX / KNOWN_INVALID_TRAI_PREFIX and receive an
+   elevated risk score — regardless of whether the entity code resolves.
+7. Return a fully-populated SenderAgentResult, NEVER raise an unhandled
    exception (fail-safe design).
 
 Author  : AVNI — Sender Identity & TRAI DLT Agent
@@ -45,6 +51,11 @@ from shared.models import (
 # Absolute path to the TRAI DLT registry data file.
 _REGISTRY_PATH: Path = (
     Path(__file__).resolve().parents[1] / "data" / "trai_dlt_registry.json"
+)
+
+# Absolute path to the TRAI Circle Prefix registry (operator → telecom circle map).
+_CIRCLE_PREFIX_REGISTRY_PATH: Path = (
+    Path(__file__).resolve().parents[1] / "data" / "trai_circle_prefix_registry.json"
 )
 
 # Official TRAI DLT header format: <2-letter operator>-<6-letter entity code>
@@ -158,6 +169,24 @@ def _build_registry() -> Tuple[Dict[str, dict], Set[Tuple[str, str]]]:
     return registry, valid_pairs
 
 
+def _build_circle_prefix_registry() -> Tuple[Dict[str, dict], Dict[str, dict]]:
+    """
+    Load the TRAI Circle Prefix registry from disk exactly ONCE.
+
+    Returns:
+        valid_prefixes   – operator_prefix → {operator_name, circles, category, active}
+        invalid_prefixes – known invalid/unregistered prefixes → {note, active}
+    """
+    try:
+        with _CIRCLE_PREFIX_REGISTRY_PATH.open("r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+        valid: Dict[str, dict] = raw.get("valid_prefixes", {})
+        invalid: Dict[str, dict] = raw.get("known_invalid_or_unregistered_prefixes", {})
+        return valid, invalid
+    except Exception:  # noqa: BLE001 — fail-open if registry is unavailable
+        return {}, {}
+
+
 # Module-level singletons — initialised at import time.
 _REGISTRY: Dict[str, dict]
 _VALID_PAIRS: Set[Tuple[str, str]]
@@ -165,6 +194,11 @@ _REGISTRY, _VALID_PAIRS = _build_registry()
 
 # Flat set of all registered entity codes for quick O(1) membership tests.
 _ALL_ENTITY_CODES: Set[str] = set(_REGISTRY.keys())
+
+# Circle-prefix singletons — loaded once alongside the DLT registry.
+_CIRCLE_VALID_PREFIXES: Dict[str, dict]
+_CIRCLE_INVALID_PREFIXES: Dict[str, dict]
+_CIRCLE_VALID_PREFIXES, _CIRCLE_INVALID_PREFIXES = _build_circle_prefix_registry()
 
 # ---------------------------------------------------------------------------
 # Unicode Homoglyph Normalisation Map
@@ -264,6 +298,62 @@ _GOVT_EMERGENCY_ENTITY_CODES: Set[str] = {
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
+
+
+def _verify_circle_prefix(operator_prefix: str) -> Tuple[bool, bool, str]:
+    """
+    Validate *operator_prefix* (2-letter, already uppercased) against the
+    TRAI telecom circle operator registry.
+
+    Returns a 3-tuple:
+        (is_valid_registered, is_known_invalid, detail_msg)
+
+    is_valid_registered : True  → prefix is in the registry AND active.
+    is_known_invalid    : True  → prefix is explicitly listed as invalid/inactive.
+    detail_msg          : Human-readable description for audit flags.
+
+    Examples
+    --------
+    >>> _verify_circle_prefix("VM")
+    (True, False, "Operator prefix 'VM' is registered to Vodafone Idea (Vi).")
+    >>> _verify_circle_prefix("BZ")
+    (False, True, "Operator prefix 'BZ' is a known invalid/unregistered TRAI prefix.")
+    >>> _verify_circle_prefix("ZQ")
+    (False, False, "Operator prefix 'ZQ' is not found in the TRAI circle registry.")
+    """
+    # Check valid registry first (O(1))
+    entry = _CIRCLE_VALID_PREFIXES.get(operator_prefix)
+    if entry:
+        if entry.get("active", False):
+            operator_name = entry.get("operator_name", operator_prefix)
+            return (
+                True,
+                False,
+                f"Operator prefix '{operator_prefix}' is registered to {operator_name}.",
+            )
+        else:
+            # Listed in valid_prefixes but marked inactive
+            operator_name = entry.get("operator_name", operator_prefix)
+            return (
+                False,
+                True,
+                f"Operator prefix '{operator_prefix}' (assigned to {operator_name}) "
+                "is marked inactive in the TRAI circle registry.",
+            )
+
+    # Check known-invalid registry (O(1))
+    invalid_entry = _CIRCLE_INVALID_PREFIXES.get(operator_prefix)
+    if invalid_entry:
+        note = invalid_entry.get("note", "Listed as invalid in TRAI circle registry.")
+        return (False, True, f"Operator prefix '{operator_prefix}' is a known invalid/unregistered TRAI prefix. {note}")
+
+    # Not found in either registry
+    return (
+        False,
+        False,
+        f"Operator prefix '{operator_prefix}' is not found in the TRAI circle registry. "
+        "This is highly suspicious — legitimate TRAI DLT operators use only registered prefixes.",
+    )
 
 def _normalise_homoglyphs(text: str) -> str:
     """
@@ -455,6 +545,40 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
         operator_prefix = trai_match.group(1)   # e.g. "VM"
         entity_code = trai_match.group(2)        # e.g. "SBIINB"
 
+        # ── TRAI Circle Prefix Verification (AVNI — Day-3) ──────────────
+        # Validate the 2-letter operator prefix against the TRAI telecom
+        # circle operator registry, BEFORE checking the entity code.
+        prefix_valid, prefix_known_invalid, prefix_detail = _verify_circle_prefix(
+            operator_prefix
+        )
+        if prefix_known_invalid:
+            # Explicitly invalid prefix (e.g. BZ- headers)
+            flags.append("KNOWN_INVALID_TRAI_PREFIX")
+            flags.append("UNVERIFIED_LOOKALIKE_HEADER")
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=SenderCategoryEnum.LOOKALIKE_HEADER,
+                risk_score=_clamp_score(82.0),
+                is_spoofed_header=True,
+                flags=flags,
+                details=(
+                    f"Header '{raw_sender}' uses an operator prefix "
+                    f"('{operator_prefix}') that is a KNOWN INVALID / "
+                    "unregistered TRAI prefix. "
+                    f"{prefix_detail}"
+                ),
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender,
+                normalised_sender=normalised,
+            )
+        elif not prefix_valid:
+            # Prefix not found in either registry → unregistered, suspicious
+            flags.append("UNREGISTERED_TRAI_CIRCLE_PREFIX")
+            flags.append("SUSPICIOUS_OPERATOR_PREFIX")
+            # Elevate risk; still fall through to entity-code checks
+            # (we may gather additional evidence before returning)
+
         # ── O(1) lookup against singleton in-memory registry ──
         entry = _REGISTRY.get(entity_code)
         pair_valid = (operator_prefix, entity_code) in _VALID_PAIRS
@@ -532,8 +656,11 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             )
 
         # ── Check operator prefix: valid TRAI operator but unregistered entity ──
-        if operator_prefix in _VALID_OPERATOR_PREFIXES:
+        if prefix_valid and operator_prefix in _VALID_OPERATOR_PREFIXES:
             flags.append("VALID_OPERATOR_PREFIX_BUT_UNKNOWN_ENTITY")
+        elif not prefix_valid and "UNREGISTERED_TRAI_CIRCLE_PREFIX" not in flags:
+            # Prefix lookup above already added this flag if needed
+            flags.append("UNREGISTERED_TRAI_CIRCLE_PREFIX")
         flags.append("UNREGISTERED_TRAI_FORMAT_HEADER")
         # Falls through to lookalike detection below with elevated risk.
 
