@@ -48,8 +48,8 @@ async def test_pipeline_e2e_high_risk_scam():
 async def test_pipeline_e2e_benign_otp():
     """Send safe HDFC OTP alert; verify returns risk_tier == 'SAFE'."""
     req = ScanRequest(
-        content="784920 is your OTP for HDFC Bank NetBanking transaction at 29-Sep-2026. Do not share OTP with anyone.",
-        sender="AD-HDFCBK",
+        content="Your OTP for Amazon is 123456. Valid for 5 mins - HDFC Bank",
+        sender="VM-HDFCBK",
         extracted_url=None,
         channel=ChannelEnum.SMS
     )
