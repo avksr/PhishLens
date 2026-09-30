@@ -1,11 +1,12 @@
 # ============================================================
 # OWNER: VIKAS
 # FILE: backend/agents/intent_agent.py
-# PURPOSE: LLM Psycholinguistic Intent Analysis Agent
+# PURPOSE: LLM Psycholinguistic Intent Analysis Agent (Day 1 & Day 2)
 #   - Detects psychological manipulation (urgency, fear, coercion)
 #   - Supports Hinglish and Indian digital fraud vectors
 #   - Uses Groq (llama-3.1-8b-instant) or Gemini Flash API with 2.5s SLA timeout
-#   - Resilient local heuristic fallback engine on failure/offline
+#   - Deterministic, high-speed local regex heuristic fallback (< 15ms)
+#   - Safe text normalization for capitalization, spacing, and punctuation
 #   - Never raises an unhandled exception (Fail-Safe)
 # ============================================================
 
@@ -44,25 +45,67 @@ _DEFAULT_SYSTEM_PROMPT: str = (
     "flags, reasoning, details."
 )
 
+
+def _normalize_text(text: str) -> str:
+    """
+    Normalizes text for robust psycholinguistic intent analysis:
+    - Lowercases text
+    - Replaces dots between individual acronym letters (e.g. 'u.r.g.e.n.t' -> 'urgent', 'k.y.c' -> 'kyc')
+    - Inserts spacing between stuck digits and words (e.g. '2ghante' -> '2 ghante')
+    - Collapses multiple whitespace and decorative punctuation marks into clean single spaces
+    """
+    if not text:
+        return ""
+    normalized = text.lower()
+    # Normalize acronyms with dots like 'u.r.g.e.n.t' or 'o.t.p'
+    normalized = re.sub(r"(?<=\b[a-z])\.(?=[a-z]\b)", "", normalized)
+    # Separate stuck digits and letters, e.g. '2ghante' -> '2 ghante'
+    normalized = re.sub(r"(\d+)([a-zA-Z]+)", r"\1 \2", normalized)
+    normalized = re.sub(r"([a-zA-Z]+)(\d+)", r"\1 \2", normalized)
+    # Normalize whitespace, newlines, and decorative punctuation symbols
+    normalized = re.sub(r"[\r\n\t]+", " ", normalized)
+    normalized = re.sub(r"[!?,;*#~`|]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
 # ─────────────────────────────────────────────────────────────
 # Regex Patterns for Local Resilient Heuristic Fallback
+# (Supports English & Hinglish Phrasing Variants)
 # ─────────────────────────────────────────────────────────────
 
 # Panic & False Urgency: +40.0 risk
 _PANIC_URGENCY_PATTERNS = [
+    # English urgency patterns
     re.compile(r"\bwithin\s+\d+\s*(?:hours?|hrs?|minutes?|mins?|days?)\b", re.IGNORECASE),
     re.compile(r"\bblocked\s+today\b", re.IGNORECASE),
     re.compile(r"\bdeactivated\s+today\b", re.IGNORECASE),
-    re.compile(r"\bpower\s+cut\s+tonight\b", re.IGNORECASE),
+    re.compile(r"\b(?:power|electricity)\s+cut\s+tonight\b", re.IGNORECASE),
     re.compile(r"\bdisconnected\s+tonight(?:\s+at\s+9[\.:]30\s*(?:pm|am))?\b", re.IGNORECASE),
     re.compile(r"\b(?:power|electricity)\s+(?:will\s+be\s+)?disconnected\b", re.IGNORECASE),
-    re.compile(r"\b(?:immediately|urgent|urgently)\b", re.IGNORECASE),
-    re.compile(r"\b(?:account|card|sim)\s+(?:is\s+)?(?:blocked|suspended|deactivated|frozen)\b", re.IGNORECASE),
+    re.compile(r"\b(?:immediately|urgent|urgently|verify\s+immediately)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:account|card|sim)\s+(?:is\s+|will\s+be\s+)?(?:blocked|suspended|deactivated|frozen|cut\s*off)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\baccount\s+(?:cut\s*off|blocked|suspended)\b", re.IGNORECASE),
+    re.compile(r"\bcut\s*off\s*tonight\b", re.IGNORECASE),
     re.compile(r"\bfailing\s+which\b", re.IGNORECASE),
+    re.compile(r"\bkyc\s*(?:will\s+expire|expired|expire)\b", re.IGNORECASE),
+    # Hinglish urgency patterns
+    re.compile(r"\b\d+\s*ghante?\s*(?:ke\s*andar|mein|me)\b", re.IGNORECASE),
+    re.compile(r"\b(?:aaj\s*)?raat\s*tak\b", re.IGNORECASE),
+    re.compile(r"\baccount\s*(?:block|band|bandh)\s*(?:ho\s*jayega|hoga|karein|karenge)\b", re.IGNORECASE),
+    re.compile(r"\bwarna\s*account\s*(?:block|band)\b", re.IGNORECASE),
+    re.compile(r"\b(?:turant|jaldi|tatkal)\b", re.IGNORECASE),
+    re.compile(r"\bbijli\s*(?:cut|kat|band)\b", re.IGNORECASE),
+    re.compile(r"\bkyc\s*(?:khatam|band)\b", re.IGNORECASE),
 ]
 
 # Coercive Authority & Legal Threats: +45.0 risk
 _COERCIVE_AUTHORITY_PATTERNS = [
+    # English legal / authority threats
+    re.compile(r"\bdigital\s+arrest\b", re.IGNORECASE),
     re.compile(r"\barrest\s+warrant\b", re.IGNORECASE),
     re.compile(r"\bpolice\s+station\b", re.IGNORECASE),
     re.compile(r"\bcbi\s+officer\b", re.IGNORECASE),
@@ -70,12 +113,21 @@ _COERCIVE_AUTHORITY_PATTERNS = [
     re.compile(r"\bcyber\s*(?:crime\s*)?cell\b", re.IGNORECASE),
     re.compile(r"\belectricity\s+officer\b", re.IGNORECASE),
     re.compile(r"\b(?:contact|call|reach)\s+(?:our\s+)?(?:electricity\s+)?officer\b", re.IGNORECASE),
-    re.compile(r"\bdigital\s+arrest\b", re.IGNORECASE),
+    re.compile(r"\b(?:police|cbi)\s+case\b", re.IGNORECASE),
+    re.compile(r"\bpolice\s+arrest\b", re.IGNORECASE),
+    re.compile(r"\bunder\s+digital\s+arrest\b", re.IGNORECASE),
     re.compile(r"\b(?:rbi|trai|customs|income\s*tax)\s+department\b", re.IGNORECASE),
+    # Hinglish legal / arrest threats
+    re.compile(r"\bdigital\s*arrest\s*(?:ke\s*liye\s*ready|hoga|hogi)?\b", re.IGNORECASE),
+    re.compile(r"\bpolice\s*(?:tumhe|aapko)?\s*(?:arrest|giraftar)\s*karegi\b", re.IGNORECASE),
+    re.compile(r"\bpolice\s*case\s*(?:hoga|kar\s*denge)\b", re.IGNORECASE),
+    re.compile(r"\bjail\s*(?:hogi|jana\s*padega)\b", re.IGNORECASE),
+    re.compile(r"\bgiraftari\b", re.IGNORECASE),
 ]
 
 # Credential & PII Harvesting: +45.0 risk
 _CREDENTIAL_HARVEST_PATTERNS = [
+    # English credential harvesting
     re.compile(r"\bsubmit\s+(?:your\s+)?pan\b", re.IGNORECASE),
     re.compile(r"\bverify\s+(?:your\s+)?aadhaar\b", re.IGNORECASE),
     re.compile(r"\bshare\s+(?:your\s+)?otp\b", re.IGNORECASE),
@@ -85,6 +137,12 @@ _CREDENTIAL_HARVEST_PATTERNS = [
     re.compile(r"\bunblock\s+(?:your\s+)?account\b", re.IGNORECASE),
     re.compile(r"\bnetbanking\s+password\b", re.IGNORECASE),
     re.compile(r"\b(?:aadhaar|pan)\s+(?:&|and)?\s*(?:pan|aadhaar|details)\b", re.IGNORECASE),
+    # Hinglish OTP and credential solicitation
+    re.compile(r"\botp\s*(?:share\s*karo|batao|bhejo|do|forward\s*karo|send\s*karo)\b", re.IGNORECASE),
+    re.compile(r"\bkyc\s*(?:update\s*karo|verify\s*karo|jama\s*karo)\b", re.IGNORECASE),
+    re.compile(r"\baadhaar\s*(?:bhejo|jama\s*karo|link\s*karo|update\s*karo)\b", re.IGNORECASE),
+    re.compile(r"\bpan\s*card\s*(?:bhejo|jama\s*karo|link\s*karo|update\s*karo)\b", re.IGNORECASE),
+    re.compile(r"\bunblock\s*karne\s*ke\s*liye\b", re.IGNORECASE),
 ]
 
 # Lottery / Part-Time Job Advance Scams: +35.0 risk
@@ -96,11 +154,15 @@ _LOTTERY_JOB_PATTERNS = [
     re.compile(r"\bearn\s+(?:rs\.?\s*)?\d+\s*daily\b", re.IGNORECASE),
     re.compile(r"\btelegram\b", re.IGNORECASE),
     re.compile(r"\bcongratulations!?\s+you\s+have\s+(?:been\s+selected|won)\b", re.IGNORECASE),
+    re.compile(r"\blottery\s*lagi\s*(?:hai)?\b", re.IGNORECASE),
+    re.compile(r"\binaam\s*jeeta\s*(?:hai)?\b", re.IGNORECASE),
+    re.compile(r"\bghar\s*baithe\s*(?:paise\s*)?kamao\b", re.IGNORECASE),
 ]
 
 # Benign Baseline Markers
 _BENIGN_PATTERNS = [
     re.compile(r"\b(?:do\s+not|never)\s+share\s+(?:this\s+|your\s+)?otp\b", re.IGNORECASE),
+    re.compile(r"\bkisi\s+ke\s+saath\s+otp\s+share\s+na\s+karein\b", re.IGNORECASE),
     re.compile(r"\bvalid\s+for\s+\d+\s*mins?\b", re.IGNORECASE),
     re.compile(r"\byour\s+otp\s+for\s+.*is\s+\d+\b", re.IGNORECASE),
     re.compile(r"\barriving\s+in\s+\d+\s*mins?\b", re.IGNORECASE),
@@ -114,7 +176,7 @@ def _load_system_prompt() -> str:
         try:
             return _INTENT_PROMPT_PATH.read_text(encoding="utf-8")
         except Exception as err:
-            logger.warning(f"Could not read intent prompt file: {err}")
+            logger.warning(f"Could not read intent prompt file: {type(err).__name__}")
     return _DEFAULT_SYSTEM_PROMPT
 
 
@@ -139,16 +201,18 @@ def _is_usable_key(key: Optional[str]) -> bool:
 
 def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, List[str], List[str], str]:
     """
-    Evaluates text against Indian fraud psycholinguistic heuristic rules.
+    Fast, deterministic offline psycholinguistic heuristic engine (< 15ms SLA).
+    Normalizes input text and scans for English and Hinglish fraud vectors.
     Returns: (risk_score, detected_intent, manipulation_tactics, flags, reasoning)
     """
+    normalized = _normalize_text(content)
     risk_score = 0.0
     manipulation_tactics: List[str] = []
     flags: List[str] = []
     candidate_intents: List[DetectedIntentEnum] = []
 
     # 1. Panic & False Urgency (+40.0)
-    has_urgency = any(p.search(content) for p in _PANIC_URGENCY_PATTERNS)
+    has_urgency = any(p.search(normalized) for p in _PANIC_URGENCY_PATTERNS)
     if has_urgency:
         risk_score += 40.0
         manipulation_tactics.append("False Urgency Trigger")
@@ -156,7 +220,7 @@ def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, Li
         candidate_intents.append(DetectedIntentEnum.PANIC_URGENCY)
 
     # 2. Coercive Authority & Legal Threats (+45.0)
-    has_authority = any(p.search(content) for p in _COERCIVE_AUTHORITY_PATTERNS)
+    has_authority = any(p.search(normalized) for p in _COERCIVE_AUTHORITY_PATTERNS)
     if has_authority:
         risk_score += 45.0
         manipulation_tactics.append("Coercive Authority Threat")
@@ -164,11 +228,11 @@ def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, Li
         candidate_intents.append(DetectedIntentEnum.FINANCIAL_EXTORTION)
 
     # 3. Credential & PII Harvesting (+45.0)
-    has_credential = any(p.search(content) for p in _CREDENTIAL_HARVEST_PATTERNS)
+    has_credential = any(p.search(normalized) for p in _CREDENTIAL_HARVEST_PATTERNS)
     if has_credential:
         risk_score += 45.0
         manipulation_tactics.append("Credential / KYC Solicitation")
-        if re.search(r"\botp\b", content, re.IGNORECASE):
+        if re.search(r"\botp\b", normalized, re.IGNORECASE):
             flags.append("OTP_HARVEST_FLAG")
             candidate_intents.append(DetectedIntentEnum.OTP_HARVEST)
         else:
@@ -176,7 +240,7 @@ def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, Li
             candidate_intents.append(DetectedIntentEnum.KYC_VERIFICATION)
 
     # 4. Lottery / Part-Time Job Advance Scams (+35.0)
-    has_lottery = any(p.search(content) for p in _LOTTERY_JOB_PATTERNS)
+    has_lottery = any(p.search(normalized) for p in _LOTTERY_JOB_PATTERNS)
     if has_lottery:
         risk_score += 35.0
         manipulation_tactics.append("Fraudulent Incentive / Advance Fee")
@@ -185,6 +249,7 @@ def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, Li
 
     # Determine final intent and score
     if manipulation_tactics:
+        # Prioritize OTP > KYC > Extortion/Authority > Urgency > Lottery
         if DetectedIntentEnum.OTP_HARVEST in candidate_intents:
             final_intent = DetectedIntentEnum.OTP_HARVEST
         elif DetectedIntentEnum.KYC_VERIFICATION in candidate_intents:
@@ -203,7 +268,7 @@ def _run_heuristic_fallback(content: str) -> Tuple[float, DetectedIntentEnum, Li
             f"{', '.join(manipulation_tactics)}."
         )
     else:
-        has_benign_marker = any(p.search(content) for p in _BENIGN_PATTERNS)
+        has_benign_marker = any(p.search(normalized) for p in _BENIGN_PATTERNS)
         final_intent = DetectedIntentEnum.BENIGN
         risk_score = 5.0 if has_benign_marker else 0.0
         if has_benign_marker:
@@ -233,7 +298,11 @@ async def _analyze_with_groq(content: str, system_prompt: str, api_key: str) -> 
     )
     raw_text = chat_completion.choices[0].message.content
     if raw_text:
-        return json.loads(raw_text)
+        try:
+            return json.loads(raw_text)
+        except json.JSONDecodeError as err:
+            logger.warning(f"Groq returned malformed JSON: {err}")
+            return None
     return None
 
 
@@ -255,7 +324,11 @@ async def _analyze_with_gemini(content: str, system_prompt: str, api_key: str) -
         timeout=LLM_TIMEOUT_SECONDS,
     )
     if response and response.text:
-        return json.loads(response.text)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError as err:
+            logger.warning(f"Gemini returned malformed JSON: {err}")
+            return None
     return None
 
 
@@ -333,7 +406,7 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
     1. Validates input request and handles empty/blank payloads gracefully.
     2. Attempts primary LLM analysis via Groq (llama-3.1-8b-instant) or Gemini (gemini-1.5-flash).
     3. Enforces 2.5s SLA timeout on all LLM calls.
-    4. Falls back seamlessly to local regex heuristic engine on timeout, error, or missing keys.
+    4. Falls back seamlessly to local regex heuristic engine on timeout, error, malformed JSON, or missing keys.
     5. Clamps risk score to [0.0, 100.0] and records latency_ms.
     6. Fail-Safe: Guarantees zero unhandled exceptions.
     """
@@ -367,13 +440,13 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
             try:
                 llm_data = await _analyze_with_groq(content, system_prompt, groq_key)
             except Exception as e:
-                logger.warning(f"Groq intent analysis failed or timed out: {e}")
+                logger.warning(f"Groq intent analysis failed or timed out: {type(e).__name__}")
 
         if not llm_data and _is_usable_key(gemini_key):
             try:
                 llm_data = await _analyze_with_gemini(content, system_prompt, gemini_key)
             except Exception as e:
-                logger.warning(f"Gemini intent analysis failed or timed out: {e}")
+                logger.warning(f"Gemini intent analysis failed or timed out: {type(e).__name__}")
 
         # If LLM succeeded, parse and return
         if llm_data:
@@ -397,7 +470,7 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
         )
 
     except Exception as exc:
-        logger.error(f"Unhandled exception in analyze_intent: {exc}", exc_info=True)
+        logger.error(f"Unhandled exception in analyze_intent: {type(exc).__name__}", exc_info=True)
         elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
         try:
             score, intent, tactics, flags, reasoning = _run_heuristic_fallback(req.content if req else "")
@@ -420,7 +493,7 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
                 manipulation_tactics=[],
                 confidence=0.0,
                 flags=["INTENT_AGENT_FAILED"],
-                reasoning=f"Agent exception: {str(exc)}",
-                details=f"ERROR: {str(exc)}",
+                reasoning=f"Agent exception: {type(exc).__name__}",
+                details=f"ERROR: {type(exc).__name__}",
                 latency_ms=elapsed_ms,
             )
