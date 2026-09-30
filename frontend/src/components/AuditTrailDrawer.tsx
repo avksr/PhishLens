@@ -414,9 +414,10 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
 export interface AuditTrailDrawerProps {
   auditTrail: AuditTrail | null;
   recommendation?: string;
+  processingTimeMs?: number;
 }
 
-export function AuditTrailDrawer({ auditTrail, recommendation }: AuditTrailDrawerProps) {
+export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs }: AuditTrailDrawerProps) {
   // Default: expand all on first load, let user collapse
   const [expanded, setExpanded] = useState({ url: true, sender: true, intent: true });
 
@@ -443,6 +444,23 @@ export function AuditTrailDrawer({ auditTrail, recommendation }: AuditTrailDrawe
           </p>
         </div>
       </div>
+
+      {/* Overall processing time */}
+      {processingTimeMs != null && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          padding: '8px 14px', borderRadius: '9px',
+          background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.15)',
+        }}>
+          <span aria-hidden style={{ fontSize: '14px' }}>⚡</span>
+          <span style={{
+            fontSize: '12.5px', fontWeight: 700,
+            fontFamily: 'JetBrains Mono, monospace', color: '#00F0FF',
+          }}>
+            Total Processing Time: {processingTimeMs.toFixed(0)}ms
+          </span>
+        </div>
+      )}
 
       {/* Recommendation banner */}
       {recommendation && (
