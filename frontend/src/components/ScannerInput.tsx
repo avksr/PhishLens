@@ -5,7 +5,7 @@
 
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { scanMessage } from '../lib/api';
-import type { ScanResponse, ScanRequest, DetectedInputType } from '../lib/types';
+import type { ScanResponse, ScanRequest } from '../lib/types';
 import highRisk from '../../../datasets/payloads_high_risk.json';
 import safe     from '../../../datasets/payloads_safe.json';
 
@@ -42,45 +42,17 @@ const PRESETS: Preset[] = [
 // ── Auto-Detection Logic ──────────────────────────────────────
 
 const URL_REGEX = /https?:\/\//i;
-const UPI_REGEX = /@[a-zA-Z]+/;
+const UPI_REGEX = /\w+@[a-zA-Z]+/;
 
-function detectInputType(text: string): DetectedInputType {
-  if (URL_REGEX.test(text)) return 'url';
-  if (UPI_REGEX.test(text)) return 'upi';
-  return 'sms';
+function detectInputType(text: string): string {
+  if (URL_REGEX.test(text)) {
+    return '🌐 Detected: Web URL';
+  }
+  if (UPI_REGEX.test(text)) {
+    return '💳 Detected: UPI ID';
+  }
+  return '💬 Detected: SMS / Message';
 }
-
-interface BadgeConfig {
-  label: string;
-  icon: string;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-}
-
-const BADGE_MAP: Record<DetectedInputType, BadgeConfig> = {
-  url: {
-    label: 'Detected: Web URL',
-    icon: '🌐',
-    color: '#00F0FF',
-    bgColor: 'rgba(0,240,255,0.1)',
-    borderColor: 'rgba(0,240,255,0.35)',
-  },
-  upi: {
-    label: 'Detected: UPI ID',
-    icon: '💳',
-    color: '#A78BFA',
-    bgColor: 'rgba(167,139,250,0.1)',
-    borderColor: 'rgba(167,139,250,0.35)',
-  },
-  sms: {
-    label: 'Detected: SMS / Message',
-    icon: '💬',
-    color: '#94A3B8',
-    bgColor: 'rgba(148,163,184,0.08)',
-    borderColor: 'rgba(148,163,184,0.25)',
-  },
-};
 
 // ── Props ─────────────────────────────────────────────────────
 
@@ -101,12 +73,11 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
 
   const MAX = 8000;
   const charFrac = content.length / MAX;
-  const charColor = charFrac > 0.9 ? '#FF3366' : charFrac > 0.75 ? '#FF6B00' : '#4B5563';
+  const charColor = charFrac > 0.9 ? '#FF3366' : charFrac > 0.75 ? '#FF6B00' : '#94A3B8';
 
-  // ── Auto-detect input type ──────────────────────────────────
+  // ── Auto-detect input type on every keystroke ───────────────
 
-  const detectedType = useMemo(() => detectInputType(content), [content]);
-  const badge = BADGE_MAP[detectedType];
+  const detectedBadge = useMemo(() => detectInputType(content), [content]);
 
   // ── Preset loader ─────────────────────────────────────────
 
@@ -159,7 +130,7 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
         id="scanner-form"
         onSubmit={handleSubmit}
         aria-label="PhishLens threat scanner"
-        className="relative z-[1] flex flex-col gap-5 p-5 sm:p-7 rounded-2xl"
+        className="relative z-[1] flex flex-col gap-4 sm:gap-5 p-3.5 sm:p-7 rounded-xl sm:rounded-2xl mobile-scanner-container"
         style={{
           background: '#111827',
           border: `1px solid ${isLoading ? 'rgba(0,240,255,0.4)' : '#1F2937'}`,
@@ -168,41 +139,38 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
         }}
       >
         {/* ── Header ────────────────────────────────────────── */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3 sm:gap-3.5">
+        <div className="flex max-sm:flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mobile-header-stack">
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
             <div
-              className="flex items-center justify-center shrink-0"
+              className="flex items-center justify-center shrink-0 w-9 h-9 sm:w-11 sm:h-11 rounded-[10px] text-lg sm:text-[22px]"
               style={{
-                width: 44, height: 44, borderRadius: '11px', fontSize: '22px',
                 background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
               }}
               aria-hidden
             >🛡️</div>
             <div>
               <h2
-                className="text-base sm:text-lg"
+                className="text-sm sm:text-base md:text-lg font-extrabold text-[#F1F5F9] m-0"
                 style={{
-                  margin: 0, fontWeight: 800, color: '#F1F5F9',
                   fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
                   letterSpacing: '-0.3px',
                 }}
               >Threat Scanner</h2>
-              <p className="text-xs sm:text-xs" style={{ margin: 0, color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+              <p className="text-[11px] sm:text-xs text-[#94A3B8] m-0" style={{ fontFamily: 'Inter, sans-serif' }}>
                 Paste SMS · WhatsApp · Email · UPI prompt to inspect
               </p>
             </div>
           </div>
           {/* LIVE badge */}
           <div
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full"
             style={{
               background: 'rgba(0,230,118,0.07)',
               border: '1px solid rgba(0,230,118,0.22)',
             }}
             aria-label="Scanner active"
           >
-            <span aria-hidden className="inline-block shrink-0" style={{
-              width: 8, height: 8, borderRadius: '50%', background: '#00E676',
+            <span aria-hidden className="inline-block shrink-0 w-2 h-2 rounded-full bg-[#00E676]" style={{
               boxShadow: '0 0 8px #00E676', animation: 'pl-pulse 2s ease-in-out infinite',
             }} />
             <span style={{
@@ -214,12 +182,10 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
 
         {/* ── Preset buttons ─────────────────────────────────── */}
         <div>
-          <p className="text-[10.5px] sm:text-xs mb-2.5" style={{
-            margin: '0 0 10px', fontWeight: 700,
-            letterSpacing: '1px', color: '#6B7280', textTransform: 'uppercase',
+          <p className="text-[10.5px] sm:text-xs mb-2 text-[#94A3B8] uppercase font-bold tracking-wider" style={{
             fontFamily: 'Inter, sans-serif',
           }}>Quick Load Scenarios</p>
-          <div role="group" aria-label="Preset scenarios" className="flex gap-2 flex-wrap">
+          <div role="group" aria-label="Preset scenarios" className="flex flex-wrap gap-2">
             {PRESETS.map((p) => {
               const active = activePreset === p.id;
               return (
@@ -230,11 +196,11 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
                   onClick={() => loadPreset(p)}
                   disabled={isDisabled}
                   aria-pressed={active}
-                  className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-[12.5px] font-semibold cursor-pointer transition-all duration-150"
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-[12.5px] font-semibold cursor-pointer transition-all duration-150"
                   style={{
                     border: `1px solid ${active ? 'rgba(0,240,255,0.55)' : '#1F2937'}`,
                     background: active ? 'rgba(0,240,255,0.09)' : '#0B0F19',
-                    color: active ? '#00F0FF' : '#94A3B8',
+                    color: active ? '#00F0FF' : '#CBD5E1',
                     fontFamily: 'Inter, sans-serif',
                     boxShadow: active ? '0 0 14px rgba(0,240,255,0.18)' : 'none',
                     opacity: isDisabled ? 0.4 : 1,
@@ -247,31 +213,9 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
           </div>
         </div>
 
-        {/* ── Auto-Detection Badge ─────────────────────────────── */}
-        {content.trim().length > 0 && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg self-start transition-all duration-300"
-            style={{
-              background: badge.bgColor,
-              border: `1px solid ${badge.borderColor}`,
-              animation: 'pl-fadein 0.25s ease',
-            }}
-          >
-            <span aria-hidden className="text-sm">{badge.icon}</span>
-            <span style={{
-              fontSize: '11.5px', fontWeight: 700, color: badge.color,
-              fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.4px',
-            }}>{badge.label}</span>
-          </div>
-        )}
-
         {/* ── Single Textarea ───────────────────────────────── */}
         <div>
-          <label htmlFor="scanner-msg" className="block mb-2" style={{
-            fontSize: '11px', fontWeight: 600, letterSpacing: '0.9px',
-            textTransform: 'uppercase',
+          <label htmlFor="scanner-msg" className="block mb-2 text-[11px] font-semibold tracking-[0.9px] uppercase" style={{
             color: focused ? '#00F0FF' : '#94A3B8',
             transition: 'color 0.2s',
             fontFamily: 'Inter, sans-serif',
@@ -283,16 +227,21 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
               id="scanner-msg"
               ref={textareaRef}
               value={content}
-              onChange={e => { setContent(e.target.value.slice(0, MAX)); setActivePreset(null); }}
+              onChange={e => {
+                setContent(e.target.value.slice(0, MAX));
+                setActivePreset(null);
+              }}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               disabled={isDisabled}
               required
-              rows={6}
+              rows={4}
               placeholder="Paste the suspicious SMS, WhatsApp message, email body, UPI payment note, or URL here…"
-              className="w-full text-sm resize-y"
+              className="w-full resize-y text-[0.9rem] min-h-[100px] mobile-textarea"
               style={{
-                padding: '12px 16px',
+                fontSize: '0.9rem',
+                minHeight: '100px',
+                padding: '12px 14px',
                 borderRadius: '10px',
                 border: `1px solid ${inputBorder}`,
                 background: '#0B0F19',
@@ -303,22 +252,45 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
                 transition: 'border-color 0.2s, box-shadow 0.2s',
                 cursor: isDisabled ? 'not-allowed' : 'text',
                 opacity: isDisabled ? 0.55 : 1,
-                minHeight: '148px',
                 lineHeight: '1.65',
-                paddingBottom: '28px',
               }}
             />
-            <span aria-live="polite" className="absolute bottom-2.5 right-3.5 pointer-events-none" style={{
-              fontSize: '10.5px', fontFamily: 'JetBrains Mono, monospace',
-              color: charColor, transition: 'color 0.2s',
-            }}>
+          </div>
+
+          {/* ── Dynamic Pill / Badge Below Textarea & Character Count ── */}
+          <div className="mt-2.5 flex items-center justify-between flex-wrap gap-2">
+            <div
+              id="scanner-detected-pill"
+              role="status"
+              aria-live="polite"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide border transition-all duration-200"
+              style={{
+                background: 'rgba(0, 240, 255, 0.08)',
+                borderColor: 'rgba(0, 240, 255, 0.35)',
+                color: '#00F0FF',
+                boxShadow: '0 0 12px rgba(0, 240, 255, 0.15)',
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            >
+              <span>{detectedBadge}</span>
+            </div>
+
+            <span
+              aria-live="polite"
+              className="text-[11px]"
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                color: charColor,
+                transition: 'color 0.2s',
+              }}
+            >
               {content.length.toLocaleString()} / {MAX.toLocaleString()}
             </span>
           </div>
         </div>
 
         {/* ── Action row ─────────────────────────────────────── */}
-        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4"
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3.5 sm:pt-4"
           style={{ borderTop: '1px solid #1F2937' }}
         >
           <button
@@ -326,7 +298,7 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
             type="button"
             onClick={handleClear}
             disabled={isDisabled || !content}
-            className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-all duration-150"
+            className="flex items-center justify-center gap-1.5 px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium cursor-pointer transition-all duration-150"
             style={{
               border: '1px solid #1F2937', background: 'transparent',
               color: '#94A3B8', fontFamily: 'Inter, sans-serif',
@@ -336,7 +308,7 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
             <span aria-hidden>✕</span> Clear
           </button>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
             {isLoading && (
               <span role="status" aria-live="assertive" className="flex items-center justify-center gap-2 text-xs"
                 style={{
@@ -356,13 +328,13 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
               type="submit"
               disabled={isDisabled || !content.trim()}
               aria-label="Scan message for phishing threats"
-              className="flex items-center justify-center gap-2 px-6 sm:px-7 py-3 rounded-xl text-sm font-extrabold cursor-pointer transition-all duration-200 overflow-hidden"
+              className="flex items-center justify-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-extrabold cursor-pointer transition-all duration-200 overflow-hidden"
               style={{
                 border: 'none',
                 background: isDisabled || !content.trim()
                   ? '#1C2433'
                   : 'linear-gradient(135deg, #00D4E8 0%, #00F0FF 100%)',
-                color: isDisabled || !content.trim() ? '#374151' : '#030712',
+                color: isDisabled || !content.trim() ? '#94A3B8' : '#030712',
                 fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
                 letterSpacing: '0.2px',
                 boxShadow: !isDisabled && content.trim()

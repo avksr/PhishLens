@@ -131,10 +131,10 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
         aria-labelledby="modal-headline"
         aria-describedby="modal-desc"
         ref={modalRef}
-        className="fixed inset-0 z-[1001] flex items-center justify-center p-4 pointer-events-none"
+        className="fixed inset-0 z-[1001] flex items-center justify-center p-2 sm:p-4 pointer-events-none"
       >
         <div
-          className="pointer-events-auto w-full max-w-[640px] max-h-[90svh] overflow-y-auto relative overflow-hidden rounded-2xl"
+          className="pointer-events-auto w-[95vw] sm:w-full max-w-[640px] max-h-[92svh] overflow-y-auto relative overflow-hidden rounded-xl sm:rounded-2xl mobile-modal-fit"
           style={{
             background: '#0B0F19',
             border: `1px solid ${borderColor}`,
@@ -164,7 +164,7 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
             }} />
           ))}
 
-          <div className="p-6 sm:p-8 pb-6 sm:pb-7">
+          <div className="p-4 sm:p-8 pb-5 sm:pb-7 mobile-card-padding">
             {/* ── Warning icon + tier badge ──────────────────── */}
             <div className="flex items-center justify-between mb-5">
               <div style={{
@@ -269,7 +269,7 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
                   background: '#111827', border: '1px solid #1F2937',
                 }}>
                   <span className="text-sm font-bold" style={{ color: '#F1F5F9', fontFamily: 'JetBrains Mono, monospace' }}>{m.value}</span>
-                  <span className="text-[9.5px] uppercase tracking-wider" style={{ color: '#6B7280', fontFamily: 'Inter, sans-serif' }}>{m.label}</span>
+                  <span className="text-[9.5px] uppercase tracking-wider" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>{m.label}</span>
                 </div>
               ))}
             </div>
@@ -310,7 +310,7 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
                 style={{
                   border: `1px solid ${proceedEnabled ? '#374151' : '#1F2937'}`,
                   background: 'transparent',
-                  color: proceedEnabled ? '#94A3B8' : '#4B5563',
+                  color: proceedEnabled ? '#94A3B8' : '#64748B',
                   fontFamily: 'Inter, sans-serif', fontWeight: 500,
                   cursor: proceedEnabled ? 'pointer' : 'not-allowed',
                 }}
@@ -322,7 +322,7 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
                     <svg aria-hidden width="14" height="14" viewBox="0 0 14 14"
                       style={{ animation: 'pl-spin 1s linear infinite', flexShrink: 0 }}>
                       <circle cx="7" cy="7" r="5" stroke="#374151" strokeWidth="1.5" fill="none"/>
-                      <path d="M7 2a5 5 0 0 1 5 5" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                      <path d="M7 2a5 5 0 0 1 5 5" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
                     </svg>
                     {lang === 'hi'
                       ? `मैं जोखिम समझता/समझती हूँ — ${countdown}s प्रतीक्षा करें`
@@ -334,7 +334,7 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
 
             {/* Footer note */}
             <p className="text-[10.5px] text-center mt-4 leading-relaxed" style={{
-              margin: '16px 0 0', color: '#6B7280',
+              margin: '16px 0 0', color: '#94A3B8',
               fontFamily: 'JetBrains Mono, monospace',
             }}>
               scan_id: {result.scan_id} · {lang === 'hi' ? 'इंटरसेप्ट किया' : 'intercepted in'} {result.processing_time_ms.toFixed(0)}ms

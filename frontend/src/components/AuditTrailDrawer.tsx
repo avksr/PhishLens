@@ -28,7 +28,7 @@ function tierColor(tier: RiskTier): string {
 function StatusBadge({ status }: { status: 'SUCCESS' | 'SKIPPED' | 'ERROR' }) {
   const cfg = {
     SUCCESS: { bg: 'rgba(0,230,118,0.1)', border: 'rgba(0,230,118,0.3)', color: '#00E676', icon: '✓' },
-    SKIPPED: { bg: 'rgba(75,85,104,0.15)', border: '#374151', color: '#6B7280', icon: '–' },
+    SKIPPED: { bg: 'rgba(75,85,104,0.15)', border: '#374151', color: '#94A3B8', icon: '–' },
     ERROR:   { bg: 'rgba(255,51,102,0.1)', border: 'rgba(255,51,102,0.3)', color: '#FF3366', icon: '!' },
   }[status];
   return (
@@ -60,7 +60,7 @@ function ScorePill({ score }: { score: number }) {
 
 function FlagList({ flags }: { flags: string[] }) {
   if (!flags.length) return (
-    <span style={{ fontSize: '12px', color: '#6B7280', fontFamily: 'Inter, sans-serif', fontStyle: 'italic' }}>No flags raised</span>
+    <span style={{ fontSize: '12px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', fontStyle: 'italic' }}>No flags raised</span>
   );
   return (
     <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -98,7 +98,7 @@ function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', 
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="w-full flex items-center justify-between gap-3 px-3 sm:px-4 py-3.5"
+        className="w-full flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 mobile-card-padding"
         style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
       >
         <div className="flex items-center gap-2.5">
@@ -118,7 +118,7 @@ function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', 
         </div>
         <svg aria-hidden width="16" height="16" viewBox="0 0 16 16"
           style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', flexShrink: 0 }}>
-          <path d="M3 6l5 5 5-5" stroke="#6B7280" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3 6l5 5 5-5" stroke="#94A3B8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
 
@@ -128,7 +128,7 @@ function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', 
         overflow: 'hidden',
         transition: 'max-height 0.35s ease',
       }}>
-        <div className="px-3 sm:px-4 pb-4" style={{ borderTop: '1px solid #1F2937' }}>
+        <div className="px-3 sm:px-4 pb-3.5 sm:pb-4 mobile-card-padding" style={{ borderTop: '1px solid #1F2937' }}>
           {children}
         </div>
       </div>
@@ -199,7 +199,7 @@ function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded:
         {data.details}
       </p>
 
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
+      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
         ⚡ {data.latency_ms}ms
       </p>
     </AgentCard>
@@ -212,7 +212,7 @@ function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; exp
   const c = scoreColor(data.risk_score);
   const catColor: Record<string, string> = {
     OFFICIAL_TRAI_HEADER: '#00E676', PERSONAL_GSM: '#FF3366',
-    INTERNATIONAL: '#FFB800', LOOKALIKE_HEADER: '#FF6B00', UNKNOWN: '#6B7280',
+    INTERNATIONAL: '#FFB800', LOOKALIKE_HEADER: '#FF6B00', UNKNOWN: '#94A3B8',
   };
   return (
     <AgentCard icon="📡" title="Sender Identity Vector" agentName="Avni" accentColor={c} expanded={expanded} onToggle={onToggle}>
@@ -261,7 +261,7 @@ function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; exp
       <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
         {data.details}
       </p>
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
+      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
         ⚡ {data.latency_ms}ms
       </p>
     </AgentCard>
@@ -322,7 +322,7 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
 
       <SectionLabel>Flags</SectionLabel>
       <FlagList flags={data.flags} />
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
+      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
         ⚡ {data.latency_ms}ms
       </p>
     </AgentCard>
@@ -489,7 +489,7 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
           )}
           <svg aria-hidden width="16" height="16" viewBox="0 0 16 16"
             style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', flexShrink: 0 }}>
-            <path d="M3 6l5 5 5-5" stroke="#6B7280" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M3 6l5 5 5-5" stroke="#94A3B8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
       </button>
@@ -500,7 +500,7 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
         overflow: 'hidden',
         transition: 'max-height 0.35s ease',
       }}>
-        <div className="px-4 sm:px-5 pb-4" style={{ borderTop: '1px solid #1F2937' }}>
+        <div className="px-3 sm:px-5 pb-3.5 sm:pb-4 mobile-card-padding" style={{ borderTop: '1px solid #1F2937' }}>
           {/* Loading state */}
           {loading && (
             <div className="flex items-center justify-center gap-2 py-6" role="status" aria-live="polite">
@@ -564,7 +564,7 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
                         color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace',
                       }}>{log.processing_time_ms.toFixed(0)}ms</span>
                       <span className="text-[10px]" style={{
-                        color: '#6B7280', fontFamily: 'Inter, sans-serif',
+                        color: '#94A3B8', fontFamily: 'Inter, sans-serif',
                       }}>{timeAgo(log.timestamp)}</span>
                     </div>
                   </div>
@@ -575,7 +575,7 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
 
           {/* Empty state */}
           {!loading && !fetchError && logs.length === 0 && (
-            <p className="text-center py-6 text-xs" style={{ color: '#6B7280', fontFamily: 'Inter, sans-serif' }}>
+            <p className="text-center py-6 text-xs" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
               {lang === 'hi' ? 'अभी तक कोई ऑडिट लॉग नहीं है' : 'No audit logs yet'}
             </p>
           )}
@@ -608,7 +608,7 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
   if (!auditTrail) return null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 w-full max-sm:w-[100vw] mobile-drawer-fit">
       {/* Section header */}
       <div className="flex items-center gap-2.5">
         <div style={{
