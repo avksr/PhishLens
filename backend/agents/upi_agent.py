@@ -457,7 +457,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
         return UpiAgentResult(
             status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="No UPI VPA handle detected in message content.",
+            details="No UPI payment address (like someone@bankname) was found in this message.",
             latency_ms=round(latency_ms, 3),
         )
 
@@ -498,10 +498,11 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     "official banks and institutions do NOT use this PSP handle."
                 )
                 explanation = (
-                    f"DECEPTIVE VPA: '{vpa_full}' uses the personal consumer handle "
-                    f"'@{psp_handle}' (assigned by PhonePe to individual user accounts) "
-                    f"while the local-part claims affiliation with '{brand_in_local}'. "
-                    f"{note}"
+                    f"The UPI address '{vpa_full}' is suspicious. "
+                    f"The part before '@' suggests it belongs to '{brand_in_local}', "
+                    f"but '@{psp_handle}' is a handle assigned exclusively to personal "
+                    "PhonePe user accounts — it is never used by any bank or "
+                    "official institution. This is a common trick used by scammers."
                 )
                 # This is a very high-confidence deceptive signal — short-circuit.
                 candidate_score = _clamp(risk_score)
@@ -527,11 +528,11 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 risk_score += 50.0
                 psp_owner = psp_entry.get("entity", psp_handle)
                 explanation = (
-                    f"CROSS-BRAND DECEPTION: VPA '{vpa_full}' claims affiliation with "
-                    f"'{brand_claimed_in_local}' (via local-part), but the PSP handle "
-                    f"'@{psp_handle}' is registered to '{psp_owner}'. "
-                    f"Real {brand_claimed_in_local} UPI handles use their own PSP suffix, "
-                    f"not '{psp_handle}'."
+                    f"The UPI address '{vpa_full}' claims to be from '{brand_claimed_in_local}', "
+                    f"but the '@{psp_handle}' part of the address actually belongs to "
+                    f"'{psp_owner}', not '{brand_claimed_in_local}'. "
+                    f"The real {brand_claimed_in_local} would use their own payment address, "
+                    f"not one registered to a different bank or service."
                 )
                 candidate_score = _clamp(risk_score)
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
@@ -568,16 +569,18 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
             # Build the appropriate details string
             if final_score < 20.0:
                 details_str = (
-                    f"VPA '{vpa_full}' resolved to '{psp_label}'. "
-                    "No deceptive patterns detected."
+                    f"The UPI address '{vpa_full}' is registered with '{psp_label}'. "
+                    "No suspicious patterns were detected."
                 )
                 is_spoofed = False
                 target_ent = None
             else:
                 details_str = (
-                    f"VPA '{vpa_full}' (PSP: {psp_label}) exhibits suspicious patterns: "
-                    + ", ".join(candidate_flags)
-                    + "."
+                    f"The UPI address '{vpa_full}' (payment service: {psp_label}) "
+                    "shows warning signs that it may be fraudulent. "
+                    "Reasons: " + ", ".join(
+                        flag.replace("_", " ").lower() for flag in candidate_flags
+                    ) + "."
                 )
                 is_spoofed = bool(candidate_flags)
                 target_ent = brand_claimed_in_local
@@ -601,7 +604,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
         return UpiAgentResult(
             status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="No scoreable UPI VPA candidates found.",
+            details="A UPI address was found but it could not be scored. Please review manually.",
             latency_ms=round(latency_ms, 3),
         )
 

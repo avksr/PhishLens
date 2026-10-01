@@ -2,9 +2,9 @@
   "_meta": {
     "description": "TRAI DLT Certified Sender Header Whitelist for PhishLens / ScamShield AI",
     "format": "principal_entity_code -> { brand_name, category, operator_prefixes }",
-    "last_updated": "2026-09-30",
+    "last_updated": "2026-10-01",
     "source": "TRAI DLT Platform (https://www.trai.gov.in/), public sender-header disclosures",
-    "note": "Operator prefixes (VM, AX, AD, VK, JK, TM, BW, TA, AT) are assigned by telecom operators. The 6-letter principal entity code uniquely identifies the registered brand."
+    "note": "Operator prefixes (VM, AX, AD, VK, JK, TM, BW, TA, AT, CP) are assigned by telecom operators. The 6-letter principal entity code uniquely identifies the registered brand."
   },
   "registry": {
     "SBIINB": {
@@ -241,6 +241,26 @@
       "brand_name": "NABARD (National Bank for Agriculture and Rural Development)",
       "category": "Government / Agriculture Finance",
       "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "UPPCLS": {
+      "brand_name": "UPPCL (Uttar Pradesh Power Corporation Limited)",
+      "category": "Electricity / DISCOM",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
+    },
+    "DISCOM": {
+      "brand_name": "DISCOM (Generic Distribution Company / Electricity Utility)",
+      "category": "Electricity / DISCOM",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
+    },
+    "IPPOST": {
+      "brand_name": "India Post",
+      "category": "Government / Postal",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
+    },
+    "BLDART": {
+      "brand_name": "BlueDart Express",
+      "category": "Courier / Logistics",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
     },
     "NDRFIN": {
       "brand_name": "National Disaster Response Force (NDRF)",
