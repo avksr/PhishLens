@@ -10,6 +10,7 @@
 
 from typing import Dict, List, Optional
 import time
+import re
 from shared.models import (
     ScanRequest,
     ScanResponse,
@@ -37,6 +38,20 @@ from core.verdict_utils import (
     build_evidence_list,
     generate_recommended_action
 )
+
+
+# ── Adversarial Evasion Constants & Helpers (Task 2) ─────────────────────────
+_ZERO_WIDTH_CHARS = {'\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u00ad'}
+_CYRILLIC_HOMOGLYPH_RE = re.compile(r'[\u0400-\u04FF]')
+
+def _detect_adversarial_evasion(content: str) -> List[str]:
+    """Detect deceptive zero-width obfuscation and Cyrillic homoglyphs."""
+    flags = []
+    if any(c in content for c in _ZERO_WIDTH_CHARS):
+        flags.append("ADVERSARIAL_ZERO_WIDTH_DETECTED")
+    if _CYRILLIC_HOMOGLYPH_RE.search(content) and any('a' <= c.lower() <= 'z' for c in content):
+        flags.append("ADVERSARIAL_HOMOGLYPH_DETECTED")
+    return flags
 
 
 def _compute_dynamic_weights(
@@ -255,8 +270,15 @@ def compute_score(
 
     final_score = base_score
     heuristics: List[str] = []
+    sanitized_content = "".join(c for c in req.content if c not in _ZERO_WIDTH_CHARS)
 
     # Step 3: Heuristic Escalation Rules
+
+    # Rule 0: Adversarial Evasion Tactics (Zero-width obfuscation, Cyrillic homoglyphs)
+    adversarial_flags = _detect_adversarial_evasion(req.content)
+    if adversarial_flags and sender_r.sender_category != SenderCategoryEnum.OFFICIAL_TRAI_HEADER:
+        final_score = max(final_score, 80.0)
+        heuristics.append(f"CRITICAL_ESCALATION: Adversarial evasion tactic detected ({', '.join(adversarial_flags)})")
 
     # Rule 1: Double Whammy (High Risk URL + Spoofed / High Risk Sender)
     if url_r.risk_score >= 80 and sender_r.risk_score >= 80:
@@ -274,6 +296,18 @@ def compute_score(
     if is_personal_gsm and claims_bank and (is_kyc_or_panic or intent_r.risk_score >= 50):
         final_score = max(final_score, 88.0)
         heuristics.append("CRITICAL_ESCALATION: Personal mobile number impersonating bank with KYC/panic urgency")
+
+    # Rule 2b: Unauthorized Utility / Electricity Disconnection Threat from Personal GSM
+    is_discom_threat = bool(re.search(
+        r'\b(?:electricity|bijli|power)\s+(?:cut|bill|disconnected|cutoff|band)\b|'
+        r'\b(?:disconnected|cut)\s+(?:tonight|today|immediately)\b|'
+        r'\b(?:bijli|power)\s+officer\b',
+        sanitized_content,
+        re.IGNORECASE
+    ))
+    if is_discom_threat and sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM:
+        final_score = max(final_score, 82.0)
+        heuristics.append("CRITICAL_ESCALATION: Unauthorized utility disconnection threat sent from private mobile number")
 
     # Rule 3: Active OTP Harvesting Solicitations
     is_otp_harvest = (

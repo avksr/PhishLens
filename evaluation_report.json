@@ -1,0 +1,1457 @@
+{
+  "report_version": "2.0",
+  "system_name": "PhishLens (ScamShield AI)",
+  "timestamp_utc": "2026-10-01T08:40:02.032681+00:00",
+  "git_commit_sha": "4a7270d6d51901eb358c54bc8ad625d699d587c4",
+  "dataset_name": "benchmark_60.json",
+  "summary": {
+    "total_cases_evaluated": 60,
+    "scam_cases_total": 35,
+    "scam_cases_detected": 35,
+    "scam_detection_rate_percent": 100.0,
+    "benign_cases_total": 25,
+    "benign_cases_clean": 25,
+    "benign_false_positives": 0,
+    "false_positive_rate_percent": 0.0,
+    "explanation_coverage_percent": 100.0,
+    "all_prd_targets_met": true
+  },
+  "target_benchmarks": {
+    "scam_detection_rate": ">= 85.0%",
+    "false_positive_rate": "<= 10.0%",
+    "explanation_coverage": "100.0%",
+    "median_latency": "< 1000.0ms"
+  },
+  "latency_percentiles_ms": {
+    "p50_median": 1.96,
+    "p90": 9.3,
+    "p95": 10.99,
+    "p99": 24.55,
+    "mean": 4.23,
+    "min": 1.15,
+    "max": 40.59
+  },
+  "category_breakdown": [
+    {
+      "category": "ATM Card Expiry OTP Solicitation",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.49,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Aadhaar Biometric Deactivation Extortion",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 7.14,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "Airtel Bill Payment Confirmation",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.52,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Amazon Package Delivery Code",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.51,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Amazon Product Review Work From Home",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.86,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Axis Bank Account KYC Suspension",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 3.86,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "Axis Bank Salary Credit",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.68,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "BESCOM Electricity Bill Receipt",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.88,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Bank of Baroda UPI Payment",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.39,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Canara Bank Subscription Mandate",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.46,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "CoWIN Vaccine Certificate Alert",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.31,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Customs Drug Parcel Extortion",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.55,
+      "avg_risk_score": 82
+    },
+    {
+      "category": "DISCOM Electricity Cutoff",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 3.43,
+      "avg_risk_score": 82
+    },
+    {
+      "category": "DISCOM Electricity Link Phishing",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 40.59,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "Deceptive UPI Refund Trap",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.26,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Digital Arrest / CBI Extortion",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.62,
+      "avg_risk_score": 82
+    },
+    {
+      "category": "ED Money Laundering Summons",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.28,
+      "avg_risk_score": 88
+    },
+    {
+      "category": "EPFO PF Claim Rejection Lure",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 5.91,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "Fake Airline Refund Handle",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.73,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Fake Cyber Police Video Call",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.75,
+      "avg_risk_score": 82
+    },
+    {
+      "category": "Fake District Court E-Summons",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 7.63,
+      "avg_risk_score": 50
+    },
+    {
+      "category": "Fake Electricity Bill UPI Payment",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.29,
+      "avg_risk_score": 88
+    },
+    {
+      "category": "Fake Traffic e-Challan Penalty",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 9.4,
+      "avg_risk_score": 88
+    },
+    {
+      "category": "Flipkart Order Dispatch Update",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 3.15,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Google Pay Cashback VPA Lure",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.65,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Guaranteed Crypto Trading Multiplier",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 9.49,
+      "avg_risk_score": 50
+    },
+    {
+      "category": "HDFC Bank Transaction OTP",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.8,
+      "avg_risk_score": 25
+    },
+    {
+      "category": "HDFC PAN Update Phishing",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.99,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "ICICI Bank Debit Alert",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.63,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "ICICI Reward Points Phishing",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 3.88,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "IRCTC Fake Ticket Refund",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 5.8,
+      "avg_risk_score": 58
+    },
+    {
+      "category": "IRCTC Train Ticket Confirmed",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 4.32,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Income Tax ITR Verification Receipt",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.91,
+      "avg_risk_score": 5
+    },
+    {
+      "category": "Income Tax Refund Approval Phishing",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 6.77,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "India Post Parcel Re-delivery Fee",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 10.88,
+      "avg_risk_score": 58
+    },
+    {
+      "category": "Indian Bank Interest Credit",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.59,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Instagram Influencer Starter Kit Fee",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 8.42,
+      "avg_risk_score": 50
+    },
+    {
+      "category": "Instant 5-Minute Loan Lure",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 13.04,
+      "avg_risk_score": 50
+    },
+    {
+      "category": "KBC Jio Lucky Draw WhatsApp Scam",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.9,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Kotak Credit Card Statement",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.24,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "LPG Gas Subsidy KYC Cutoff",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 13.4,
+      "avg_risk_score": 50
+    },
+    {
+      "category": "Mahavitaran Power Cut Extortion",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.59,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Ola Cabs Booking Confirmation",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.35,
+      "avg_risk_score": 5
+    },
+    {
+      "category": "PM Kisan Samman Nidhi e-KYC",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 7.95,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "PNB ATM Cash Withdrawal",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.38,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "PNB Debit Card Block OTP Harvest",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 4.27,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "Part-Time YouTube Liking Job",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 5.63,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "Personal Message - Birthday Wishes",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.75,
+      "avg_risk_score": 20
+    },
+    {
+      "category": "Personal Message - Family Health Care",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.02,
+      "avg_risk_score": 20
+    },
+    {
+      "category": "Personal Message - Meeting Plan",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.15,
+      "avg_risk_score": 20
+    },
+    {
+      "category": "Personal Message - Work Sync",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.55,
+      "avg_risk_score": 20
+    },
+    {
+      "category": "PhonePe Diwali Prize VPA Trap",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.37,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "SBI KYC Phishing (.top)",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 3.69,
+      "avg_risk_score": 92
+    },
+    {
+      "category": "SBI NetBanking Login OTP",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.78,
+      "avg_risk_score": 2
+    },
+    {
+      "category": "Swiggy Food Delivery Tracking",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 2.2,
+      "avg_risk_score": 3
+    },
+    {
+      "category": "TRAI SIM Deactivation Extortion",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.48,
+      "avg_risk_score": 45
+    },
+    {
+      "category": "UIDAI Aadhaar OTP Verification",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.26,
+      "avg_risk_score": 25
+    },
+    {
+      "category": "Uber Ride Confirmation",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.47,
+      "avg_risk_score": 25
+    },
+    {
+      "category": "WhatsApp Pink Trojan Download",
+      "expected_verdict": "LIKELY_SCAM",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 9.29,
+      "avg_risk_score": 50
+    },
+    {
+      "category": "Zomato Order Delivered Rating",
+      "expected_verdict": "SAFE",
+      "total_cases": 1,
+      "passed_cases": 1,
+      "failed_cases": 0,
+      "pass_rate_percent": 100.0,
+      "mean_latency_ms": 1.17,
+      "avg_risk_score": 2
+    }
+  ],
+  "case_evaluations": [
+    {
+      "id": "scam_001",
+      "category": "DISCOM Electricity Cutoff",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 82,
+      "pass": true,
+      "latency_ms": 3.43,
+      "reasons": [
+        "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
+        "Uses legal or institutional coercion to extort immediate payment without due process"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_002",
+      "category": "DISCOM Electricity Link Phishing",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 40.59,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating Electricity Provider",
+        "Website link mimics official BESCOM portal but uses unauthorized domain (bescom-bill-update.top)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_003",
+      "category": "Mahavitaran Power Cut Extortion",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.59,
+      "reasons": [
+        "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_004",
+      "category": "SBI KYC Phishing (.top)",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 3.69,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating State Bank of India",
+        "Website link mimics official State Bank of India portal but uses unauthorized domain (sbi-kyc-verify.top)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_005",
+      "category": "HDFC PAN Update Phishing",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 2.99,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating HDFC Bank",
+        "Website link mimics official HDFC Bank portal but uses unauthorized domain (hdfc-pan-update.xyz)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_006",
+      "category": "ICICI Reward Points Phishing",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 3.88,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Website link mimics official ICICI Bank portal but uses unauthorized domain (icici-rewards-cash.club)",
+        "Official alerts from ICICI Bank are never issued from private 10-digit mobile numbers"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_007",
+      "category": "Axis Bank Account KYC Suspension",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 3.86,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating Axis Bank",
+        "Website link mimics official Axis Bank portal but uses unauthorized domain (axis-kyc-verification.top)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_008",
+      "category": "PNB Debit Card Block OTP Harvest",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 4.27,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating Punjab National Bank",
+        "Website link mimics official Punjab National Bank portal but uses unauthorized domain (pnb-aadhaar-link.cfd)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_009",
+      "category": "Digital Arrest / CBI Extortion",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 82,
+      "pass": true,
+      "latency_ms": 1.62,
+      "reasons": [
+        "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
+        "Uses legal or institutional coercion to extort immediate payment without due process"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_010",
+      "category": "Customs Drug Parcel Extortion",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 82,
+      "pass": true,
+      "latency_ms": 1.55,
+      "reasons": [
+        "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
+        "Uses legal or institutional coercion to extort immediate payment without due process"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_011",
+      "category": "ED Money Laundering Summons",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 88,
+      "pass": true,
+      "latency_ms": 1.28,
+      "reasons": [
+        "Private 10-digit mobile number (personal GSM) impersonating UIDAI (Aadhaar Authority)",
+        "Official alerts from UIDAI (Aadhaar Authority) are never issued from private 10-digit mobile numbers",
+        "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_012",
+      "category": "TRAI SIM Deactivation Extortion",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.48,
+      "reasons": [
+        "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_013",
+      "category": "Fake Cyber Police Video Call",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 82,
+      "pass": true,
+      "latency_ms": 1.75,
+      "reasons": [
+        "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
+        "Uses legal or institutional coercion to extort immediate payment without due process"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_014",
+      "category": "Fake District Court E-Summons",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 50,
+      "pass": true,
+      "latency_ms": 7.63,
+      "reasons": [
+        "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_015",
+      "category": "Deceptive UPI Refund Trap",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 2.26,
+      "reasons": [
+        "Official alerts from State Bank of India are never issued from private 10-digit mobile numbers",
+        "Payment address 'refund-desk@oksbi' impersonates an institutional desk on a consumer PSP handle"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_016",
+      "category": "Google Pay Cashback VPA Lure",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.65,
+      "reasons": [
+        "Payment address 'gpay-cashback@ybl' impersonates an institutional desk on a consumer PSP handle"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_017",
+      "category": "PhonePe Diwali Prize VPA Trap",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.37,
+      "reasons": [
+        "Official alerts from Paytm Payments Bank are never issued from private 10-digit mobile numbers",
+        "Payment address 'phonepe-rewards@paytm' impersonates an institutional desk on a consumer PSP handle"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_018",
+      "category": "Fake Electricity Bill UPI Payment",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 88,
+      "pass": true,
+      "latency_ms": 1.29,
+      "reasons": [
+        "Private 10-digit mobile number (personal GSM) impersonating Electricity Provider",
+        "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
+        "Uses legal or institutional coercion to extort immediate payment without due process"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_019",
+      "category": "Fake Airline Refund Handle",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.73,
+      "reasons": [
+        "Payment address 'indigo-refund@ibl' impersonates an institutional desk on a consumer PSP handle"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_020",
+      "category": "Part-Time YouTube Liking Job",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 5.63,
+      "reasons": [
+        "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_021",
+      "category": "Amazon Product Review Work From Home",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.86,
+      "reasons": [
+        "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_022",
+      "category": "Guaranteed Crypto Trading Multiplier",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 50,
+      "pass": true,
+      "latency_ms": 9.49,
+      "reasons": [
+        "Uses high-risk top-level domain (.xyz) commonly favored by ephemeral phishing campaigns"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_023",
+      "category": "Instagram Influencer Starter Kit Fee",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 50,
+      "pass": true,
+      "latency_ms": 8.42,
+      "reasons": [
+        "Uses high-risk top-level domain (.club) commonly favored by ephemeral phishing campaigns",
+        "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_024",
+      "category": "KBC Jio Lucky Draw WhatsApp Scam",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.9,
+      "reasons": [
+        "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_025",
+      "category": "IRCTC Fake Ticket Refund",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 58,
+      "pass": true,
+      "latency_ms": 5.8,
+      "reasons": [
+        "Website link mimics official IRCTC Indian Railways portal but uses unauthorized domain (irctc-refund-portal.top)",
+        "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns",
+        "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_026",
+      "category": "Income Tax Refund Approval Phishing",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 6.77,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Website link mimics official Income Tax India portal but uses unauthorized domain (incometax-refund-gov.xyz)",
+        "Official alerts from Income Tax Department are never issued from private 10-digit mobile numbers"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_027",
+      "category": "PM Kisan Samman Nidhi e-KYC",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 7.95,
+      "reasons": [
+        "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_028",
+      "category": "Aadhaar Biometric Deactivation Extortion",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 7.14,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating UIDAI (Aadhaar Authority)",
+        "Website link mimics official UIDAI / Aadhaar portal but uses unauthorized domain (myaadhaar-update.cfd)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_029",
+      "category": "ATM Card Expiry OTP Solicitation",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 45,
+      "pass": true,
+      "latency_ms": 1.49,
+      "reasons": [
+        "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "scam_030",
+      "category": "Fake Traffic e-Challan Penalty",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 88,
+      "pass": true,
+      "latency_ms": 9.4,
+      "reasons": [
+        "Private 10-digit mobile number (personal GSM) impersonating Government / Traffic Authority",
+        "Official alerts from Government / Traffic Authority are never issued from private 10-digit mobile numbers",
+        "Uses high-risk top-level domain (.xyz) commonly favored by ephemeral phishing campaigns"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_031",
+      "category": "WhatsApp Pink Trojan Download",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 50,
+      "pass": true,
+      "latency_ms": 9.29,
+      "reasons": [
+        "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_032",
+      "category": "Instant 5-Minute Loan Lure",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 50,
+      "pass": true,
+      "latency_ms": 13.04,
+      "reasons": [
+        "Uses high-risk top-level domain (.icu) commonly favored by ephemeral phishing campaigns"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_033",
+      "category": "LPG Gas Subsidy KYC Cutoff",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 50,
+      "pass": true,
+      "latency_ms": 13.4,
+      "reasons": [
+        "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_034",
+      "category": "EPFO PF Claim Rejection Lure",
+      "expected": "LIKELY_SCAM",
+      "actual": "LIKELY_SCAM",
+      "score": 92,
+      "pass": true,
+      "latency_ms": 5.91,
+      "reasons": [
+        "Phishing link detected originating from an unverified or high-risk sender",
+        "Private 10-digit mobile number (personal GSM) impersonating EPFO",
+        "Website link mimics official EPFO / PF portal but uses unauthorized domain (epfindia-claim-portal.xyz)"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "scam_035",
+      "category": "India Post Parcel Re-delivery Fee",
+      "expected": "LIKELY_SCAM",
+      "actual": "SUSPICIOUS",
+      "score": 58,
+      "pass": true,
+      "latency_ms": 10.88,
+      "reasons": [
+        "Website link mimics official India Post / IPPB portal but uses unauthorized domain (indiapost-parcel-tracking.top)",
+        "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns",
+        "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
+      ],
+      "action_required": "BLOCK_TRANSACTION"
+    },
+    {
+      "id": "benign_001",
+      "category": "HDFC Bank Transaction OTP",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 25,
+      "pass": true,
+      "latency_ms": 1.8,
+      "reasons": [
+        "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "benign_002",
+      "category": "SBI NetBanking Login OTP",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.78,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_003",
+      "category": "ICICI Bank Debit Alert",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.63,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_004",
+      "category": "Axis Bank Salary Credit",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 2.68,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_005",
+      "category": "Kotak Credit Card Statement",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 2.24,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_006",
+      "category": "PNB ATM Cash Withdrawal",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.38,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_007",
+      "category": "Bank of Baroda UPI Payment",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.39,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_008",
+      "category": "Canara Bank Subscription Mandate",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.46,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_009",
+      "category": "Indian Bank Interest Credit",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 2.59,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_010",
+      "category": "UIDAI Aadhaar OTP Verification",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 25,
+      "pass": true,
+      "latency_ms": 1.26,
+      "reasons": [
+        "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "benign_011",
+      "category": "Swiggy Food Delivery Tracking",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 3,
+      "pass": true,
+      "latency_ms": 2.2,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_012",
+      "category": "Zomato Order Delivered Rating",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.17,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_013",
+      "category": "Amazon Package Delivery Code",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.51,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_014",
+      "category": "Flipkart Order Dispatch Update",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 3.15,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_015",
+      "category": "Uber Ride Confirmation",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 25,
+      "pass": true,
+      "latency_ms": 1.47,
+      "reasons": [
+        "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
+      ],
+      "action_required": "WARN_USER"
+    },
+    {
+      "id": "benign_016",
+      "category": "Ola Cabs Booking Confirmation",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 5,
+      "pass": true,
+      "latency_ms": 1.35,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_017",
+      "category": "IRCTC Train Ticket Confirmed",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 4.32,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_018",
+      "category": "BESCOM Electricity Bill Receipt",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.88,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_019",
+      "category": "Airtel Bill Payment Confirmation",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.52,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_020",
+      "category": "Personal Message - Meeting Plan",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 20,
+      "pass": true,
+      "latency_ms": 1.15,
+      "reasons": [
+        "No external phishing links or suspicious URLs detected in message",
+        "Communication content conforms to standard benign transactional guidelines"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_021",
+      "category": "Personal Message - Family Health Care",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 20,
+      "pass": true,
+      "latency_ms": 2.02,
+      "reasons": [
+        "No external phishing links or suspicious URLs detected in message",
+        "Communication content conforms to standard benign transactional guidelines"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_022",
+      "category": "Personal Message - Work Sync",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 20,
+      "pass": true,
+      "latency_ms": 2.55,
+      "reasons": [
+        "No external phishing links or suspicious URLs detected in message",
+        "Communication content conforms to standard benign transactional guidelines"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_023",
+      "category": "Personal Message - Birthday Wishes",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 20,
+      "pass": true,
+      "latency_ms": 1.75,
+      "reasons": [
+        "No external phishing links or suspicious URLs detected in message",
+        "Communication content conforms to standard benign transactional guidelines"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_024",
+      "category": "CoWIN Vaccine Certificate Alert",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 2,
+      "pass": true,
+      "latency_ms": 1.31,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    },
+    {
+      "id": "benign_025",
+      "category": "Income Tax ITR Verification Receipt",
+      "expected": "SAFE",
+      "actual": "SAFE",
+      "score": 5,
+      "pass": true,
+      "latency_ms": 1.91,
+      "reasons": [
+        "Verified authentic commercial communication matching official TRAI DLT registry"
+      ],
+      "action_required": "ALLOW"
+    }
+  ]
+}
