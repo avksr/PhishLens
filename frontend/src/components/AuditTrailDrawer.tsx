@@ -1,10 +1,11 @@
 // ────────────────────────────────────────────────────────────
-//  PhishLens  ·  AuditTrailDrawer Component
-//  3 vector cards + synthesis card — explainability drilldown
+//  PhishLens  ·  AuditTrailDrawer Component  (Day 4 Revision)
+//  3 vector cards + synthesis + Live Audit Feed drawer
 // ────────────────────────────────────────────────────────────
 
 import { useState } from 'react';
-import type { AuditTrail, UrlAgentResult, SenderAgentResult, IntentAgentResult, SynthesisBreakdown } from '../lib/types';
+import type { AuditTrail, UrlAgentResult, SenderAgentResult, IntentAgentResult, SynthesisBreakdown, AuditLogEntry, RiskTier, Language } from '../lib/types';
+import { fetchRecentAuditLogs } from '../lib/api';
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -13,6 +14,15 @@ function scoreColor(n: number): string {
   if (n <= 49) return '#FFB800';
   if (n <= 77) return '#FF6B00';
   return '#FF3366';
+}
+
+function tierColor(tier: RiskTier): string {
+  switch (tier) {
+    case 'SAFE':      return '#00E676';
+    case 'CAUTION':   return '#FFB800';
+    case 'HIGH_RISK': return '#FF6B00';
+    case 'CRITICAL':  return '#FF3366';
+  }
 }
 
 function StatusBadge({ status }: { status: 'SUCCESS' | 'SKIPPED' | 'ERROR' }) {
@@ -50,7 +60,7 @@ function ScorePill({ score }: { score: number }) {
 
 function FlagList({ flags }: { flags: string[] }) {
   if (!flags.length) return (
-    <span style={{ fontSize: '12px', color: '#374151', fontFamily: 'Inter, sans-serif', fontStyle: 'italic' }}>No flags raised</span>
+    <span style={{ fontSize: '12px', color: '#6B7280', fontFamily: 'Inter, sans-serif', fontStyle: 'italic' }}>No flags raised</span>
   );
   return (
     <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -68,7 +78,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p style={{
       margin: '14px 0 6px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.9px',
-      textTransform: 'uppercase', color: '#4B5563', fontFamily: 'Inter, sans-serif',
+      textTransform: 'uppercase', color: '#94A3B8', fontFamily: 'Inter, sans-serif',
     }}>{children}</p>
   );
 }
@@ -88,30 +98,27 @@ function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', 
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        style={{
-          width: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
-          padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: '12px',
-        }}
+        className="w-full flex items-center justify-between gap-3 px-3 sm:px-4 py-3.5"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="flex items-center gap-2.5">
           <div style={{
             width: 34, height: 34, borderRadius: '8px', fontSize: '17px',
             background: `${accentColor}12`, border: `1px solid ${accentColor}28`,
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }} aria-hidden>{icon}</div>
           <div style={{ textAlign: 'left' }}>
-            <p style={{ margin: 0, fontSize: '13.5px', fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+            <p className="text-[13px] sm:text-[13.5px]" style={{ margin: 0, fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
               {title}
             </p>
-            <p style={{ margin: 0, fontSize: '10.5px', color: '#4B5563', fontFamily: 'JetBrains Mono, monospace' }}>
+            <p style={{ margin: 0, fontSize: '10.5px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
               Agent: {agentName}
             </p>
           </div>
         </div>
         <svg aria-hidden width="16" height="16" viewBox="0 0 16 16"
           style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', flexShrink: 0 }}>
-          <path d="M3 6l5 5 5-5" stroke="#4B5563" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3 6l5 5 5-5" stroke="#6B7280" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
 
@@ -121,7 +128,7 @@ function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', 
         overflow: 'hidden',
         transition: 'max-height 0.35s ease',
       }}>
-        <div style={{ padding: '0 16px 16px', borderTop: '1px solid #1F2937' }}>
+        <div className="px-3 sm:px-4 pb-4" style={{ borderTop: '1px solid #1F2937' }}>
           {children}
         </div>
       </div>
@@ -135,21 +142,20 @@ function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded:
   const c = scoreColor(data.risk_score);
   return (
     <AgentCard icon="🔗" title="URL / Domain Vector" agentName="Atharv" accentColor={c} expanded={expanded} onToggle={onToggle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
         <StatusBadge status={data.status} />
         <ScorePill score={data.risk_score} />
         {data.url_analyzed && (
-          <code style={{
-            fontSize: '11px', padding: '3px 8px', borderRadius: '6px',
-            background: '#111827', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace',
-            border: '1px solid #1F2937', wordBreak: 'break-all', maxWidth: '100%',
+          <code className="text-[11px] px-2 py-0.5 rounded-md break-all max-w-full" style={{
+            background: '#111827', color: '#CBD5E1', fontFamily: 'JetBrains Mono, monospace',
+            border: '1px solid #1F2937',
           }}>{data.url_analyzed}</code>
         )}
       </div>
 
       {data.status !== 'SKIPPED' && (
         <>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+          <div className="flex gap-2 mt-3 flex-wrap">
             {data.domain_age_days !== null && (
               <span style={{
                 padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 600,
@@ -189,11 +195,11 @@ function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded:
       <FlagList flags={data.flags} />
 
       <SectionLabel>Agent Analysis</SectionLabel>
-      <p style={{ margin: 0, fontSize: '12.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+      <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
         {data.details}
       </p>
 
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#374151', fontFamily: 'JetBrains Mono, monospace' }}>
+      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
         ⚡ {data.latency_ms}ms
       </p>
     </AgentCard>
@@ -210,26 +216,25 @@ function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; exp
   };
   return (
     <AgentCard icon="📡" title="Sender Identity Vector" agentName="Avni" accentColor={c} expanded={expanded} onToggle={onToggle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
         <StatusBadge status={data.status} />
         <ScorePill score={data.risk_score} />
         {data.sender_analyzed && (
-          <code style={{
-            fontSize: '11.5px', padding: '3px 9px', borderRadius: '6px',
-            background: '#111827', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace',
+          <code className="text-[11.5px] px-2 py-0.5 rounded-md" style={{
+            background: '#111827', color: '#CBD5E1', fontFamily: 'JetBrains Mono, monospace',
             border: '1px solid #1F2937',
           }}>{data.sender_analyzed}</code>
         )}
       </div>
 
       {data.status !== 'SKIPPED' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+        <div className="flex gap-2 mt-3 flex-wrap">
           <span style={{
             padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
             fontFamily: 'JetBrains Mono, monospace',
-            color: catColor[data.sender_category] ?? '#94A3B8',
-            background: `${catColor[data.sender_category] ?? '#94A3B8'}14`,
-            border: `1px solid ${catColor[data.sender_category] ?? '#94A3B8'}35`,
+            color: catColor[data.sender_category] ?? '#CBD5E1',
+            background: `${catColor[data.sender_category] ?? '#CBD5E1'}14`,
+            border: `1px solid ${catColor[data.sender_category] ?? '#CBD5E1'}35`,
           }}>{data.sender_category.replace(/_/g, ' ')}</span>
 
           {data.is_spoofed_header && (
@@ -243,7 +248,7 @@ function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; exp
           {data.brand_claimed && (
             <span style={{
               padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
-              fontFamily: 'Inter, sans-serif', color: '#94A3B8',
+              fontFamily: 'Inter, sans-serif', color: '#CBD5E1',
               background: 'rgba(148,163,184,0.08)', border: '1px solid #1F2937',
             }}>Claims: {data.brand_claimed}</span>
           )}
@@ -253,10 +258,10 @@ function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; exp
       <SectionLabel>Flags</SectionLabel>
       <FlagList flags={data.flags} />
       <SectionLabel>Agent Analysis</SectionLabel>
-      <p style={{ margin: 0, fontSize: '12.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+      <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
         {data.details}
       </p>
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#374151', fontFamily: 'JetBrains Mono, monospace' }}>
+      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
         ⚡ {data.latency_ms}ms
       </p>
     </AgentCard>
@@ -272,11 +277,11 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
     FINANCIAL_EXTORTION: '#FF3366', LOTTERY_REWARD: '#FF6B00',
     KYC_VERIFICATION: '#FF3366', OTP_HARVEST: '#FF3366',
   };
-  const ic = intentColors[data.detected_intent] ?? '#94A3B8';
+  const ic = intentColors[data.detected_intent] ?? '#CBD5E1';
 
   return (
     <AgentCard icon="🧠" title="Psycholinguistic Vector" agentName="Vikas" accentColor={c} expanded={expanded} onToggle={onToggle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
         <StatusBadge status={data.status} />
         <ScorePill score={data.risk_score} />
         <span style={{
@@ -286,7 +291,7 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
         }}>{data.detected_intent.replace(/_/g, ' ')}</span>
         <span style={{
           padding: '4px 11px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
-          fontFamily: 'JetBrains Mono, monospace', color: '#94A3B8',
+          fontFamily: 'JetBrains Mono, monospace', color: '#CBD5E1',
           background: 'rgba(148,163,184,0.08)', border: '1px solid #1F2937',
         }}>Confidence: {(data.confidence * 100).toFixed(0)}%</span>
       </div>
@@ -309,7 +314,7 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
       <blockquote style={{
         margin: 0, padding: '10px 14px', borderLeft: '3px solid #00F0FF',
         borderRadius: '0 8px 8px 0', background: 'rgba(0,240,255,0.04)',
-        fontSize: '12.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif',
+        fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif',
         lineHeight: '1.65', fontStyle: 'italic',
       }}>
         {data.reasoning}
@@ -317,7 +322,7 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
 
       <SectionLabel>Flags</SectionLabel>
       <FlagList flags={data.flags} />
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#374151', fontFamily: 'JetBrains Mono, monospace' }}>
+      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
         ⚡ {data.latency_ms}ms
       </p>
     </AgentCard>
@@ -334,13 +339,12 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
   ];
 
   return (
-    <div style={{
+    <div className="p-4 sm:p-[18px] rounded-xl" style={{
       background: 'linear-gradient(135deg, #0D1623 0%, #111827 100%)',
       border: '1px solid rgba(0,240,255,0.18)',
-      borderRadius: '12px', padding: '18px',
       boxShadow: '0 0 24px rgba(0,240,255,0.05)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+      <div className="flex items-center gap-2.5 mb-4">
         <div style={{
           width: 34, height: 34, borderRadius: '8px', fontSize: '17px',
           background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.25)',
@@ -350,23 +354,23 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
           <p style={{ margin: 0, fontSize: '13.5px', fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
             Avika · Synthesis Engine
           </p>
-          <p style={{ margin: 0, fontSize: '10.5px', color: '#4B5563', fontFamily: 'JetBrains Mono, monospace' }}>
+          <p style={{ margin: 0, fontSize: '10.5px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
             Dynamic weight orchestration
           </p>
         </div>
       </div>
 
       {/* Weight bars */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
         {weights.map(w => (
-          <div key={w.label} style={{ flex: 1, minWidth: '80px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span style={{ fontSize: '10.5px', color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>{w.label}</span>
+          <div key={w.label} className="flex-1 min-w-[80px]">
+            <div className="flex justify-between mb-1">
+              <span style={{ fontSize: '10.5px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>{w.label}</span>
               <span style={{ fontSize: '10.5px', color: w.color, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
                 {(w.value * 100).toFixed(0)}%
               </span>
             </div>
-            <div style={{ height: '5px', borderRadius: '3px', background: '#1F2937', overflow: 'hidden' }}>
+            <div className="h-[5px] rounded-sm overflow-hidden" style={{ background: '#1F2937' }}>
               <div style={{
                 height: '100%', borderRadius: '3px',
                 width: `${w.value * 100}%`,
@@ -382,10 +386,10 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
       {/* Heuristics */}
       {data.heuristics_triggered.length > 0 && (
         <>
-          <p style={{ margin: '0 0 8px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.9px', textTransform: 'uppercase', color: '#4B5563', fontFamily: 'Inter, sans-serif' }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
             Heuristics Triggered
           </p>
-          <ul style={{ margin: '0 0 14px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <ul className="mb-3.5" style={{ margin: '0 0 14px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
             {data.heuristics_triggered.map((h, i) => (
               <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px' }}>
                 <span aria-hidden style={{ color: '#00F0FF', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>▸</span>
@@ -397,14 +401,190 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
       )}
 
       {/* Summary */}
-      <div style={{
-        padding: '10px 14px', borderRadius: '9px',
+      <div className="p-2.5 sm:p-3.5 rounded-lg" style={{
         background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.12)',
       }}>
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+        <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
           {data.summary_explanation}
         </p>
       </div>
+    </div>
+  );
+}
+
+// ── Time-ago formatter ────────────────────────────────────────
+
+function timeAgo(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+// ── Live Audit Feed Drawer ────────────────────────────────────
+
+function LiveAuditFeed({ lang }: { lang: Language }) {
+  const [open,       setOpen]       = useState(false);
+  const [logs,       setLogs]       = useState<AuditLogEntry[]>([]);
+  const [loading,    setLoading]    = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Fetch logs directly from the toggle handler (avoids setState-in-effect)
+  const handleToggle = () => {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (willOpen) {
+      setLoading(true);
+      setFetchError(null);
+      fetchRecentAuditLogs()
+        .then(data => setLogs(data))
+        .catch(err => setFetchError(err instanceof Error ? err.message : 'Failed to fetch audit logs'))
+        .finally(() => setLoading(false));
+    }
+  };
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{
+      background: '#0D1623',
+      border: `1px solid ${open ? 'rgba(0,240,255,0.25)' : '#1F2937'}`,
+      transition: 'border-color 0.25s ease',
+    }}>
+      {/* Drawer header */}
+      <button
+        id="audit-feed-toggle"
+        type="button"
+        onClick={handleToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+      >
+        <div className="flex items-center gap-2.5">
+          <div style={{
+            width: 36, height: 36, borderRadius: '9px', fontSize: '18px',
+            background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }} aria-hidden>📋</div>
+          <div style={{ textAlign: 'left' }}>
+            <p className="text-sm sm:text-[15px]" style={{
+              margin: 0, fontWeight: 700, color: '#F1F5F9',
+              fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
+            }}>
+              {lang === 'hi' ? 'हालिया ऑडिट लॉग' : 'Recent Audit Logs'}
+            </p>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+              {lang === 'hi' ? 'पिछले स्कैन का लाइव फ़ीड' : 'Live feed of previous scans'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {logs.length > 0 && open && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{
+              color: '#00F0FF', background: 'rgba(0,240,255,0.1)',
+              border: '1px solid rgba(0,240,255,0.25)',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}>{logs.length}</span>
+          )}
+          <svg aria-hidden width="16" height="16" viewBox="0 0 16 16"
+            style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', flexShrink: 0 }}>
+            <path d="M3 6l5 5 5-5" stroke="#6B7280" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      </button>
+
+      {/* Collapsible feed */}
+      <div style={{
+        maxHeight: open ? '500px' : '0',
+        overflow: 'hidden',
+        transition: 'max-height 0.35s ease',
+      }}>
+        <div className="px-4 sm:px-5 pb-4" style={{ borderTop: '1px solid #1F2937' }}>
+          {/* Loading state */}
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-6" role="status" aria-live="polite">
+              <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" style={{ animation: 'pl-spin 1s linear infinite' }}>
+                <circle cx="9" cy="9" r="7" stroke="rgba(0,240,255,0.2)" strokeWidth="2" fill="none"/>
+                <path d="M9 2a7 7 0 0 1 7 7" stroke="#00F0FF" strokeWidth="2" strokeLinecap="round" fill="none"/>
+              </svg>
+              <span className="text-xs" style={{ color: '#00F0FF', fontFamily: 'JetBrains Mono, monospace' }}>
+                {lang === 'hi' ? 'लॉग लोड हो रहे हैं…' : 'Loading audit logs…'}
+              </span>
+            </div>
+          )}
+
+          {/* Error state */}
+          {fetchError && !loading && (
+            <div role="alert" className="py-4 px-3 rounded-lg mt-3 flex items-center gap-2" style={{
+              background: 'rgba(255,51,102,0.07)', border: '1px solid rgba(255,51,102,0.25)',
+            }}>
+              <span aria-hidden>⚠</span>
+              <span className="text-xs" style={{ color: '#FF3366', fontFamily: 'JetBrains Mono, monospace' }}>{fetchError}</span>
+            </div>
+          )}
+
+          {/* Feed entries */}
+          {!loading && !fetchError && logs.length > 0 && (
+            <div className="mt-3 flex flex-col gap-2 max-h-[380px] overflow-y-auto pr-1"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: '#1F2937 transparent' }}
+            >
+              {logs.map(log => {
+                const tc = tierColor(log.risk_tier);
+                return (
+                  <div
+                    key={log.scan_id}
+                    className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg transition-colors duration-200"
+                    style={{
+                      background: '#111827', border: '1px solid #1F2937',
+                    }}
+                  >
+                    {/* Left: Score + Tier */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <span className="text-base font-bold" style={{
+                        fontFamily: 'JetBrains Mono, monospace', color: tc,
+                        minWidth: '28px', textAlign: 'center',
+                      }}>{log.overall_risk_score}</span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider" style={{
+                        color: tc, background: `${tc}14`, border: `1px solid ${tc}35`,
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}>{log.risk_tier.replace(/_/g, ' ')}</span>
+                    </div>
+
+                    {/* Middle: Verdict */}
+                    <p className="flex-1 text-xs leading-snug" style={{
+                      margin: 0, color: '#CBD5E1', fontFamily: 'Inter, sans-serif',
+                      overflow: 'hidden', textOverflow: 'ellipsis',
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    }}>{log.verdict}</p>
+
+                    {/* Right: Metadata */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px]" style={{
+                        color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace',
+                      }}>{log.processing_time_ms.toFixed(0)}ms</span>
+                      <span className="text-[10px]" style={{
+                        color: '#6B7280', fontFamily: 'Inter, sans-serif',
+                      }}>{timeAgo(log.timestamp)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!loading && !fetchError && logs.length === 0 && (
+            <p className="text-center py-6 text-xs" style={{ color: '#6B7280', fontFamily: 'Inter, sans-serif' }}>
+              {lang === 'hi' ? 'अभी तक कोई ऑडिट लॉग नहीं है' : 'No audit logs yet'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes pl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }
@@ -415,9 +595,10 @@ export interface AuditTrailDrawerProps {
   auditTrail: AuditTrail | null;
   recommendation?: string;
   processingTimeMs?: number;
+  lang?: Language;
 }
 
-export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs }: AuditTrailDrawerProps) {
+export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs, lang = 'en' }: AuditTrailDrawerProps) {
   // Default: expand all on first load, let user collapse
   const [expanded, setExpanded] = useState({ url: true, sender: true, intent: true });
 
@@ -427,50 +608,45 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs 
   if (!auditTrail) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {/* Section header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="flex items-center gap-2.5">
         <div style={{
           width: 36, height: 36, borderRadius: '9px', fontSize: '18px',
           background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }} aria-hidden>🔬</div>
         <div>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
-            Audit Trail
+          <h3 className="text-base" style={{ margin: 0, fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+            {lang === 'hi' ? 'ऑडिट ट्रेल' : 'Audit Trail'}
           </h3>
-          <p style={{ margin: 0, fontSize: '11.5px', color: '#4B5563', fontFamily: 'Inter, sans-serif' }}>
-            3-agent explainability drilldown
+          <p style={{ margin: 0, fontSize: '11.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+            {lang === 'hi' ? '3-एजेंट व्याख्यात्मक विश्लेषण' : '3-agent explainability drilldown'}
           </p>
         </div>
       </div>
 
       {/* Overall processing time */}
       {processingTimeMs != null && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          padding: '8px 14px', borderRadius: '9px',
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-lg" style={{
           background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.15)',
         }}>
           <span aria-hidden style={{ fontSize: '14px' }}>⚡</span>
-          <span style={{
-            fontSize: '12.5px', fontWeight: 700,
+          <span className="text-xs sm:text-[12.5px] font-bold" style={{
             fontFamily: 'JetBrains Mono, monospace', color: '#00F0FF',
           }}>
-            Total Processing Time: {processingTimeMs.toFixed(0)}ms
+            {lang === 'hi' ? `कुल प्रोसेसिंग समय: ${processingTimeMs.toFixed(0)}ms` : `Total Processing Time: ${processingTimeMs.toFixed(0)}ms`}
           </span>
         </div>
       )}
 
       {/* Recommendation banner */}
       {recommendation && (
-        <div style={{
-          padding: '12px 16px', borderRadius: '10px',
+        <div className="flex gap-2.5 items-start p-3 sm:p-4 rounded-lg" style={{
           background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.18)',
-          display: 'flex', gap: '10px', alignItems: 'flex-start',
         }}>
-          <span aria-hidden style={{ fontSize: '16px', flexShrink: 0, marginTop: '1px' }}>💡</span>
-          <p style={{ margin: 0, fontSize: '13px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+          <span aria-hidden className="text-base shrink-0 mt-0.5">💡</span>
+          <p className="text-[13px] leading-relaxed" style={{ margin: 0, color: '#CBD5E1', fontFamily: 'Inter, sans-serif' }}>
             {recommendation}
           </p>
         </div>
@@ -483,6 +659,9 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs 
 
       {/* Synthesis */}
       <SynthesisCard data={auditTrail.synthesis_breakdown} />
+
+      {/* ── Day 4: Live Audit Feed Drawer ──────────────────── */}
+      <LiveAuditFeed lang={lang} />
     </div>
   );
 }
