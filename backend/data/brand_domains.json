@@ -1,7 +1,11 @@
 {
   "SBI": {
     "brand_name": "State Bank of India",
-    "keywords": ["sbi", "onlinesbi", "sbionline"],
+    "keywords": [
+      "sbi",
+      "onlinesbi",
+      "sbionline"
+    ],
     "official_domains": [
       "sbi.co.in",
       "onlinesbi.sbi",
@@ -16,7 +20,10 @@
   },
   "HDFC": {
     "brand_name": "HDFC Bank",
-    "keywords": ["hdfc", "hdfcbank"],
+    "keywords": [
+      "hdfc",
+      "hdfcbank"
+    ],
     "official_domains": [
       "hdfcbank.com",
       "hdfc.com",
@@ -29,7 +36,10 @@
   },
   "ICICI": {
     "brand_name": "ICICI Bank",
-    "keywords": ["icici", "icicibank"],
+    "keywords": [
+      "icici",
+      "icicibank"
+    ],
     "official_domains": [
       "icicibank.com",
       "icicidirect.com",
@@ -41,7 +51,10 @@
   },
   "AXIS": {
     "brand_name": "Axis Bank",
-    "keywords": ["axis", "axisbank"],
+    "keywords": [
+      "axis",
+      "axisbank"
+    ],
     "official_domains": [
       "axisbank.com",
       "axismf.com",
@@ -51,7 +64,10 @@
   },
   "PNB": {
     "brand_name": "Punjab National Bank",
-    "keywords": ["pnb", "pnbonline"],
+    "keywords": [
+      "pnb",
+      "pnbonline"
+    ],
     "official_domains": [
       "pnbindia.in",
       "pnbnet.net.in",
@@ -60,7 +76,11 @@
   },
   "BOB": {
     "brand_name": "Bank of Baroda",
-    "keywords": ["bob", "baroda", "bankofbaroda"],
+    "keywords": [
+      "bob",
+      "baroda",
+      "bankofbaroda"
+    ],
     "official_domains": [
       "bankofbaroda.in",
       "bobibanking.com",
@@ -69,7 +89,10 @@
   },
   "KOTAK": {
     "brand_name": "Kotak Mahindra Bank",
-    "keywords": ["kotak", "kotakbank"],
+    "keywords": [
+      "kotak",
+      "kotakbank"
+    ],
     "official_domains": [
       "kotak.com",
       "kotakbank.com",
@@ -80,28 +103,39 @@
   },
   "INDUSIND": {
     "brand_name": "IndusInd Bank",
-    "keywords": ["indusind", "indusindbank"],
+    "keywords": [
+      "indusind",
+      "indusindbank"
+    ],
     "official_domains": [
       "indusind.com"
     ]
   },
   "CANARA": {
     "brand_name": "Canara Bank",
-    "keywords": ["canara", "canarabank"],
+    "keywords": [
+      "canara",
+      "canarabank"
+    ],
     "official_domains": [
       "canarabank.com"
     ]
   },
   "UCO": {
     "brand_name": "UCO Bank",
-    "keywords": ["uco", "ucobank"],
+    "keywords": [
+      "uco",
+      "ucobank"
+    ],
     "official_domains": [
       "ucobank.com"
     ]
   },
   "AMAZON_IN": {
     "brand_name": "Amazon India",
-    "keywords": ["amazon"],
+    "keywords": [
+      "amazon"
+    ],
     "official_domains": [
       "amazon.in",
       "amazon.com",
@@ -111,52 +145,77 @@
   },
   "FLIPKART": {
     "brand_name": "Flipkart",
-    "keywords": ["flipkart"],
+    "keywords": [
+      "flipkart"
+    ],
     "official_domains": [
       "flipkart.com"
     ]
   },
   "PAYTM": {
     "brand_name": "Paytm",
-    "keywords": ["paytm"],
+    "keywords": [
+      "paytm"
+    ],
     "official_domains": [
       "paytm.com",
-      "paytmbank.com"
+      "paytmbank.com",
+      "paytmmoney.com",
+      "paytmmall.com",
+      "paytminsurance.co.in"
     ]
   },
   "PHONEPE": {
     "brand_name": "PhonePe",
-    "keywords": ["phonepe"],
+    "keywords": [
+      "phonepe"
+    ],
     "official_domains": [
-      "phonepe.com"
+      "phonepe.com",
+      "phonepe.in"
     ]
   },
   "GPAY": {
     "brand_name": "Google Pay",
-    "keywords": ["gpay", "googlepay"],
+    "keywords": [
+      "gpay",
+      "googlepay"
+    ],
     "official_domains": [
       "pay.google.com",
-      "google.com"
+      "google.com",
+      "payments.google.com"
     ]
   },
   "RAZORPAY": {
     "brand_name": "Razorpay",
-    "keywords": ["razorpay"],
+    "keywords": [
+      "razorpay"
+    ],
     "official_domains": [
       "razorpay.com"
     ]
   },
   "IRCTC": {
     "brand_name": "IRCTC",
-    "keywords": ["irctc"],
+    "keywords": [
+      "irctc",
+      "indianrail"
+    ],
     "official_domains": [
       "irctc.co.in",
-      "irctc.com"
+      "irctc.com",
+      "indianrail.gov.in",
+      "enquiry.indianrail.gov.in"
     ]
   },
   "AADHAAR": {
     "brand_name": "UIDAI / Aadhaar",
-    "keywords": ["aadhaar", "uidai", "aadhar"],
+    "keywords": [
+      "aadhaar",
+      "uidai",
+      "aadhar"
+    ],
     "official_domains": [
       "uidai.gov.in",
       "myaadhaar.uidai.gov.in"
@@ -164,7 +223,11 @@
   },
   "EPFO": {
     "brand_name": "EPFO / PF",
-    "keywords": ["epfo", "epf", "providentfund"],
+    "keywords": [
+      "epfo",
+      "epf",
+      "providentfund"
+    ],
     "official_domains": [
       "epfindia.gov.in",
       "epfigms.gov.in"
@@ -172,7 +235,10 @@
   },
   "INCOME_TAX": {
     "brand_name": "Income Tax India",
-    "keywords": ["incometax", "itr"],
+    "keywords": [
+      "incometax",
+      "itr"
+    ],
     "official_domains": [
       "incometax.gov.in",
       "incometaxindia.gov.in"
@@ -180,7 +246,10 @@
   },
   "AIRTEL": {
     "brand_name": "Airtel",
-    "keywords": ["airtel", "bhartiairtel"],
+    "keywords": [
+      "airtel",
+      "bhartiairtel"
+    ],
     "official_domains": [
       "airtel.in",
       "airtel.com",
@@ -191,7 +260,11 @@
   },
   "JIO": {
     "brand_name": "Jio",
-    "keywords": ["jio", "reliance", "jiophone"],
+    "keywords": [
+      "jio",
+      "reliance",
+      "jiophone"
+    ],
     "official_domains": [
       "jio.com",
       "jiomoney.com",
@@ -202,7 +275,11 @@
   },
   "VI": {
     "brand_name": "Vi (Vodafone Idea)",
-    "keywords": ["vodafone", "idea", "myvi"],
+    "keywords": [
+      "vodafone",
+      "idea",
+      "myvi"
+    ],
     "official_domains": [
       "myvi.in",
       "vodafone.in",
@@ -211,7 +288,9 @@
   },
   "BSNL": {
     "brand_name": "BSNL",
-    "keywords": ["bsnl"],
+    "keywords": [
+      "bsnl"
+    ],
     "official_domains": [
       "bsnl.co.in",
       "bsnl.in",
@@ -220,7 +299,9 @@
   },
   "MTNL": {
     "brand_name": "MTNL",
-    "keywords": ["mtnl"],
+    "keywords": [
+      "mtnl"
+    ],
     "official_domains": [
       "mtnl.in",
       "mtnldelhi.in",
@@ -229,23 +310,32 @@
   },
   "BESCOM": {
     "brand_name": "BESCOM",
-    "keywords": ["bescom"],
+    "keywords": [
+      "bescom"
+    ],
     "official_domains": [
       "bescom.karnataka.gov.in",
       "bescom.co.in"
     ]
   },
   "MSEDCL": {
-    "brand_name": "MSEDCL",
-    "keywords": ["msedcl", "mahadiscom"],
+    "brand_name": "MSEDCL / MahaDiscom",
+    "keywords": [
+      "msedcl",
+      "mahadiscom"
+    ],
     "official_domains": [
       "mahadiscom.in",
-      "msedcl.in"
+      "msedcl.in",
+      "msedcl.org"
     ]
   },
   "TATAPOWER": {
     "brand_name": "Tata Power",
-    "keywords": ["tatapower", "tata power"],
+    "keywords": [
+      "tatapower",
+      "tata power"
+    ],
     "official_domains": [
       "tatapower.com",
       "tatapower-ddl.com"
@@ -253,44 +343,61 @@
   },
   "ADANI_ELECTRICITY": {
     "brand_name": "Adani Electricity",
-    "keywords": ["adanielectricity", "adani electricity"],
+    "keywords": [
+      "adanielectricity",
+      "adani electricity"
+    ],
     "official_domains": [
       "adanielectricity.in"
     ]
   },
-  "BSES": {
+  "BSES_DELHI": {
     "brand_name": "BSES Delhi",
-    "keywords": ["bses", "bsesdelhi"],
+    "keywords": [
+      "bses",
+      "bsesdelhi",
+      "bsesrajdhani",
+      "bsesyamuna"
+    ],
     "official_domains": [
-      "bsesdelhi.com"
+      "bsesdelhi.com",
+      "bsesrajdhani.com",
+      "bsesyamuna.com"
     ]
   },
   "UPPCL": {
-    "brand_name": "UPPCL Electricity",
-    "keywords": ["uppcl", "up energy"],
+    "brand_name": "UPPCL",
+    "keywords": [
+      "uppcl",
+      "uppclonline",
+      "up energy"
+    ],
     "official_domains": [
+      "uppclonline.com",
       "uppcl.org",
       "upenergy.in"
     ]
   },
-  "TANGEDCO": {
-    "brand_name": "TANGEDCO Tamil Nadu",
-    "keywords": ["tangedco"],
+  "TNEB": {
+    "brand_name": "TNEB / TANGEDCO",
+    "keywords": [
+      "tneb",
+      "tangedco",
+      "tnebnet"
+    ],
     "official_domains": [
+      "tnebnet.org",
+      "tangedco.org",
+      "tnebltd.gov.in",
       "tangedco.gov.in"
-    ]
-  },
-  "IRCTC": {
-    "brand_name": "IRCTC Indian Railways",
-    "keywords": ["irctc", "indianrail"],
-    "official_domains": [
-      "irctc.co.in",
-      "indianrail.gov.in"
     ]
   },
   "INDIAPOST": {
     "brand_name": "India Post / IPPB",
-    "keywords": ["indiapost", "ippb"],
+    "keywords": [
+      "indiapost",
+      "ippb"
+    ],
     "official_domains": [
       "indiapost.gov.in",
       "ippbonline.com"
@@ -298,7 +405,9 @@
   },
   "SWIGGY": {
     "brand_name": "Swiggy",
-    "keywords": ["swiggy"],
+    "keywords": [
+      "swiggy"
+    ],
     "official_domains": [
       "swiggy.com",
       "swiggy.in"
@@ -306,12 +415,12 @@
   },
   "ZOMATO": {
     "brand_name": "Zomato",
-    "keywords": ["zomato"],
+    "keywords": [
+      "zomato"
+    ],
     "official_domains": [
       "zomato.com",
       "zomato.in"
     ]
   }
 }
-
-
