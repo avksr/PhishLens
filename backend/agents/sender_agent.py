@@ -460,6 +460,90 @@ def _clamp_score(score: float) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Entity Extractor (FR-2) — Pre-Investigation
+# ---------------------------------------------------------------------------
+
+# Pre-compiled patterns for entity extraction from free-form message text.
+# Indian phone number: optional +91/91 country prefix (with optional space/dash),
+# then 10 digits starting with 6–9, allowing optional spaces or dashes between
+# digit groups (e.g. "+91 98765 43210", "987-654-3210", "9876543210").
+# The capture group is deliberately wide; digits are normalised post-match.
+_ENTITY_PHONE_RE = re.compile(
+    r"(?:(?:\+91|91)[\s\-]?)?([6-9][0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9])(?![0-9])"
+)
+
+# TRAI DLT header: exactly 2 uppercase letters, a hyphen, 6 uppercase letters.
+_ENTITY_TRAI_HEADER_RE = re.compile(r"\b([A-Z]{2}-[A-Z]{6})\b")
+
+# Currency amounts: Rs / INR / ₹ followed by optional space, then a number
+# (supports commas, decimals, e.g. Rs 1,499 / INR 20000 / ₹2.50).
+_ENTITY_CURRENCY_RE = re.compile(
+    r"(?:Rs\.?|INR|\u20b9)\s*([\d,]+(?:\.\d{1,2})?)",
+    re.IGNORECASE,
+)
+
+
+def extract_entities(text: str) -> dict:
+    """
+    Pre-investigation entity extractor (FR-2).
+
+    Scans *text* for three categories of structured entities that are
+    frequently abused in Indian SMS / WhatsApp scams:
+
+    1. **phone_numbers** — Indian mobile numbers (6–9 series, 10 digits),
+       with or without +91/91 country prefix.
+    2. **trai_headers** — Alphabetic sender headers in TRAI DLT format
+       (e.g. VM-SBIINB, AD-BESCOM).
+    3. **currency_amounts** — Rupee amounts expressed as
+       ``Rs``, ``INR``, or ``₹`` followed by a numeric value.
+
+    Parameters
+    ----------
+    text : str
+        Raw message body (or any free-form string) to scan.
+
+    Returns
+    -------
+    dict
+        ``{
+            "phone_numbers":    ["9876543210", ...],
+            "trai_headers":     ["VM-SBIINB", ...],
+            "currency_amounts": ["1,499", ...]
+        }``
+
+    Examples
+    --------
+    >>> extract_entities("Call 9876543210 for Rs 1,499 refund. Sender VM-SBIINB")
+    {'phone_numbers': ['9876543210'], 'trai_headers': ['VM-SBIINB'], 'currency_amounts': ['1,499']}
+    """
+    # ── Phone numbers ──
+    raw_phones = _ENTITY_PHONE_RE.findall(text)
+    phones: List[str] = []
+    seen_phones: set = set()
+    for raw in raw_phones:
+        normalised = raw.replace(" ", "").replace("-", "")
+        # Strip country code if present to yield 10 digits.
+        normalised = _strip_country_code(normalised)
+        if _INDIAN_GSM_RE.match(normalised) and normalised not in seen_phones:
+            phones.append(normalised)
+            seen_phones.add(normalised)
+
+    # ── TRAI headers ──
+    raw_headers = _ENTITY_TRAI_HEADER_RE.findall(text)
+    headers: List[str] = list(dict.fromkeys(raw_headers))  # preserve order, dedupe
+
+    # ── Currency amounts ──
+    raw_amounts = _ENTITY_CURRENCY_RE.findall(text)
+    amounts: List[str] = list(dict.fromkeys(raw_amounts))  # preserve order, dedupe
+
+    return {
+        "phone_numbers": phones,
+        "trai_headers": headers,
+        "currency_amounts": amounts,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main Agent Function
 # ---------------------------------------------------------------------------
 
@@ -531,7 +615,11 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 status=AgentStatusEnum.SUCCESS,
                 sender_category=SenderCategoryEnum.UNKNOWN,
                 risk_score=20.0,
-                details="No sender metadata provided",
+                details=(
+                    "This message arrived without any sender information. "
+                    "We could not identify who sent it, which is unusual for "
+                    "legitimate SMS from banks or government services."
+                ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=None,
                 normalised_sender=None,
@@ -600,14 +688,31 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                     brand_claimed=entry.get("brand_name"),
                     flags=flags,
                     details=(
-                        f"Header '{raw_sender}' is submitted in lowercase/homoglyph form, "
-                        f"which is NOT how genuine TRAI operators transmit headers. "
-                        f"Possible impersonation of '{entry['brand_name']}'."
+                        f"The sender ID '{raw_sender}' is written in lowercase or "
+                        f"uses look-alike characters to impersonate '{entry['brand_name']}'. "
+                        "Genuine TRAI-registered senders always appear in capital letters. "
+                        "This is a strong sign that someone is trying to fake the sender identity."
                     ),
                     latency_ms=round(latency_ms, 3),
                     raw_sender=raw_sender,
                     normalised_sender=normalised,
                 )
+
+            # ── Enrich details with extracted entities from message body ──
+            entities = extract_entities(req.content)
+            entity_parts = []
+            if entities["phone_numbers"]:
+                entity_parts.append(
+                    "phone number(s) found: " + ", ".join(entities["phone_numbers"])
+                )
+            if entities["currency_amounts"]:
+                entity_parts.append(
+                    "amount(s) mentioned: ₹" + ", ₹".join(entities["currency_amounts"])
+                )
+            entity_note = (
+                " The message also contains " + " and ".join(entity_parts) + "."
+                if entity_parts else ""
+            )
 
             # Fully verified TRAI DLT sender.
             flags.append("VERIFIED_TRAI_DLT_SENDER_HEADER")
@@ -622,8 +727,11 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 is_spoofed_header=False,
                 flags=flags,
                 details=(
-                    f"Sender '{normalised}' is a verified TRAI DLT certified header "
-                    f"for '{entry['brand_name']}' ({entry['category']})."
+                    f"The sender '{normalised}' is an officially registered TRAI DLT "
+                    f"sender ID for '{entry['brand_name']}' "
+                    f"(category: {entry['category']}). "
+                    "This sender is legitimate and verified by India's telecom regulator."
+                    + entity_note
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
@@ -645,10 +753,11 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 brand_claimed=spoofed_entry.get("brand_name"),
                 flags=flags,
                 details=(
-                    f"Header '{normalised}' uses visual character substitutions "
-                    f"(e.g. '1' for 'I', '0' for 'O') to mimic the legitimate header "
-                    f"'{operator_prefix}-{spoofed_entity}' for "
-                    f"'{spoofed_entry['brand_name']}'. High-confidence spoof."
+                    f"The sender ID '{normalised}' looks almost identical to the "
+                    f"official '{spoofed_entry['brand_name']}' sender ID, but uses "
+                    "trick characters (e.g. the digit '1' instead of the letter 'I', "
+                    "or '0' instead of 'O') to disguise itself. "
+                    "This is a known fraud technique to impersonate a trusted brand."
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
@@ -688,10 +797,11 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 brand_claimed=spoofed_entry_like.get("brand_name"),
                 flags=flags,
                 details=(
-                    f"Header '{normalised}' uses visual character substitutions "
-                    f"(e.g. '1' for 'I', '0' for 'O') to mimic the legitimate header "
-                    f"'{operator_prefix_like}-{spoofed_entity_like}' for "
-                    f"'{spoofed_entry_like['brand_name']}'. High-confidence digit-substitution spoof."
+                    f"The sender ID '{normalised}' uses digits in place of letters "
+                    f"(e.g. '1' instead of 'I') to closely mimic the real "
+                    f"'{spoofed_entry_like['brand_name']}' sender ID. "
+                    "This is a fraud technique designed to trick people into trusting "
+                    "a fake sender."
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
@@ -715,9 +825,12 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 is_spoofed_header=False,
                 flags=flags,
                 details=(
-                    "Legitimate financial institutions in India are mandated by TRAI "
-                    "to send alerts from certified alphabetic DLT headers, never "
-                    "personal 10-digit numbers."
+                    f"This message is sent from a personal mobile number ({normalised}) "
+                    f"but claims to be from '{brand}'. "
+                    "In India, all banks and government agencies are required by TRAI "
+                    "to send messages using a registered letter-based sender ID (like VM-SBIINB), "
+                    "never from a personal 10-digit phone number. "
+                    "This is a strong indicator of fraud."
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
@@ -731,7 +844,12 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             sender_category=SenderCategoryEnum.PERSONAL_GSM,
             risk_score=_clamp_score(40.0),
             flags=flags,
-            details="Sender is a personal Indian GSM number with no official brand claims detected.",
+            details=(
+                f"Sender is a personal Indian mobile number ({normalised}). "
+                "No claims of being a bank or government agency were found in this message, "
+                "but be cautious — legitimate businesses do not usually contact you from "
+                "personal phone numbers."
+            ),
             latency_ms=round(latency_ms, 3),
             raw_sender=raw_sender,
             normalised_sender=normalised,
@@ -754,9 +872,10 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             is_spoofed_header=True,
             flags=flags,
             details=(
-                f"Sender header '{normalised}' appears to mimic a brand name but "
-                "does not conform to the TRAI DLT certified header syntax "
-                "(^[A-Z]{2}-[A-Z]{6}$) and is NOT found in the DLT registry."
+                f"The sender ID '{normalised}' looks like it is pretending to be a "
+                "well-known brand, but it is not found in India's official TRAI sender "
+                "registry and does not follow the proper registered format. "
+                "Do not trust or respond to this message."
             ),
             latency_ms=round(latency_ms, 3),
             raw_sender=raw_sender,
@@ -772,7 +891,11 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
         sender_category=SenderCategoryEnum.UNKNOWN,
         risk_score=_clamp_score(30.0),
         flags=flags,
-        details=f"Sender '{normalised}' does not match any known classification pattern.",
+        details=(
+            f"The sender '{normalised}' does not match any recognised pattern — "
+            "not a registered TRAI sender ID, not a standard phone number. "
+            "Exercise caution before acting on this message."
+        ),
         latency_ms=round(latency_ms, 3),
         raw_sender=raw_sender,
         normalised_sender=normalised,
