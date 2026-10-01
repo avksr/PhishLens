@@ -1,11 +1,12 @@
 // ────────────────────────────────────────────────────────────
-//  PhishLens  ·  App  —  Full Dashboard
+//  PhishLens  ·  App  —  Full Dashboard  (Day 4 Revision)
+//  + Bilingual toggle (EN / HI) + responsive layout
 // ────────────────────────────────────────────────────────────
 
 import './index.css';
 import { useState } from 'react';
 import { getUiTreatment } from './lib/api';
-import type { ScanResponse } from './lib/types';
+import type { ScanResponse, Language } from './lib/types';
 
 import { ScannerInput }      from './components/ScannerInput';
 import { RiskGauge }         from './components/RiskGauge';
@@ -20,8 +21,17 @@ export default function App() {
   const [error,      setError]      = useState<string | null>(null);
   const [showModal,  setShowModal]  = useState(false);
   const [scanCount,  setScanCount]  = useState(0);
+  const [lang,       setLang]       = useState<Language>('en');
 
   const treatment = result ? getUiTreatment(result.risk_tier, result.action_required) : null;
+
+  // ── Bilingual helpers ──────────────────────────────────────
+
+  const resolveVerdict = (r: ScanResponse): string =>
+    (lang === 'hi' && r.verdict_hi) ? r.verdict_hi : r.verdict;
+
+  const resolveRecommendation = (r: ScanResponse): string =>
+    (lang === 'hi' && r.recommendation_hi) ? r.recommendation_hi : r.recommendation;
 
   // ── Scan handlers ─────────────────────────────────────────
 
@@ -44,21 +54,19 @@ export default function App() {
   // ── Layout ────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: '100svh', background: '#0B0F19', position: 'relative' }}>
+    <div className="min-h-svh relative" style={{ background: '#0B0F19' }}>
 
       {/* ── Top nav bar ─────────────────────────────────────── */}
-      <nav style={{
-        position: 'sticky', top: 0, zIndex: 100,
-        background: 'rgba(11,15,25,0.85)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid #1F2937',
-        padding: '0 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        height: '60px',
-      }}>
+      <nav className="sticky top-0 z-[100] flex items-center justify-between px-4 sm:px-6 h-[60px]"
+        style={{
+          background: 'rgba(11,15,25,0.85)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: '1px solid #1F2937',
+        }}
+      >
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '24px' }} aria-hidden>🛡️</span>
+        <div className="flex items-center gap-2.5">
+          <span className="text-2xl" aria-hidden>🛡️</span>
           <div>
             <span style={{
               fontSize: '18px', fontWeight: 800,
@@ -67,22 +75,43 @@ export default function App() {
               fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
               letterSpacing: '-0.4px',
             }}>PhishLens</span>
-            <span style={{
-              marginLeft: '8px', fontSize: '10.5px', color: '#374151',
+            <span className="hidden sm:inline-block ml-2 text-[10.5px]" style={{
+              color: '#6B7280',
               fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.4px',
             }}>ScamShield AI</span>
           </div>
         </div>
 
-        {/* Nav right — scan counter + status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {/* Nav right — lang toggle + scan counter + status */}
+        <div className="flex items-center gap-2.5 sm:gap-4">
+          {/* ── Language Toggle ─────────────────────────────── */}
+          <button
+            id="lang-toggle-btn"
+            type="button"
+            onClick={() => setLang(prev => prev === 'en' ? 'hi' : 'en')}
+            aria-label={`Switch language to ${lang === 'en' ? 'Hindi' : 'English'}`}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200"
+            style={{
+              background: 'rgba(0,240,255,0.06)',
+              border: '1px solid rgba(0,240,255,0.2)',
+              fontSize: '12px', fontWeight: 600,
+              fontFamily: 'Inter, sans-serif',
+              color: '#00F0FF',
+            }}
+          >
+            <span aria-hidden className="text-sm">{lang === 'en' ? '🇬🇧' : '🇮🇳'}</span>
+            <span className="hidden sm:inline">{lang === 'en' ? 'EN' : 'हिंदी'}</span>
+          </button>
+
           {scanCount > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '4px 12px', borderRadius: '16px',
-              background: 'rgba(0,240,255,0.06)', border: '1px solid rgba(0,240,255,0.15)',
-            }}>
-              <span style={{ fontSize: '11px', color: '#4B5563', fontFamily: 'JetBrains Mono, monospace' }}>Scans:</span>
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-2xl"
+              style={{
+                background: 'rgba(0,240,255,0.06)', border: '1px solid rgba(0,240,255,0.15)',
+              }}
+            >
+              <span style={{ fontSize: '11px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
+                {lang === 'hi' ? 'स्कैन:' : 'Scans:'}
+              </span>
               <span style={{ fontSize: '13px', fontWeight: 700, color: '#00F0FF', fontFamily: 'JetBrains Mono, monospace' }}>
                 {scanCount}
               </span>
@@ -91,14 +120,14 @@ export default function App() {
 
           {/* Current tier pill */}
           {treatment && (
-            <div style={{
-              padding: '4px 14px', borderRadius: '16px', fontSize: '11.5px', fontWeight: 700,
-              fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.6px',
-              color: treatment.accentColor,
-              background: `${treatment.accentColor}12`,
-              border: `1px solid ${treatment.accentColor}35`,
-              transition: 'all 0.4s ease',
-            }}>
+            <div className="hidden sm:block px-3.5 py-1 rounded-2xl text-[11.5px] font-bold tracking-wider transition-all duration-400"
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                color: treatment.accentColor,
+                background: `${treatment.accentColor}12`,
+                border: `1px solid ${treatment.accentColor}35`,
+              }}
+            >
               {treatment.label}
             </div>
           )}
@@ -114,46 +143,49 @@ export default function App() {
       </nav>
 
       {/* ── Page body ───────────────────────────────────────── */}
-      <main style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 20px 80px' }}>
+      <main className="max-w-[1280px] mx-auto px-4 sm:px-5 pt-6 sm:pt-8 pb-20">
 
         {/* Hero tag line */}
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <p style={{
-            display: 'inline-flex', alignItems: 'center', gap: '8px',
-            padding: '5px 16px', borderRadius: '20px', fontSize: '12px',
-            fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, letterSpacing: '0.5px',
-            color: '#00F0FF', background: 'rgba(0,240,255,0.07)', border: '1px solid rgba(0,240,255,0.18)',
-            marginBottom: '16px',
-          }}>
-            <span aria-hidden>▸</span> Real-time Multi-Agent Threat Interception
+        <div className="text-center mb-8 sm:mb-10">
+          <p className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs mb-4"
+            style={{
+              fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, letterSpacing: '0.5px',
+              color: '#00F0FF', background: 'rgba(0,240,255,0.07)', border: '1px solid rgba(0,240,255,0.18)',
+            }}
+          >
+            <span aria-hidden>▸</span>
+            {lang === 'hi' ? 'रियल-टाइम मल्टी-एजेंट थ्रेट इंटरसेप्शन' : 'Real-time Multi-Agent Threat Interception'}
           </p>
-          <h1 style={{
-            margin: '0 0 12px', fontSize: 'clamp(28px, 5vw, 44px)', fontWeight: 800,
-            fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
-            background: 'linear-gradient(135deg, #F1F5F9 30%, #94A3B8 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            letterSpacing: '-0.8px', lineHeight: 1.15,
-          }}>
-            Detect Scams Before<br />They Reach You
+          <h1 className="text-[clamp(24px,5vw,44px)] font-extrabold mb-3 leading-[1.15]"
+            style={{
+              margin: '0 0 12px',
+              fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
+              background: 'linear-gradient(135deg, #F1F5F9 30%, #94A3B8 100%)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              letterSpacing: '-0.8px',
+            }}
+          >
+            {lang === 'hi' ? <>स्कैम का पता लगाएं<br />इससे पहले कि वे आप तक पहुंचें</> : <>Detect Scams Before<br />They Reach You</>}
           </h1>
-          <p style={{
-            margin: '0 auto', fontSize: '15px', color: '#4B5563',
-            fontFamily: 'Inter, sans-serif', maxWidth: '480px',
-          }}>
-            Powered by 3 parallel AI agents — URL analysis, sender verification, and psycholinguistic intent detection.
+          <p className="text-sm sm:text-[15px] mx-auto max-w-[480px]"
+            style={{ margin: '0 auto', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}
+          >
+            {lang === 'hi'
+              ? '3 समानांतर AI एजेंटों द्वारा संचालित — URL विश्लेषण, प्रेषक सत्यापन, और मनोभाषाई इरादा पहचान।'
+              : 'Powered by 3 parallel AI agents — URL analysis, sender verification, and psycholinguistic intent detection.'}
           </p>
         </div>
 
-        {/* ── Main 2-col grid ────────────────────────────────── */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: result ? 'minmax(0,1fr) 300px' : '1fr',
-          gap: '24px',
-          alignItems: 'start',
-          transition: 'grid-template-columns 0.4s ease',
-        }}>
+        {/* ── Main grid ────────────────────────────────────── */}
+        <div
+          className="grid gap-5 sm:gap-6 items-start"
+          style={{
+            gridTemplateColumns: result ? 'minmax(0,1fr) 300px' : '1fr',
+            transition: 'grid-template-columns 0.4s ease',
+          }}
+        >
           {/* Left column — Scanner + Audit */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="flex flex-col gap-5 sm:gap-6 min-w-0">
             {/* Scanner */}
             <ScannerInput
               onScanComplete={handleScanComplete}
@@ -163,10 +195,9 @@ export default function App() {
 
             {/* Loading skeleton */}
             {isLoading && !result && (
-              <div style={{
-                background: '#111827', border: '1px solid #1F2937', borderRadius: '16px',
-                padding: '28px', display: 'flex', flexDirection: 'column', gap: '14px',
-              }}>
+              <div className="flex flex-col gap-3.5 p-6 sm:p-7 rounded-2xl"
+                style={{ background: '#111827', border: '1px solid #1F2937' }}
+              >
                 {[1, 2, 3].map(i => (
                   <div key={i} style={{
                     height: '18px', borderRadius: '9px',
@@ -181,76 +212,80 @@ export default function App() {
 
             {/* Error banner */}
             {error && (
-              <div role="alert" style={{
-                padding: '14px 18px', borderRadius: '10px',
-                border: '1px solid rgba(255,51,102,0.35)',
-                background: 'rgba(255,51,102,0.07)',
-                color: '#FF3366', fontSize: '13px',
-                fontFamily: 'JetBrains Mono, monospace',
-                display: 'flex', alignItems: 'center', gap: '8px',
-              }}>
+              <div role="alert" className="flex items-center gap-2 px-4 py-3.5 rounded-lg text-[13px]"
+                style={{
+                  border: '1px solid rgba(255,51,102,0.35)',
+                  background: 'rgba(255,51,102,0.07)',
+                  color: '#FF3366',
+                  fontFamily: 'JetBrains Mono, monospace',
+                }}
+              >
                 <span aria-hidden>⚠</span> {error}
               </div>
             )}
 
-            {/* ── HIGH_RISK inline warning card (not full-screen modal) ── */}
+            {/* ── HIGH_RISK inline warning card ── */}
             {result && result.risk_tier === 'HIGH_RISK' && (
               <div
                 role="alert"
+                className="p-5 rounded-[14px]"
                 style={{
                   background: '#0B0F19',
                   border: '1px solid #FF6B0055',
-                  borderRadius: '14px',
-                  padding: '20px 22px',
                   boxShadow: '0 0 24px rgba(255,107,0,0.12), 0 4px 20px rgba(0,0,0,0.5)',
                   animation: 'pl-fadein 0.35s ease',
                 }}
               >
                 {/* Header row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
                     <div style={{
                       width: 40, height: 40, borderRadius: '10px', fontSize: '20px',
                       background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.35)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }} aria-hidden>⚠️</div>
                     <div>
-                      <p style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
-                        HIGH RISK DETECTED
+                      <p className="text-[15px] font-extrabold" style={{
+                        margin: 0, color: '#F1F5F9',
+                        fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
+                      }}>
+                        {lang === 'hi' ? 'उच्च जोखिम का पता चला' : 'HIGH RISK DETECTED'}
                       </p>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#4B5563', fontFamily: 'JetBrains Mono, monospace' }}>
-                        Score: {result.overall_risk_score}/100 · {result.processing_time_ms.toFixed(0)}ms
+                      <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
+                        {lang === 'hi' ? 'स्कोर' : 'Score'}: {result.overall_risk_score}/100 · {result.processing_time_ms.toFixed(0)}ms
                       </p>
                     </div>
                   </div>
-                  <div style={{
-                    padding: '5px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: 800,
-                    fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.8px',
-                    color: '#FF6B00', background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.35)',
-                  }}>
+                  <div className="px-3 py-1.5 rounded-2xl text-[11px] font-extrabold tracking-wider"
+                    style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      color: '#FF6B00', background: 'rgba(255,107,0,0.12)',
+                      border: '1px solid rgba(255,107,0,0.35)',
+                    }}
+                  >
                     HIGH RISK
                   </div>
                 </div>
 
                 {/* Recommendation */}
-                <div style={{
-                  padding: '12px 14px', borderRadius: '9px', marginBottom: '14px',
+                <div className="p-3 sm:p-3.5 rounded-lg mb-3.5" style={{
                   background: 'rgba(255,107,0,0.06)', border: '1px solid rgba(255,107,0,0.2)',
                 }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#F1F5F9', fontFamily: 'Inter, sans-serif', lineHeight: '1.6', fontWeight: 500 }}>
-                    {result.recommendation}
+                  <p className="text-[13px] leading-relaxed font-medium" style={{
+                    margin: 0, color: '#F1F5F9', fontFamily: 'Inter, sans-serif',
+                  }}>
+                    {resolveRecommendation(result)}
                   </p>
                 </div>
 
                 {/* Verdict */}
-                <p style={{
-                  margin: 0, fontSize: '12px', color: '#94A3B8',
-                  fontFamily: 'JetBrains Mono, monospace', lineHeight: '1.5',
-                  padding: '8px 12px', borderRadius: '8px',
+                <p className="text-xs p-2.5 sm:p-3 rounded-lg leading-relaxed" style={{
+                  margin: 0, color: '#CBD5E1',
+                  fontFamily: 'JetBrains Mono, monospace',
                   background: '#111827', border: '1px solid #1F2937',
                 }}>
-                  <span style={{ color: '#4B5563' }}>verdict: </span>
-                  {result.verdict}
+                  <span style={{ color: '#94A3B8' }}>{lang === 'hi' ? 'फैसला: ' : 'verdict: '}</span>
+                  {resolveVerdict(result)}
                 </p>
               </div>
             )}
@@ -259,48 +294,52 @@ export default function App() {
             {result && (
               <AuditTrailDrawer
                 auditTrail={result.audit_trail}
-                recommendation={result.recommendation}
+                recommendation={resolveRecommendation(result)}
                 processingTimeMs={result.processing_time_ms}
+                lang={lang}
               />
             )}
           </div>
 
           {/* Right column — Risk Gauge (only when result exists) */}
           {result && (
-            <div style={{ position: 'sticky', top: '80px' }}>
+            <div className="sticky top-[80px] hidden sm:block">
               <RiskGauge result={result} isLoading={isLoading} />
             </div>
           )}
         </div>
 
+        {/* Mobile Risk Gauge — shown below scanner on small screens */}
+        {result && (
+          <div className="block sm:hidden mt-5">
+            <RiskGauge result={result} isLoading={isLoading} />
+          </div>
+        )}
+
         {/* ── Empty state ──────────────────────────────────── */}
         {!result && !isLoading && !error && (
-          <div style={{
-            marginTop: '40px', textAlign: 'center',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
-          }}>
-            <div style={{
+          <div className="mt-8 sm:mt-10 text-center flex flex-col items-center gap-4">
+            <div className="flex items-center justify-center" style={{
               width: '80px', height: '80px', borderRadius: '20px', fontSize: '40px',
               background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.12)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>🔍</div>
-            <p style={{ margin: 0, fontSize: '14px', color: '#374151', fontFamily: 'Inter, sans-serif' }}>
-              Load a preset scenario or paste your own message above to begin scanning.
+            <p className="text-sm" style={{ margin: 0, color: '#6B7280', fontFamily: 'Inter, sans-serif' }}>
+              {lang === 'hi'
+                ? 'स्कैनिंग शुरू करने के लिए ऊपर एक प्रीसेट परिदृश्य लोड करें या अपना संदेश पेस्ट करें।'
+                : 'Load a preset scenario or paste your own message above to begin scanning.'}
             </p>
           </div>
         )}
       </main>
 
       {/* ── Footer ──────────────────────────────────────────── */}
-      <footer style={{
-        borderTop: '1px solid #1F2937', padding: '16px 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: '8px',
-      }}>
-        <span style={{ fontSize: '11.5px', color: '#374151', fontFamily: 'JetBrains Mono, monospace' }}>
+      <footer className="flex items-center justify-between flex-wrap gap-2 px-4 sm:px-6 py-4"
+        style={{ borderTop: '1px solid #1F2937' }}
+      >
+        <span className="text-[11.5px]" style={{ color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
           PhishLens · ScamShield AI · TechExpo 2026
         </span>
-        <span style={{ fontSize: '11.5px', color: '#374151', fontFamily: 'JetBrains Mono, monospace' }}>
+        <span className="text-[11.5px]" style={{ color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
           Agents: Atharv · Avni · Vikas · Avika
         </span>
       </footer>
@@ -309,6 +348,7 @@ export default function App() {
       {showModal && result && (
         <InterceptionModal
           result={result}
+          lang={lang}
           onAbort={handleAbort}
           onProceedAnyway={handleProceed}
         />
