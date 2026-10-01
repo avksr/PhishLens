@@ -26,6 +26,7 @@ import collections
 import functools
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -72,6 +73,7 @@ _RISK_HIGH_RISK_TLD = 35.0
 _RISK_TYPOSQUATTING = 50.0
 _RISK_NEW_DOMAIN = 40.0
 _RISK_HOMOGLYPH = 45.0
+_RISK_SAFE_BROWSING = 50.0
 _RISK_WHOIS_TIMEOUT_PENALTY = 15.0  # penalty when WHOIS fails but TLD is high-risk
 
 # WHOIS timeout (seconds)
@@ -86,6 +88,13 @@ _SIMILARITY_THRESHOLD = 0.55
 # Domain-result cache settings
 _DOMAIN_CACHE_MAXSIZE = 4096
 _DOMAIN_CACHE_TTL_SECONDS = 300  # 5-minute TTL
+
+# Google Safe Browsing API v4 settings
+_GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "")
+_SAFE_BROWSING_TIMEOUT = 1.0  # seconds
+_SAFE_BROWSING_ENDPOINT = (
+    "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+)
 
 # ──────────────────────────────────────────────
 # Homoglyph / Confusable character map
@@ -195,6 +204,8 @@ class _DomainCacheEntry:
     is_homoglyph: bool
     homoglyph_brand: Optional[str]
     age_days: Optional[int]
+    registrar: Optional[str]
+    safe_browsing_threat: Optional[str]
     flags: Tuple[str, ...]  # frozen for hashability
     tld_delta: float
     typo_delta: float
@@ -295,13 +306,16 @@ def domain_cache_clear() -> None:
 # ──────────────────────────────────────────────
 
 @functools.lru_cache(maxsize=2048)
-def _lookup_domain_age(domain: str) -> Optional[int]:
+def _lookup_domain_age(domain: str) -> Optional[Tuple[Optional[int], Optional[str]]]:
     """
-    Synchronous WHOIS lookup returning domain age in days, or None.
+    Synchronous WHOIS lookup returning ``(domain_age_days, registrar)``.
 
     Wrapped with ``functools.lru_cache(maxsize=2048)`` so repeated
     queries for the same domain return in sub-millisecond time without
     hitting the network.
+
+    Returns ``None`` on import / network failure.  Otherwise returns a
+    tuple of ``(age_days | None, registrar_name | None)``.
     """
     try:
         import whois  # type: ignore[import-untyped]
@@ -313,11 +327,13 @@ def _lookup_domain_age(domain: str) -> Optional[int]:
         creation = w.creation_date
         if isinstance(creation, list):
             creation = creation[0]
+        registrar = getattr(w, "registrar", None)
         if creation is None:
-            return None
+            return (None, registrar)
         if isinstance(creation, datetime):
             age = (datetime.now(timezone.utc) - creation.replace(tzinfo=timezone.utc)).days
-            return age
+            return (age, registrar)
+        return (None, registrar)
     except Exception:
         return None
     return None
@@ -586,9 +602,12 @@ def _check_typosquatting(
     """
     Detect brand impersonation / typosquatting.
 
-    Two-pass approach:
+    Three-pass approach:
+      0. **Official check** — if registered_domain is an official domain of
+         any known brand, it is authentic; never flag it.
       1. **Keyword match** — does any brand keyword appear in the domain label
          while the full registered domain is NOT in the brand's official list?
+         Checked across all brands first so direct keyword matches take precedence.
       2. **Levenshtein similarity** — is the registered domain suspiciously
          close to any official domain (ratio >= threshold)?
 
@@ -605,14 +624,19 @@ def _check_typosquatting(
     label_lower = domain_label.lower()
     full_lower = registered_domain.lower()
 
+    # Pass 0 — If registered_domain is an official domain of ANY brand, it's authentic
+    for info in brand_data.values():
+        official_domains = [d.lower() for d in info.get("official_domains", [])]
+        if full_lower in official_domains:
+            return False, None, 0.0, []
+
+    # Pass 1 — Keyword hit in the domain label across all brands
     for _brand_key, info in brand_data.items():
         brand_name: str = info.get("brand_name", _brand_key)
         keywords: List[str] = [k.lower() for k in info.get("keywords", [])]
         official_domains: List[str] = [d.lower() for d in info.get("official_domains", [])]
 
-        # Pass 1 — keyword hit in the domain label
         if any(kw in label_lower for kw in keywords):
-            # Is the full registered domain an official one?
             if full_lower in official_domains:
                 return False, None, 0.0, []
             return (
@@ -622,19 +646,27 @@ def _check_typosquatting(
                 ["TYPOSQUATTING_DETECTED"],
             )
 
-        # Pass 2 — Levenshtein similarity against each official domain
+    # Pass 2 — Levenshtein similarity against each official domain
+    best_brand: Optional[str] = None
+    best_ratio: float = 0.0
+
+    for _brand_key, info in brand_data.items():
+        brand_name = info.get("brand_name", _brand_key)
+        official_domains = [d.lower() for d in info.get("official_domains", [])]
+
         for official in official_domains:
             ratio = _levenshtein_ratio(full_lower, official)
-            if ratio >= _SIMILARITY_THRESHOLD:
-                # Don't flag exact matches
-                if full_lower == official:
-                    return False, None, 0.0, []
-                return (
-                    True,
-                    brand_name,
-                    _RISK_TYPOSQUATTING,
-                    ["TYPOSQUATTING_DETECTED"],
-                )
+            if ratio >= _SIMILARITY_THRESHOLD and ratio > best_ratio:
+                best_ratio = ratio
+                best_brand = brand_name
+
+    if best_brand is not None:
+        return (
+            True,
+            best_brand,
+            _RISK_TYPOSQUATTING,
+            ["TYPOSQUATTING_DETECTED"],
+        )
 
     return False, None, 0.0, []
 
@@ -642,7 +674,7 @@ def _check_typosquatting(
 async def _check_whois_age(
     registered_domain: str,
     suffix: str = "",
-) -> Tuple[Optional[int], float, List[str]]:
+) -> Tuple[Optional[int], Optional[str], float, List[str]]:
     """
     Look up domain creation date via the LRU-cached ``_lookup_domain_age()``.
 
@@ -667,36 +699,46 @@ async def _check_whois_age(
         The TLD suffix (e.g. ``top``), used for fallback scoring on
         WHOIS failure.
 
-    Returns ``(domain_age_days | None, score_delta, new_flags)``.
+    Returns ``(domain_age_days | None, registrar | None, score_delta, new_flags)``.
     """
     loop = asyncio.get_running_loop()
     try:
-        age_days = await asyncio.wait_for(
+        whois_result = await asyncio.wait_for(
             loop.run_in_executor(None, _lookup_domain_age, registered_domain),
             timeout=_WHOIS_TIMEOUT,
         )
     except asyncio.TimeoutError:
         logger.warning(
-            "WHOIS/RDAP timeout for '%s' (> %.1fs) — falling back to "
+            "WHOIS/RDAP timeout for '%s' (>%.1fs) — falling back to "
             "local TLD reputation",
             registered_domain, _WHOIS_TIMEOUT,
         )
-        return _whois_fallback(registered_domain, suffix)
+        age, delta, flags = _whois_fallback(registered_domain, suffix)
+        return age, None, delta, flags
     except Exception as exc:
         logger.warning(
             "WHOIS/RDAP error for '%s': %s — falling back to local TLD "
             "reputation",
             registered_domain, exc,
         )
-        return _whois_fallback(registered_domain, suffix)
+        age, delta, flags = _whois_fallback(registered_domain, suffix)
+        return age, None, delta, flags
+
+    # _lookup_domain_age returns None on complete failure, or (age, registrar)
+    if whois_result is None:
+        age, delta, flags = _whois_fallback(registered_domain, suffix)
+        return age, None, delta, flags
+
+    age_days, registrar = whois_result
 
     if age_days is not None and age_days < _NEW_DOMAIN_THRESHOLD_DAYS:
         return (
             age_days,
+            registrar,
             _RISK_NEW_DOMAIN,
-            [f"NEWLY_REGISTERED_DOMAIN (< {_NEW_DOMAIN_THRESHOLD_DAYS} days)"],
+            [f"NEW_DOMAIN (<{_NEW_DOMAIN_THRESHOLD_DAYS} days)"],
         )
-    return age_days, 0.0, []
+    return age_days, registrar, 0.0, []
 
 
 def _whois_fallback(
@@ -723,6 +765,84 @@ def _whois_fallback(
             [f"WHOIS_TIMEOUT_FALLBACK (high-risk TLD .{suffix_lower})"],
         )
     return None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]
+
+
+# ──────────────────────────────────────────────
+# Google Safe Browsing API v4 (FR-4)
+# ──────────────────────────────────────────────
+
+async def check_google_safe_browsing(
+    url: str,
+) -> Tuple[Optional[str], float, List[str]]:
+    """
+    Query the Google Safe Browsing Lookup API v4 for *url*.
+
+    Returns ``(threat_type | None, score_delta, new_flags)``.
+
+    **Graceful pass-through fallback**:
+      - If ``GOOGLE_SAFE_BROWSING_API_KEY`` is empty or unset, the
+        check is silently skipped (returns no threat).
+      - If the network request fails or times out (>1.0 s), the
+        check is silently skipped — no exception is raised.
+    """
+    api_key = _GOOGLE_SAFE_BROWSING_API_KEY
+    if not api_key:
+        logger.debug("Google Safe Browsing API key not configured — skipping")
+        return None, 0.0, []
+
+    payload = {
+        "client": {
+            "clientId": "phishlens",
+            "clientVersion": "1.0.0",
+        },
+        "threatInfo": {
+            "threatTypes": [
+                "MALWARE",
+                "SOCIAL_ENGINEERING",
+                "UNWANTED_SOFTWARE",
+                "POTENTIALLY_HARMFUL_APPLICATION",
+            ],
+            "platformTypes": ["ANY_PLATFORM"],
+            "threatEntryTypes": ["URL"],
+            "threatEntries": [{"url": url}],
+        },
+    }
+
+    try:
+        import httpx  # type: ignore[import-untyped]
+    except ImportError:
+        logger.warning("httpx not installed — skipping Safe Browsing check")
+        return None, 0.0, []
+
+    try:
+        async with httpx.AsyncClient(timeout=_SAFE_BROWSING_TIMEOUT) as client:
+            resp = await client.post(
+                _SAFE_BROWSING_ENDPOINT,
+                params={"key": api_key},
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if asyncio.iscoroutine(data):
+                data = await data
+    except Exception as exc:
+        logger.warning(
+            "Google Safe Browsing request failed for '%s': %s — skipping",
+            url, exc,
+        )
+        return None, 0.0, []
+
+    matches = data.get("matches")
+    if not matches:
+        return None, 0.0, []
+
+    # Take the first (most severe) match
+    threat_type = matches[0].get("threatType", "UNKNOWN")
+    return (
+        threat_type,
+        _RISK_SAFE_BROWSING,
+        [f"GOOGLE_SAFE_BROWSING_THREAT ({threat_type})"],
+    )
 
 
 # ──────────────────────────────────────────────
@@ -773,6 +893,8 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 is_typosquatting=cached.is_typo,
                 target_brand=cached.target_brand,
                 domain_age_days=cached.age_days,
+                registrar=cached.registrar,
+                safe_browsing_threat=cached.safe_browsing_threat,
                 flags=list(cached.flags),
                 details=f"Analysed {url}; {len(cached.flags)} flag(s) raised [cached]",
                 latency_ms=round(elapsed, 2),
@@ -806,16 +928,21 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 target_brand = homoglyph_brand
 
         # ── Step 5: WHOIS age (with zero-downtime fallback) ──
-        age_days, age_delta, age_flags = await _check_whois_age(
+        age_days, registrar, age_delta, age_flags = await _check_whois_age(
             registered_domain, suffix=suffix,
         )
         risk_score += age_delta
         flags.extend(age_flags)
 
-        # ── Step 6: Normalise score ──
+        # ── Step 6: Google Safe Browsing (FR-4) ──
+        sb_threat, sb_delta, sb_flags = await check_google_safe_browsing(url)
+        risk_score += sb_delta
+        flags.extend(sb_flags)
+
+        # ── Step 7: Normalise score ──
         risk_score = max(0.0, min(100.0, risk_score))
 
-        # ── Step 7: Populate domain-result cache ──
+        # ── Step 8: Populate domain-result cache ──
         _domain_cache.put(
             registered_domain,
             _DomainCacheEntry(
@@ -826,6 +953,8 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 is_homoglyph=is_homoglyph,
                 homoglyph_brand=homoglyph_brand,
                 age_days=age_days,
+                registrar=registrar,
+                safe_browsing_threat=sb_threat,
                 flags=tuple(flags),
                 tld_delta=tld_delta,
                 typo_delta=typo_delta,
@@ -845,6 +974,8 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
             is_typosquatting=is_typo,
             target_brand=target_brand,
             domain_age_days=age_days,
+            registrar=registrar,
+            safe_browsing_threat=sb_threat,
             flags=flags,
             details=f"Analysed {url}; {len(flags)} flag(s) raised",
             latency_ms=round(elapsed, 2),

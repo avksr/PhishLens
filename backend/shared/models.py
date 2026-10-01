@@ -82,9 +82,11 @@ class UrlAgentResult(BaseModel):
     domain: Optional[str] = None
     tld: Optional[str] = None
     domain_age_days: Optional[int] = None
+    registrar: Optional[str] = None
     is_typosquatting: bool = False
     target_brand: Optional[str] = None
     tld_reputation: TldReputationEnum = TldReputationEnum.NEUTRAL
+    safe_browsing_threat: Optional[str] = None
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0

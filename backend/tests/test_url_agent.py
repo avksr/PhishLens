@@ -7,6 +7,9 @@ Covers:
   - Homoglyph / Punycode lookalike detection
   - Cache pre-warming
   - Edge cases and error handling
+  - Google Safe Browsing API v4 (FR-4)
+  - Domain age < 30 days flagging with registrar capture (FR-5)
+  - Expanded brand watchlist for Indian utilities (FR-7)
 
 Run from the project root:
     python -m pytest backend/tests/test_url_agent.py -v
@@ -20,7 +23,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
@@ -49,6 +52,8 @@ try:
         _DomainCacheEntry,
         _whois_fallback,
         _RISK_WHOIS_TIMEOUT_PENALTY,
+        _RISK_SAFE_BROWSING,
+        check_google_safe_browsing,
     )
 except ImportError:
     from backend.agents.url_agent import (  # noqa: E402
@@ -68,6 +73,8 @@ except ImportError:
         _DomainCacheEntry,
         _whois_fallback,
         _RISK_WHOIS_TIMEOUT_PENALTY,
+        _RISK_SAFE_BROWSING,
+        check_google_safe_browsing,
     )
 
 try:
@@ -96,6 +103,27 @@ def _make_request(
 ) -> ScanRequest:
     """Shorthand factory for test ScanRequests."""
     return ScanRequest(content=content, extracted_url=extracted_url)
+
+
+def _patch_whois_and_safebrowsing(whois_return, sb_return=(None, 0.0, [])):
+    """
+    Helper to patch both _check_whois_age and check_google_safe_browsing
+    for tests that need to isolate from network calls.
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _ctx():
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=whois_return,
+        ), patch(
+            f"{analyze_url.__module__}.check_google_safe_browsing",
+            return_value=sb_return,
+        ):
+            yield
+
+    return _ctx()
 
 
 # ──────────────────────────────────────────────
@@ -128,10 +156,8 @@ async def test_url_agent_legitimate_bank_url():
     """
     req = _make_request(extracted_url="https://www.onlinesbi.sbi/portal")
 
-    # Patch WHOIS so tests don't make real network calls
-    with patch(
-        f"{analyze_url.__module__}._check_whois_age",
-        return_value=(365, 0.0, []),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(365, None, 0.0, []),
     ):
         result = await analyze_url(req)
 
@@ -152,9 +178,8 @@ async def test_url_agent_typosquatting_phishing_url():
     """
     req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
-    with patch(
-        f"{analyze_url.__module__}._check_whois_age",
-        return_value=(5, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
     ):
         result = await analyze_url(req)
 
@@ -201,9 +226,8 @@ async def test_url_extracted_from_content_body():
     msg = "Dear customer, verify your account at https://hdfc-secure-login.xyz/verify immediately."
     req = _make_request(content=msg)
 
-    with patch(
-        f"{analyze_url.__module__}._check_whois_age",
-        return_value=(None, 0.0, []),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(None, None, 0.0, []),
     ):
         result = await analyze_url(req)
 
@@ -223,9 +247,8 @@ async def test_risk_score_clamped_to_100():
     req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
     # Force WHOIS to also add +40 → total = 35 + 50 + 40 = 125 → clamp to 100
-    with patch(
-        f"{analyze_url.__module__}._check_whois_age",
-        return_value=(2, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(2, "GoDaddy", 40.0, ["NEW_DOMAIN (<30 days)"]),
     ):
         result = await analyze_url(req)
 
@@ -272,6 +295,7 @@ class TestWhoisCache:
 
             class MockWhoisResult:
                 creation_date = None
+                registrar = None
 
             mock_mod.whois = lambda d: MockWhoisResult()
             sys.modules["whois"] = mock_mod
@@ -304,6 +328,7 @@ class TestWhoisCache:
 
         class MockWhoisResult:
             creation_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
+            registrar = "MockRegistrar Inc."
 
         def slow_whois(domain):
             time.sleep(0.05)  # 50ms simulated network call
@@ -362,6 +387,7 @@ class TestPrewarmCache:
 
         class MockWhoisResult:
             creation_date = datetime(2015, 6, 1, tzinfo=timezone.utc)
+            registrar = "Prewarm Registrar"
 
         mock_mod.whois = lambda d: MockWhoisResult()
         sys.modules["whois"] = mock_mod
@@ -387,6 +413,7 @@ class TestPrewarmCache:
 
         class MockWhoisResult:
             creation_date = datetime(2018, 3, 15, tzinfo=timezone.utc)
+            registrar = "Speed Registrar"
 
         mock_mod.whois = lambda d: MockWhoisResult()
         sys.modules["whois"] = mock_mod
@@ -425,7 +452,7 @@ class TestHomoglyphDetection:
 
     def test_normalise_cyrillic_o(self):
         """Cyrillic 'о' (U+043E) should normalise to Latin 'o'."""
-        result = _normalise_homoglyphs("g\u043E\u043Egle")
+        result = _normalise_homoglyphs("g\u043e\u043egle")
         assert result == "google"
 
     def test_normalise_mixed_cyrillic_latin(self):
@@ -461,7 +488,7 @@ class TestHomoglyphDetection:
 
     def test_homoglyph_sbi_with_roman_numeral(self):
         """
-        Domain 'sb\u2170-bank' (using roman numeral ⅰ for i) should be
+        Domain 'sb\\u2170-bank' (using roman numeral ⅰ for i) should be
         detected as a homoglyph attack targeting SBI.
         """
         is_attack, brand, score, flags = _check_homoglyph(
@@ -473,7 +500,7 @@ class TestHomoglyphDetection:
 
     def test_homoglyph_icici_with_cyrillic(self):
         """
-        Domain 'i\u0441ici' (Cyrillic с for Latin c) should be flagged.
+        Domain 'i\\u0441ici' (Cyrillic с for Latin c) should be flagged.
         """
         is_attack, brand, score, flags = _check_homoglyph(
             "i\u0441ici", "i\u0441ici.com"
@@ -499,9 +526,8 @@ async def test_homoglyph_url_full_pipeline():
     # sb\u2170-bank.top — uses roman numeral ⅰ instead of Latin i
     req = _make_request(extracted_url="https://sb\u2170-bank.top/login")
 
-    with patch(
-        "backend.agents.url_agent._check_whois_age",
-        return_value=(None, 0.0, []),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(None, None, 0.0, []),
     ):
         result = await analyze_url(req)
 
@@ -522,9 +548,8 @@ async def test_airtel_phishing_url():
     """
     req = _make_request(extracted_url="https://airtel-recharge-offer.top/claim")
 
-    with patch(
-        "backend.agents.url_agent._check_whois_age",
-        return_value=(3, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(3, "Shady Registrar LLC", 40.0, ["NEW_DOMAIN (<30 days)"]),
     ):
         result = await analyze_url(req)
 
@@ -541,9 +566,8 @@ async def test_jio_phishing_url():
     """
     req = _make_request(extracted_url="https://jio-free-data.xyz/activate")
 
-    with patch(
-        "backend.agents.url_agent._check_whois_age",
-        return_value=(None, 0.0, []),
+    with _patch_whois_and_safebrowsing(
+        whois_return=(None, None, 0.0, []),
     ):
         result = await analyze_url(req)
 
@@ -579,9 +603,8 @@ class TestDomainResultCache:
         """
         req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
-        with patch(
-            f"{analyze_url.__module__}._check_whois_age",
-            return_value=(5, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
+        with _patch_whois_and_safebrowsing(
+            whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
         ):
             result1 = await analyze_url(req)
             result2 = await analyze_url(req)
@@ -605,9 +628,8 @@ class TestDomainResultCache:
         """
         req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
-        with patch(
-            f"{analyze_url.__module__}._check_whois_age",
-            return_value=(None, 0.0, []),
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
         ):
             await analyze_url(req)  # populate
             result = await analyze_url(req)  # cached
@@ -621,9 +643,8 @@ class TestDomainResultCache:
         """
         req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
-        with patch(
-            f"{analyze_url.__module__}._check_whois_age",
-            return_value=(None, 0.0, []),
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
         ):
             await analyze_url(req)  # populate
 
@@ -644,9 +665,8 @@ class TestDomainResultCache:
         req_a = _make_request(extracted_url="https://sbi-kyc-verify.top")
         req_b = _make_request(extracted_url="https://google.com/search")
 
-        with patch(
-            f"{analyze_url.__module__}._check_whois_age",
-            return_value=(None, 0.0, []),
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
         ):
             result_a = await analyze_url(req_a)
             result_b = await analyze_url(req_b)
@@ -668,6 +688,8 @@ class TestDomainResultCache:
                 is_homoglyph=False,
                 homoglyph_brand=None,
                 age_days=365,
+                registrar=None,
+                safe_browsing_threat=None,
                 flags=(),
                 tld_delta=0.0,
                 typo_delta=0.0,
@@ -727,9 +749,9 @@ class TestWhoisFallback:
 
         # Mock _check_whois_age to return the fallback tuple (simulating
         # internal timeout handling that degrades to local TLD scoring)
-        with patch(
-            f"{analyze_url.__module__}._check_whois_age",
-            return_value=(
+        with _patch_whois_and_safebrowsing(
+            whois_return=(
+                None,
                 None,
                 _RISK_WHOIS_TIMEOUT_PENALTY,
                 ["WHOIS_TIMEOUT_FALLBACK (high-risk TLD .top)"],
@@ -750,17 +772,10 @@ class TestWhoisFallback:
         """
         Any WHOIS exception (not just timeout) must fall back gracefully.
         """
-        import asyncio as aio
-
         req = _make_request(extracted_url="https://suspicious.xyz/phish")
 
-        # Patch at the internal level so the full pipeline runs but
-        # _check_whois_age itself raises
-        original_check = analyze_url.__module__
-
-        with patch(
-            f"{original_check}._check_whois_age",
-            return_value=(None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]),
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]),
         ):
             result = await analyze_url(req)
 
@@ -778,9 +793,9 @@ class TestWhoisFallback:
         req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
         # Simulate the fallback response
-        with patch(
-            f"{analyze_url.__module__}._check_whois_age",
-            return_value=(
+        with _patch_whois_and_safebrowsing(
+            whois_return=(
+                None,
                 None,
                 _RISK_WHOIS_TIMEOUT_PENALTY,
                 ["WHOIS_TIMEOUT_FALLBACK (high-risk TLD .top)"],
@@ -792,3 +807,401 @@ class TestWhoisFallback:
         # Should have TLD (35) + typosquat (50) + fallback penalty (15) = 100
         assert result.risk_score >= 95
         assert "WHOIS_TIMEOUT_FALLBACK" in " ".join(result.flags)
+
+
+# ──────────────────────────────────────────────
+# FR-4: Google Safe Browsing API v4 tests
+# ──────────────────────────────────────────────
+
+class TestGoogleSafeBrowsing:
+    """Tests for the Google Safe Browsing Lookup API v4 integration."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_api_key_missing(self):
+        """
+        When GOOGLE_SAFE_BROWSING_API_KEY is empty, the check must
+        silently return no threat and zero score delta.
+        """
+        with patch(
+            f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
+            "",
+        ):
+            threat, delta, flags = await check_google_safe_browsing(
+                "https://malicious.example.com"
+            )
+
+        assert threat is None
+        assert delta == 0.0
+        assert flags == []
+
+    @pytest.mark.asyncio
+    async def test_returns_threat_on_match(self):
+        """
+        When Safe Browsing API returns a match, check_google_safe_browsing
+        must return the threat type with the correct risk delta.
+        """
+        mock_response_data = {
+            "matches": [
+                {
+                    "threatType": "SOCIAL_ENGINEERING",
+                    "platformType": "ANY_PLATFORM",
+                    "threat": {"url": "https://evil.example.com"},
+                }
+            ]
+        }
+
+        with patch(
+            f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
+            "fake-api-key",
+        ), patch("httpx.AsyncClient") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = mock_response_data
+            mock_resp.raise_for_status.return_value = None
+
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__.return_value = AsyncMock()
+            mock_ctx.__aenter__.return_value.post.return_value = mock_resp
+            MockClient.return_value = mock_ctx
+
+            threat, delta, flags = await check_google_safe_browsing(
+                "https://evil.example.com"
+            )
+
+        assert threat == "SOCIAL_ENGINEERING"
+        assert delta == _RISK_SAFE_BROWSING
+        assert any("GOOGLE_SAFE_BROWSING_THREAT" in f for f in flags)
+        assert any("SOCIAL_ENGINEERING" in f for f in flags)
+
+    @pytest.mark.asyncio
+    async def test_returns_no_threat_on_clean_url(self):
+        """
+        When Safe Browsing API returns no matches, the function must
+        return None threat with zero delta.
+        """
+        with patch(
+            f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
+            "fake-api-key",
+        ), patch("httpx.AsyncClient") as MockClient:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {}  # no matches
+            mock_resp.raise_for_status.return_value = None
+
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__.return_value = AsyncMock()
+            mock_ctx.__aenter__.return_value.post.return_value = mock_resp
+            MockClient.return_value = mock_ctx
+
+            threat, delta, flags = await check_google_safe_browsing(
+                "https://safe.example.com"
+            )
+
+        assert threat is None
+        assert delta == 0.0
+        assert flags == []
+
+    @pytest.mark.asyncio
+    async def test_graceful_fallback_on_network_failure(self):
+        """
+        When the HTTP request fails, check_google_safe_browsing must
+        silently return no threat — never raise.
+        """
+        with patch(
+            f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
+            "fake-api-key",
+        ), patch("httpx.AsyncClient") as MockClient:
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__.return_value = AsyncMock()
+            mock_ctx.__aenter__.return_value.post.side_effect = ConnectionError(
+                "network down"
+            )
+            MockClient.return_value = mock_ctx
+
+            threat, delta, flags = await check_google_safe_browsing(
+                "https://unreachable.example.com"
+            )
+
+        assert threat is None
+        assert delta == 0.0
+        assert flags == []
+
+    @pytest.mark.asyncio
+    async def test_timeout_is_1_second(self):
+        """
+        The Safe Browsing client must use a 1.0s timeout.
+        """
+        from agents.url_agent import _SAFE_BROWSING_TIMEOUT
+        assert _SAFE_BROWSING_TIMEOUT == 1.0
+
+    @pytest.mark.asyncio
+    async def test_safe_browsing_threat_in_full_pipeline(self):
+        """
+        End-to-end: when Safe Browsing flags a URL, the threat type
+        must appear in the result's safe_browsing_threat field and flags.
+        """
+        req = _make_request(extracted_url="https://sbi-kyc-verify.top/phish")
+
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
+        ), patch(
+            f"{analyze_url.__module__}.check_google_safe_browsing",
+            return_value=(
+                "SOCIAL_ENGINEERING",
+                _RISK_SAFE_BROWSING,
+                ["GOOGLE_SAFE_BROWSING_THREAT (SOCIAL_ENGINEERING)"],
+            ),
+        ):
+            result = await analyze_url(req)
+
+        assert result.status == AgentStatusEnum.SUCCESS
+        assert result.safe_browsing_threat == "SOCIAL_ENGINEERING"
+        assert any("GOOGLE_SAFE_BROWSING_THREAT" in f for f in result.flags)
+        # Score should be clamped to 100 (TLD 35 + typo 50 + WHOIS 40 + SB 50 = 175)
+        assert result.risk_score == 100.0
+
+
+# ──────────────────────────────────────────────
+# FR-5: Domain Age Flagging with Registrar tests
+# ──────────────────────────────────────────────
+
+class TestDomainAgeFlagging:
+    """Tests for domain age < 30 days flagging and registrar capture (FR-5)."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+
+    @pytest.mark.asyncio
+    async def test_new_domain_flag_format(self):
+        """
+        Domain age < 30 days must append 'NEW_DOMAIN (<30 days)' to flags.
+        """
+        req = _make_request(extracted_url="https://brand-new-phish.top/login")
+
+        with _patch_whois_and_safebrowsing(
+            whois_return=(10, "Shady Registrar LLC", 40.0, ["NEW_DOMAIN (<30 days)"]),
+        ):
+            result = await analyze_url(req)
+
+        assert result.domain_age_days == 10
+        assert any("NEW_DOMAIN" in f and "<30 days" in f for f in result.flags), (
+            f"Expected 'NEW_DOMAIN (<30 days)' flag, got: {result.flags}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_registrar_captured_in_result(self):
+        """
+        When WHOIS returns registrar info, the UrlAgentResult must
+        include it in the registrar field.
+        """
+        req = _make_request(extracted_url="https://evil-phish.top/login")
+
+        with _patch_whois_and_safebrowsing(
+            whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
+        ):
+            result = await analyze_url(req)
+
+        assert result.registrar == "NameCheap, Inc."
+
+    @pytest.mark.asyncio
+    async def test_registrar_none_when_whois_fails(self):
+        """
+        When WHOIS fails and falls back, registrar should be None.
+        """
+        req = _make_request(extracted_url="https://some-domain.com/page")
+
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]),
+        ):
+            result = await analyze_url(req)
+
+        assert result.registrar is None
+
+    @pytest.mark.asyncio
+    async def test_old_domain_no_new_domain_flag(self):
+        """
+        Domain age >= 30 days must NOT produce a NEW_DOMAIN flag.
+        """
+        req = _make_request(extracted_url="https://sbi.co.in/portal")
+
+        with _patch_whois_and_safebrowsing(
+            whois_return=(3650, "GoDaddy.com, LLC", 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert not any("NEW_DOMAIN" in f for f in result.flags)
+        assert result.registrar == "GoDaddy.com, LLC"
+
+    def test_lookup_domain_age_returns_tuple_with_registrar(self):
+        """
+        _lookup_domain_age must return (age_days, registrar) tuple
+        or None on failure.
+        """
+        import types
+        mock_mod = types.ModuleType("whois")
+
+        from datetime import datetime, timezone
+
+        class MockWhoisResult:
+            creation_date = datetime(2024, 9, 15, tzinfo=timezone.utc)
+            registrar = "TestRegistrar Corp"
+
+        mock_mod.whois = lambda d: MockWhoisResult()
+        sys.modules["whois"] = mock_mod
+
+        try:
+            whois_cache_clear()
+            result = _lookup_domain_age("test-registrar.com")
+
+            assert result is not None
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+            age_days, registrar = result
+            assert isinstance(age_days, int)
+            assert age_days > 0
+            assert registrar == "TestRegistrar Corp"
+        finally:
+            if "whois" in sys.modules:
+                del sys.modules["whois"]
+
+
+# ──────────────────────────────────────────────
+# FR-7: Expanded Brand Watchlist tests
+# ──────────────────────────────────────────────
+
+class TestExpandedBrandWatchlist:
+    """Tests for the expanded brand_domains.json (FR-7)."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+        # Force reload of brand data
+        import agents.url_agent as _mod
+        _mod._brand_data_cache = None
+
+    @pytest.mark.asyncio
+    async def test_irctc_phishing_detected(self):
+        """Fake IRCTC domain should be detected as typosquatting."""
+        req = _make_request(
+            extracted_url="https://irctc-booking-refund.top/claim"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is True
+        assert result.target_brand == "IRCTC"
+
+    @pytest.mark.asyncio
+    async def test_irctc_official_not_flagged(self):
+        """Official IRCTC domain must NOT be flagged as typosquatting."""
+        req = _make_request(
+            extracted_url="https://irctc.co.in/nget/train-search"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(3650, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is False
+
+    @pytest.mark.asyncio
+    async def test_indianrail_official_not_flagged(self):
+        """indianrail.gov.in is a legitimate IRCTC domain."""
+        req = _make_request(
+            extracted_url="https://indianrail.gov.in/enquiry"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(5000, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        # 'indianrail' keyword should match IRCTC but domain is official
+        assert result.is_typosquatting is False
+
+    @pytest.mark.asyncio
+    async def test_bses_phishing_detected(self):
+        """Fake BSES domain should be detected."""
+        req = _make_request(
+            extracted_url="https://bses-bill-payment.top/pay"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is True
+        assert "BSES" in (result.target_brand or "")
+
+    @pytest.mark.asyncio
+    async def test_uppcl_phishing_detected(self):
+        """Fake UPPCL domain should be detected."""
+        req = _make_request(
+            extracted_url="https://uppclonline-billpay.xyz/verify"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is True
+        assert "UPPCL" in (result.target_brand or "")
+
+    @pytest.mark.asyncio
+    async def test_tneb_phishing_detected(self):
+        """Fake TNEB domain should be detected."""
+        req = _make_request(
+            extracted_url="https://tneb-bill-payment.top/login"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is True
+        assert "TNEB" in (result.target_brand or "")
+
+    @pytest.mark.asyncio
+    async def test_paytm_official_not_flagged(self):
+        """Official Paytm domain must NOT be flagged."""
+        req = _make_request(
+            extracted_url="https://paytm.com/offer"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(3000, "GoDaddy", 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is False
+
+    @pytest.mark.asyncio
+    async def test_phonepe_official_not_flagged(self):
+        """Official PhonePe domain must NOT be flagged."""
+        req = _make_request(
+            extracted_url="https://phonepe.com/pay"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(2000, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is False
+
+    @pytest.mark.asyncio
+    async def test_googlepay_official_not_flagged(self):
+        """Official Google Pay domain must NOT be flagged."""
+        req = _make_request(
+            extracted_url="https://pay.google.com/send"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(5000, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        # gpay keyword matches but pay.google.com is official
+        assert result.is_typosquatting is False

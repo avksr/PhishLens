@@ -121,14 +121,18 @@
     "keywords": ["paytm"],
     "official_domains": [
       "paytm.com",
-      "paytmbank.com"
+      "paytmbank.com",
+      "paytmmoney.com",
+      "paytmmall.com",
+      "paytminsurance.co.in"
     ]
   },
   "PHONEPE": {
     "brand_name": "PhonePe",
     "keywords": ["phonepe"],
     "official_domains": [
-      "phonepe.com"
+      "phonepe.com",
+      "phonepe.in"
     ]
   },
   "GPAY": {
@@ -136,7 +140,8 @@
     "keywords": ["gpay", "googlepay"],
     "official_domains": [
       "pay.google.com",
-      "google.com"
+      "google.com",
+      "payments.google.com"
     ]
   },
   "RAZORPAY": {
@@ -148,10 +153,12 @@
   },
   "IRCTC": {
     "brand_name": "IRCTC",
-    "keywords": ["irctc"],
+    "keywords": ["irctc", "indianrail"],
     "official_domains": [
       "irctc.co.in",
-      "irctc.com"
+      "irctc.com",
+      "indianrail.gov.in",
+      "enquiry.indianrail.gov.in"
     ]
   },
   "AADHAAR": {
@@ -236,11 +243,12 @@
     ]
   },
   "MSEDCL": {
-    "brand_name": "MSEDCL",
+    "brand_name": "MSEDCL / MahaDiscom",
     "keywords": ["msedcl", "mahadiscom"],
     "official_domains": [
       "mahadiscom.in",
-      "msedcl.in"
+      "msedcl.in",
+      "msedcl.org"
     ]
   },
   "TATAPOWER": {
@@ -256,6 +264,32 @@
     "keywords": ["adanielectricity", "adani electricity"],
     "official_domains": [
       "adanielectricity.in"
+    ]
+  },
+  "BSES_DELHI": {
+    "brand_name": "BSES Delhi",
+    "keywords": ["bses", "bsesdelhi", "bsesrajdhani", "bsesyamuna"],
+    "official_domains": [
+      "bsesdelhi.com",
+      "bsesrajdhani.com",
+      "bsesyamuna.com"
+    ]
+  },
+  "UPPCL": {
+    "brand_name": "UPPCL",
+    "keywords": ["uppcl", "uppclonline"],
+    "official_domains": [
+      "uppclonline.com",
+      "uppcl.org"
+    ]
+  },
+  "TNEB": {
+    "brand_name": "TNEB / TANGEDCO",
+    "keywords": ["tneb", "tangedco", "tnebnet"],
+    "official_domains": [
+      "tnebnet.org",
+      "tangedco.org",
+      "tnebltd.gov.in"
     ]
   }
 }
