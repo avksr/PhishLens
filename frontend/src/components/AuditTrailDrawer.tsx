@@ -3,7 +3,7 @@
 //  3 vector cards + synthesis + Live Audit Feed drawer
 // ────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { AuditTrail, UrlAgentResult, SenderAgentResult, IntentAgentResult, SynthesisBreakdown, AuditLogEntry, RiskTier, Language } from '../lib/types';
 import { fetchRecentAuditLogs } from '../lib/api';
 
@@ -426,24 +426,44 @@ function timeAgo(ts: string): string {
 
 // ── Live Audit Feed Drawer ────────────────────────────────────
 
-function LiveAuditFeed({ lang }: { lang: Language }) {
+export function LiveAuditFeed({ lang }: { lang: Language }) {
   const [open,       setOpen]       = useState(false);
   const [logs,       setLogs]       = useState<AuditLogEntry[]>([]);
-  const [loading,    setLoading]    = useState(false);
+  const [loading,    setLoading]    = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Fetch logs directly from the toggle handler (avoids setState-in-effect)
+  // ── Polling effect: fetch immediately and every 30 seconds ────
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLogs = () => {
+      fetchRecentAuditLogs(10)
+        .then(data => {
+          if (isMounted) {
+            setLogs(data);
+            setLoading(false);
+            setFetchError(null);
+          }
+        })
+        .catch(err => {
+          if (isMounted) {
+            setFetchError(err instanceof Error ? err.message : 'Failed to fetch audit logs');
+            setLoading(false);
+          }
+        });
+    };
+
+    loadLogs();
+    const intervalId = setInterval(loadLogs, 30_000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
+
   const handleToggle = () => {
-    const willOpen = !open;
-    setOpen(willOpen);
-    if (willOpen) {
-      setLoading(true);
-      setFetchError(null);
-      fetchRecentAuditLogs()
-        .then(data => setLogs(data))
-        .catch(err => setFetchError(err instanceof Error ? err.message : 'Failed to fetch audit logs'))
-        .finally(() => setLoading(false));
-    }
+    setOpen(prev => !prev);
   };
 
   return (
@@ -458,8 +478,8 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
         type="button"
         onClick={handleToggle}
         aria-expanded={open}
-        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4"
-        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 cursor-pointer"
+        style={{ background: 'transparent', border: 'none' }}
       >
         <div className="flex items-center gap-2.5">
           <div style={{
@@ -468,19 +488,25 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }} aria-hidden>📋</div>
           <div style={{ textAlign: 'left' }}>
-            <p className="text-sm sm:text-[15px]" style={{
-              margin: 0, fontWeight: 700, color: '#F1F5F9',
-              fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
-            }}>
-              {lang === 'hi' ? 'हालिया ऑडिट लॉग' : 'Recent Audit Logs'}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm sm:text-[15px]" style={{
+                margin: 0, fontWeight: 700, color: '#F1F5F9',
+                fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
+              }}>
+                {lang === 'hi' ? 'हालिया ऑडिट लॉग' : 'Recent Audit Logs'}
+              </p>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-[#94A3B8] font-mono border border-[#1F2937] bg-[#111827]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00E676] animate-pulse" />
+                30s poll
+              </span>
+            </div>
             <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
-              {lang === 'hi' ? 'पिछले स्कैन का लाइव फ़ीड' : 'Live feed of previous scans'}
+              {lang === 'hi' ? 'पिछले स्कैन का लाइव फ़ीड (हर 30 सेकंड में ऑटो-रिफ्रेश)' : 'Live feed of previous scans (auto-refreshed every 30s)'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {logs.length > 0 && open && (
+          {logs.length > 0 && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{
               color: '#00F0FF', background: 'rgba(0,240,255,0.1)',
               border: '1px solid rgba(0,240,255,0.25)',
@@ -494,15 +520,15 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
         </div>
       </button>
 
-      {/* Collapsible feed */}
+      {/* Collapsible feed body */}
       <div style={{
-        maxHeight: open ? '500px' : '0',
+        maxHeight: open ? '650px' : '0',
         overflow: 'hidden',
         transition: 'max-height 0.35s ease',
       }}>
         <div className="px-3 sm:px-5 pb-3.5 sm:pb-4 mobile-card-padding" style={{ borderTop: '1px solid #1F2937' }}>
           {/* Loading state */}
-          {loading && (
+          {loading && logs.length === 0 && (
             <div className="flex items-center justify-center gap-2 py-6" role="status" aria-live="polite">
               <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" style={{ animation: 'pl-spin 1s linear infinite' }}>
                 <circle cx="9" cy="9" r="7" stroke="rgba(0,240,255,0.2)" strokeWidth="2" fill="none"/>
@@ -515,8 +541,8 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
           )}
 
           {/* Error state */}
-          {fetchError && !loading && (
-            <div role="alert" className="py-4 px-3 rounded-lg mt-3 flex items-center gap-2" style={{
+          {fetchError && (
+            <div role="alert" className="py-3 px-3 rounded-lg mt-3 flex items-center gap-2" style={{
               background: 'rgba(255,51,102,0.07)', border: '1px solid rgba(255,51,102,0.25)',
             }}>
               <span aria-hidden>⚠</span>
@@ -524,48 +550,70 @@ function LiveAuditFeed({ lang }: { lang: Language }) {
             </div>
           )}
 
-          {/* Feed entries */}
-          {!loading && !fetchError && logs.length > 0 && (
-            <div className="mt-3 flex flex-col gap-2 max-h-[380px] overflow-y-auto pr-1"
+          {/* Table / List View */}
+          {logs.length > 0 && (
+            <div className="mt-3 flex flex-col gap-2 max-h-[440px] overflow-y-auto pr-1"
               style={{ scrollbarWidth: 'thin', scrollbarColor: '#1F2937 transparent' }}
             >
+              {/* Header row for medium+ screens */}
+              <div className="hidden sm:grid grid-cols-[130px_100px_1fr_110px] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] border-b border-[#1F2937]"
+                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              >
+                <span>Scan ID</span>
+                <span>Risk Score</span>
+                <span>Verdict</span>
+                <span className="text-right">Timestamp</span>
+              </div>
+
               {logs.map(log => {
                 const tc = tierColor(log.risk_tier);
+                const resolvedVerdict = (lang === 'hi' && log.verdict_hi) ? log.verdict_hi : log.verdict;
                 return (
                   <div
                     key={log.scan_id}
-                    className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg transition-colors duration-200"
+                    className="grid grid-cols-1 sm:grid-cols-[130px_100px_1fr_110px] items-start sm:items-center gap-2 sm:gap-3 p-3 rounded-lg transition-colors duration-150"
                     style={{
                       background: '#111827', border: '1px solid #1F2937',
                     }}
                   >
-                    {/* Left: Score + Tier */}
-                    <div className="flex items-center gap-2.5 shrink-0">
-                      <span className="text-base font-bold" style={{
-                        fontFamily: 'JetBrains Mono, monospace', color: tc,
-                        minWidth: '28px', textAlign: 'center',
-                      }}>{log.overall_risk_score}</span>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider" style={{
-                        color: tc, background: `${tc}14`, border: `1px solid ${tc}35`,
-                        fontFamily: 'JetBrains Mono, monospace',
-                      }}>{log.risk_tier.replace(/_/g, ' ')}</span>
+                    {/* 1. Scan ID */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="sm:hidden text-[10px] text-[#94A3B8] font-bold uppercase font-mono">ID:</span>
+                      <code
+                        className="text-[11px] font-mono text-[#00F0FF] px-1.5 py-0.5 rounded border border-[rgba(0,240,255,0.2)]"
+                        style={{ background: 'rgba(0,240,255,0.06)' }}
+                        title={log.scan_id}
+                      >
+                        {log.scan_id.slice(0, 8)}…
+                      </code>
                     </div>
 
-                    {/* Middle: Verdict */}
-                    <p className="flex-1 text-xs leading-snug" style={{
-                      margin: 0, color: '#CBD5E1', fontFamily: 'Inter, sans-serif',
-                      overflow: 'hidden', textOverflow: 'ellipsis',
-                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                    }}>{log.verdict}</p>
+                    {/* 2. Risk Score */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="sm:hidden text-[10px] text-[#94A3B8] font-bold uppercase font-mono">Score:</span>
+                      <span
+                        className="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono tracking-wider"
+                        style={{
+                          color: tc,
+                          background: `${tc}15`,
+                          border: `1px solid ${tc}35`,
+                        }}
+                      >
+                        {log.overall_risk_score} <span className="text-[9px] opacity-75">/100</span>
+                      </span>
+                    </div>
 
-                    {/* Right: Metadata */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px]" style={{
-                        color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace',
-                      }}>{log.processing_time_ms.toFixed(0)}ms</span>
-                      <span className="text-[10px]" style={{
-                        color: '#94A3B8', fontFamily: 'Inter, sans-serif',
-                      }}>{timeAgo(log.timestamp)}</span>
+                    {/* 3. Verdict */}
+                    <p
+                      className="m-0 text-xs text-[#CBD5E1] font-sans leading-snug line-clamp-2"
+                      title={resolvedVerdict}
+                    >
+                      {resolvedVerdict}
+                    </p>
+
+                    {/* 4. Timestamp */}
+                    <div className="flex items-center sm:justify-end gap-1.5 text-[10px] text-[#94A3B8] font-mono shrink-0">
+                      <span>{timeAgo(log.timestamp)}</span>
                     </div>
                   </div>
                 );
@@ -605,60 +653,62 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
   const toggle = (key: keyof typeof expanded) =>
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
-  if (!auditTrail) return null;
-
   return (
     <div className="flex flex-col gap-4 w-full max-sm:w-[100vw] mobile-drawer-fit">
-      {/* Section header */}
-      <div className="flex items-center gap-2.5">
-        <div style={{
-          width: 36, height: 36, borderRadius: '9px', fontSize: '18px',
-          background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }} aria-hidden>🔬</div>
-        <div>
-          <h3 className="text-base" style={{ margin: 0, fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
-            {lang === 'hi' ? 'ऑडिट ट्रेल' : 'Audit Trail'}
-          </h3>
-          <p style={{ margin: 0, fontSize: '11.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
-            {lang === 'hi' ? '3-एजेंट व्याख्यात्मक विश्लेषण' : '3-agent explainability drilldown'}
-          </p>
-        </div>
-      </div>
+      {auditTrail && (
+        <>
+          {/* Section header */}
+          <div className="flex items-center gap-2.5">
+            <div style={{
+              width: 36, height: 36, borderRadius: '9px', fontSize: '18px',
+              background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }} aria-hidden>🔬</div>
+            <div>
+              <h3 className="text-base" style={{ margin: 0, fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+                {lang === 'hi' ? 'ऑडिट ट्रेल' : 'Audit Trail'}
+              </h3>
+              <p style={{ margin: 0, fontSize: '11.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+                {lang === 'hi' ? '3-एजेंट व्याख्यात्मक विश्लेषण' : '3-agent explainability drilldown'}
+              </p>
+            </div>
+          </div>
 
-      {/* Overall processing time */}
-      {processingTimeMs != null && (
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-lg" style={{
-          background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.15)',
-        }}>
-          <span aria-hidden style={{ fontSize: '14px' }}>⚡</span>
-          <span className="text-xs sm:text-[12.5px] font-bold" style={{
-            fontFamily: 'JetBrains Mono, monospace', color: '#00F0FF',
-          }}>
-            {lang === 'hi' ? `कुल प्रोसेसिंग समय: ${processingTimeMs.toFixed(0)}ms` : `Total Processing Time: ${processingTimeMs.toFixed(0)}ms`}
-          </span>
-        </div>
+          {/* Overall processing time */}
+          {processingTimeMs != null && (
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-lg" style={{
+              background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.15)',
+            }}>
+              <span aria-hidden style={{ fontSize: '14px' }}>⚡</span>
+              <span className="text-xs sm:text-[12.5px] font-bold" style={{
+                fontFamily: 'JetBrains Mono, monospace', color: '#00F0FF',
+              }}>
+                {lang === 'hi' ? `कुल प्रोसेसिंग समय: ${processingTimeMs.toFixed(0)}ms` : `Total Processing Time: ${processingTimeMs.toFixed(0)}ms`}
+              </span>
+            </div>
+          )}
+
+          {/* Recommendation banner */}
+          {recommendation && (
+            <div className="flex gap-2.5 items-start p-3 sm:p-4 rounded-lg" style={{
+              background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.18)',
+            }}>
+              <span aria-hidden className="text-base shrink-0 mt-0.5">💡</span>
+              <p className="text-[13px] leading-relaxed" style={{ margin: 0, color: '#CBD5E1', fontFamily: 'Inter, sans-serif' }}>
+                {recommendation}
+              </p>
+            </div>
+          )}
+
+          {/* 3 Vector cards */}
+          <UrlCard    data={auditTrail.url_analysis}    expanded={expanded.url}    onToggle={() => toggle('url')} />
+          <SenderCard data={auditTrail.sender_analysis} expanded={expanded.sender} onToggle={() => toggle('sender')} />
+          <IntentCard data={auditTrail.intent_analysis} expanded={expanded.intent} onToggle={() => toggle('intent')} />
+
+          {/* Synthesis */}
+          <SynthesisCard data={auditTrail.synthesis_breakdown} />
+        </>
       )}
-
-      {/* Recommendation banner */}
-      {recommendation && (
-        <div className="flex gap-2.5 items-start p-3 sm:p-4 rounded-lg" style={{
-          background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.18)',
-        }}>
-          <span aria-hidden className="text-base shrink-0 mt-0.5">💡</span>
-          <p className="text-[13px] leading-relaxed" style={{ margin: 0, color: '#CBD5E1', fontFamily: 'Inter, sans-serif' }}>
-            {recommendation}
-          </p>
-        </div>
-      )}
-
-      {/* 3 Vector cards */}
-      <UrlCard    data={auditTrail.url_analysis}    expanded={expanded.url}    onToggle={() => toggle('url')} />
-      <SenderCard data={auditTrail.sender_analysis} expanded={expanded.sender} onToggle={() => toggle('sender')} />
-      <IntentCard data={auditTrail.intent_analysis} expanded={expanded.intent} onToggle={() => toggle('intent')} />
-
-      {/* Synthesis */}
-      <SynthesisCard data={auditTrail.synthesis_breakdown} />
 
       {/* ── Day 4: Live Audit Feed Drawer ──────────────────── */}
       <LiveAuditFeed lang={lang} />

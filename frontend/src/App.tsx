@@ -98,8 +98,7 @@ export default function App() {
               color: '#00F0FF',
             }}
           >
-            <span aria-hidden className="text-sm">{lang === 'en' ? '🇬🇧' : '🇮🇳'}</span>
-            <span className="inline">{lang === 'en' ? 'EN' : 'हिंदी'}</span>
+            {lang === 'en' ? '🇮🇳 हिंदी' : '🇬🇧 English'}
           </button>
 
           {scanCount > 0 && (
@@ -289,15 +288,13 @@ export default function App() {
               </div>
             )}
 
-            {/* Audit Trail */}
-            {result && (
-              <AuditTrailDrawer
-                auditTrail={result.audit_trail}
-                recommendation={resolveRecommendation(result)}
-                processingTimeMs={result.processing_time_ms}
-                lang={lang}
-              />
-            )}
+            {/* Audit Trail & Live Feed */}
+            <AuditTrailDrawer
+              auditTrail={result ? result.audit_trail : null}
+              recommendation={result ? resolveRecommendation(result) : undefined}
+              processingTimeMs={result ? result.processing_time_ms : undefined}
+              lang={lang}
+            />
           </div>
 
           {/* Right column — Risk Gauge (only when result exists) */}
