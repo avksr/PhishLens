@@ -31,6 +31,8 @@ class ChannelEnum(str, Enum):
     EMAIL = "email"
     QR_PAYMENT = "qr_payment"
     WEB_URL = "web_url"
+    UPI_HANDLE = "upi_handle"
+    TEXT_MESSAGE = "text_message"
     UNKNOWN = "unknown"
 
 
@@ -85,6 +87,9 @@ class ScanRequest(BaseModel):
     )
     extracted_url: Optional[str] = Field(None, description="Pre-extracted or user-provided URL to inspect")
     channel: ChannelEnum = Field(default=ChannelEnum.SMS, description="Ingestion channel")
+    input_type: Optional[str] = Field(
+        None, description="Auto-classified input type: web_url, upi_handle, or text_message"
+    )
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
 
 

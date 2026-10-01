@@ -33,3 +33,26 @@ async def test_rate_limiting_post_scan_returns_429_on_abuse():
                 break
 
         assert got_429 is True, "Expected HTTP 429 Too Many Requests when exceeding 30 req/min"
+
+
+def test_configurable_rate_limit_env():
+    """Verify that RATE_LIMIT_PER_MINUTE env var is read dynamically and formatted properly."""
+    import os
+    from core.limiter import get_rate_limit
+
+    # Default fallback
+    if "RATE_LIMIT_PER_MINUTE" in os.environ:
+        del os.environ["RATE_LIMIT_PER_MINUTE"]
+    assert get_rate_limit() == "30/minute"
+
+    # Numeric string
+    os.environ["RATE_LIMIT_PER_MINUTE"] = "60"
+    assert get_rate_limit() == "60/minute"
+
+    # Explicit format
+    os.environ["RATE_LIMIT_PER_MINUTE"] = "15/minute"
+    assert get_rate_limit() == "15/minute"
+
+    # Clean up
+    del os.environ["RATE_LIMIT_PER_MINUTE"]
+

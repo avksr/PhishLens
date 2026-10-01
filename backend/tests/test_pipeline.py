@@ -110,3 +110,142 @@ def test_pii_masker():
     assert "ending ****" in masked_card
     assert "8812" not in masked_card
 
+
+def test_input_type_auto_detection_classifier():
+    """Verify FR-1 & FR-2: classify_input_type accurately identifies web_url, upi_handle, and text_message."""
+    from core.orchestrator import classify_input_type
+
+    # 1. Web URL classifications
+    assert classify_input_type("https://sbi-kyc-verify.top") == "web_url"
+    assert classify_input_type("http://suspicious-domain.xyz/login?ref=123") == "web_url"
+    assert classify_input_type("www.phishingbank.com") == "web_url"
+    assert classify_input_type("sbi-kyc-verify.top") == "web_url"
+    assert classify_input_type("https://secure.hdfcbank.com/netbanking") == "web_url"
+
+    # 2. UPI Handle classifications
+    assert classify_input_type("refund-desk@oksbi") == "upi_handle"
+    assert classify_input_type("merchant123@icici") == "upi_handle"
+    assert classify_input_type("fraudster.pay@ybl") == "upi_handle"
+    assert classify_input_type("upi://pay?pa=fake@okhdfc&pn=HDFC") == "upi_handle"
+
+    # 3. Text Message classifications (including messages with embedded URLs/UPIs)
+    assert classify_input_type("Dear customer your electricity bill is unpaid. Pay now.") == "text_message"
+    assert classify_input_type("Dear customer, click https://sbi-kyc.top to unblock PAN.") == "text_message"
+    assert classify_input_type("Send Rs 500 to merchant@oksbi to claim your prize") == "text_message"
+    assert classify_input_type("Your OTP is 482910") == "text_message"
+    assert classify_input_type("") == "text_message"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_input_type_auto_classification_wiring():
+    """Verify run_pipeline auto-classifies free-text inputs and populates metadata/fields."""
+    from core.orchestrator import run_pipeline
+
+    # Free-text web URL input
+    req_url = ScanRequest(
+        content="https://sbi-kyc-verify.top",
+        channel=ChannelEnum.UNKNOWN
+    )
+    resp_url = await run_pipeline(req_url)
+    assert req_url.input_type == "web_url"
+    assert req_url.metadata.get("input_type") == "web_url"
+    assert req_url.extracted_url == "https://sbi-kyc-verify.top"
+    assert req_url.channel == ChannelEnum.WEB_URL
+    assert resp_url.overall_risk_score > 0
+
+    # Free-text UPI handle input
+    req_upi = ScanRequest(
+        content="refund-desk@oksbi",
+        channel=ChannelEnum.UNKNOWN
+    )
+    resp_upi = await run_pipeline(req_upi)
+    assert req_upi.input_type == "upi_handle"
+    assert req_upi.metadata.get("input_type") == "upi_handle"
+    assert req_upi.channel == ChannelEnum.UPI_HANDLE
+    # Verify UPI agent was triggered
+    assert resp_upi.audit_trail.upi_analysis.status == AgentStatusEnum.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_audit_privacy_sha256_and_production_mode():
+    """Verify FR-10 & §9: SHA-256 input_hash computed and zero raw text stored in production mode."""
+    import hashlib
+    from core.db_logger import log_scan_audit, get_scan_audit, verify_audit_privacy
+
+    raw_text = "SECRET_PAYLOAD: Your account password is 9876543210 and OTP is 112233"
+    expected_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+
+    req = ScanRequest(
+        content=raw_text,
+        sender="+919876543210",
+        channel=ChannelEnum.SMS
+    )
+    resp = await run_pipeline(req)
+
+    # 1. Dev / Standard mode: input_hash is saved, content is PII-masked
+    await log_scan_audit(resp, req)
+    record = await get_scan_audit(resp.scan_id)
+    assert record is not None
+    assert record["input_hash"] == expected_hash
+    assert record["scan_id"] == resp.scan_id
+    assert "9876543210" not in record["content_masked"]
+    assert "112233" not in record["content_masked"]
+
+    # 2. Production mode: zero raw text stored
+    with patch("core.db_logger.is_production_mode", return_value=True):
+        prod_req = ScanRequest(
+            content="TOP_SECRET_ALERT_DO_NOT_STORE_RAW_TEXT",
+            sender="+919876543210",
+            channel=ChannelEnum.SMS
+        )
+        prod_resp = await run_pipeline(prod_req)
+        await log_scan_audit(prod_resp, prod_req)
+
+        prod_record = await get_scan_audit(prod_resp.scan_id)
+        assert prod_record is not None
+        assert prod_record["input_hash"] == hashlib.sha256(prod_req.content.encode("utf-8")).hexdigest()
+        # Verify content_masked is None (no raw text stored in DB)
+        assert prod_record["content_masked"] is None
+        assert verify_audit_privacy(prod_record, prod_req.content) is True
+        # Ensure raw text does not appear in any value of the stored record
+        for key, val in prod_record.items():
+            if isinstance(val, str):
+                assert "TOP_SECRET_ALERT_DO_NOT_STORE_RAW_TEXT" not in val
+
+
+@pytest.mark.asyncio
+async def test_audit_inspection_endpoint_us5():
+    """Verify US-5: GET /api/v1/audit/{scan_id} returns full execution status for judges/evaluators."""
+    import httpx
+    from main import app
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8000") as client:
+        # 1. Perform a scan
+        scan_payload = {
+            "content": "Verify your identity at https://sbi-kyc-verify.top now",
+            "sender": "+919876543210",
+            "channel": "sms"
+        }
+        scan_res = await client.post("/api/v1/scan", json=scan_payload)
+        assert scan_res.status_code == 200
+        scan_id = scan_res.json()["scan_id"]
+
+        # 2. Query the audit inspection endpoint
+        audit_res = await client.get(f"/api/v1/audit/{scan_id}")
+        assert audit_res.status_code == 200
+        data = audit_res.json()
+        assert data["scan_id"] == scan_id
+        assert "input_hash" in data
+        assert len(data["input_hash"]) == 64  # SHA-256 length
+        assert data["status"] == "COMPLETED"
+        assert "overall_risk_score" in data
+        assert "risk_tier" in data
+        assert "action_required" in data
+
+        # 3. Non-existent scan_id returns 404
+        not_found_res = await client.get("/api/v1/audit/non-existent-scan-999")
+        assert not_found_res.status_code == 404
+        assert "not found" in not_found_res.json()["detail"].lower()
+
+
