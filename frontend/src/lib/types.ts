@@ -29,6 +29,14 @@ export type DetectedIntent =
   | 'BENIGN'
   | 'SUSPICIOUS';
 
+// ── Day 4: Bilingual ─────────────────────────────────────────
+
+export type Language = 'en' | 'hi';
+
+// ── Day 4: Auto-Detection Badge ──────────────────────────────
+
+export type DetectedInputType = 'url' | 'upi' | 'sms';
+
 // ── Request ──────────────────────────────────────────────────
 
 export interface ScanRequest {
@@ -110,6 +118,10 @@ export interface ScanResponse {
   action_required: ActionRequired;
   audit_trail: AuditTrail;
   processing_time_ms: number;
+  /** Hindi verdict from Avika's scoring engine (optional, bilingual support) */
+  verdict_hi?: string;
+  /** Hindi recommendation from Avika's scoring engine (optional, bilingual support) */
+  recommendation_hi?: string;
 }
 
 // ── UI Helpers ────────────────────────────────────────────────
@@ -121,4 +133,16 @@ export interface UiTreatment {
   accentColor: string;
   /** Human-readable label */
   label: string;
+}
+
+// ── Day 4: Live Audit Feed ────────────────────────────────────
+
+export interface AuditLogEntry {
+  scan_id: string;
+  timestamp: string;
+  risk_tier: RiskTier;
+  overall_risk_score: number;
+  verdict: string;
+  channel: Channel;
+  processing_time_ms: number;
 }

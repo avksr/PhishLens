@@ -58,41 +58,16 @@ _UPI_VPA_RE = re.compile(
 #
 # NOTE: All handles are lowercase in practice; we normalise to lower before lookup.
 _PSP_REGISTRY: Dict[str, dict] = {
-    # ── State Bank of India ──
-    "oksbi": {
-        "psp_name": "SBI Pay",
-        "entity": "State Bank of India",
-        "handle_type": "BANK",
-        "legitimate_owners": ["State Bank of India"],
-    },
-    # ── HDFC Bank ──
-    "okhdfc": {
-        "psp_name": "HDFC Bank UPI",
-        "entity": "HDFC Bank",
-        "handle_type": "BANK",
-        "legitimate_owners": ["HDFC Bank"],
-    },
-    # ── ICICI Bank ──
-    "okicici": {
-        "psp_name": "ICICI Bank UPI",
-        "entity": "ICICI Bank",
-        "handle_type": "BANK",
-        "legitimate_owners": ["ICICI Bank"],
-    },
-    # ── Axis Bank ──
-    "okaxis": {
-        "psp_name": "Axis Pay",
-        "entity": "Axis Bank",
-        "handle_type": "BANK",
-        "legitimate_owners": ["Axis Bank"],
-    },
     # ── PhonePe (Yes Bank backend) ──
     "ybl": {
         "psp_name": "PhonePe",
         "entity": "PhonePe (Yes Bank backend)",
         "handle_type": "FINTECH",
         "legitimate_owners": ["PhonePe"],
-        "note": "@ybl is assigned to individual PhonePe users only; no bank or institution uses @ybl as their official VPA.",
+        "note": (
+            "@ybl is assigned to individual PhonePe users only; no bank or institution "
+            "uses @ybl as their official VPA."
+        ),
     },
     "axl": {
         "psp_name": "PhonePe (Axis Bank backend)",
@@ -107,15 +82,21 @@ _PSP_REGISTRY: Dict[str, dict] = {
         "handle_type": "FINTECH",
         "legitimate_owners": ["PhonePe"],
     },
-    # ── Google Pay ──
+    # ── Google Pay (Bank Backends) ──
     "oksbi": {
         "psp_name": "Google Pay / SBI",
         "entity": "Google Pay / State Bank of India",
         "handle_type": "FINTECH",
         "legitimate_owners": ["Google Pay", "State Bank of India"],
     },
-    "okhdfcbank": {
+    "okhdfc": {
         "psp_name": "Google Pay / HDFC",
+        "entity": "Google Pay / HDFC Bank",
+        "handle_type": "FINTECH",
+        "legitimate_owners": ["Google Pay", "HDFC Bank"],
+    },
+    "okhdfcbank": {
+        "psp_name": "Google Pay / HDFC Bank",
         "entity": "Google Pay / HDFC Bank",
         "handle_type": "FINTECH",
         "legitimate_owners": ["Google Pay", "HDFC Bank"],
@@ -138,6 +119,7 @@ _PSP_REGISTRY: Dict[str, dict] = {
         "entity": "Paytm Payments Bank",
         "handle_type": "FINTECH",
         "legitimate_owners": ["Paytm"],
+
         "note": "@paytm is used exclusively by Paytm and its registered merchants.",
     },
     # ── Amazon Pay ──
@@ -377,6 +359,7 @@ _SCAM_LOCALPART_PATTERNS: List[Tuple[re.Pattern, str, float]] = [
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _extract_vpas_from_text(text: str) -> List[Tuple[str, str]]:
     """
     Extract all UPI VPA candidates from free-form text.
@@ -460,9 +443,6 @@ async def analyze_upi(req: ScanRequest) -> UpiAgentResult:
 
 async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
     """Core UPI analysis pipeline — called inside try block in analyze_upi."""
-
-    flags: List[str] = []
-
     # ------------------------------------------------------------------
     # Step 1: Extract VPA candidates from content + sender field
     # ------------------------------------------------------------------

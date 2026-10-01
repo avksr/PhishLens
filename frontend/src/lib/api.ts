@@ -3,7 +3,7 @@
 //  POST /api/v1/scan  →  ScanResponse
 // ────────────────────────────────────────────────────────────
 
-import type { ScanRequest, ScanResponse, RiskTier, UiTreatment } from './types';
+import type { ScanRequest, ScanResponse, RiskTier, UiTreatment, AuditLogEntry } from './types';
 
 // ── Runtime datasets (bundled at build time) ──────────────────
 import highRiskPayloads from '../../../datasets/payloads_high_risk.json';
@@ -20,11 +20,14 @@ const MOCK_RESPONSES: ScanResponse[] = [
   {
     scan_id: 'c7a8b3e1-9524-4f0e-b7d6-ec2d79d501b4',
     timestamp: new Date().toISOString(),
-    overall_risk_score: 92,
+    overall_risk_score: 92, 
     risk_tier: 'CRITICAL',
     verdict: 'Confirmed Impersonation & Credential Harvesting Attack',
+    verdict_hi: 'पुष्टि: प्रतिरूपण एवं क्रेडेंशियल हार्वेस्टिंग हमला',
     recommendation:
       'BLOCK IMMEDIATE ACTION. This message impersonates State Bank of India using an unverified personal mobile number and a fresh phishing domain (.top). Never enter OTP or KYC credentials on third-party domains.',
+    recommendation_hi:
+      'तुरंत ब्लॉक करें। यह संदेश एक असत्यापित व्यक्तिगत मोबाइल नंबर और नई फ़िशिंग डोमेन (.top) से भारतीय स्टेट बैंक की नकल कर रहा है। कभी भी तृतीय-पक्ष डोमेन पर OTP या KYC क्रेडेंशियल दर्ज न करें।',
     action_required: 'BLOCK_TRANSACTION',
     audit_trail: {
       url_analysis: {
@@ -95,8 +98,11 @@ const MOCK_RESPONSES: ScanResponse[] = [
     overall_risk_score: 74,
     risk_tier: 'HIGH_RISK',
     verdict: 'Social Engineering — Utility Service Impersonation',
+    verdict_hi: 'सोशल इंजीनियरिंग — बिजली सेवा प्रतिरूपण',
     recommendation:
       "Do NOT call the number. Legitimate electricity boards never threaten disconnection via SMS from personal numbers. Verify directly via official BESCOM/MSEDCL app or website.",
+    recommendation_hi:
+      'इस नंबर पर कॉल न करें। असली बिजली बोर्ड कभी भी व्यक्तिगत नंबर से SMS द्वारा कनेक्शन काटने की धमकी नहीं देते। सीधे BESCOM/MSEDCL की आधिकारिक ऐप या वेबसाइट से सत्यापित करें।',
     action_required: 'WARN_USER',
     audit_trail: {
       url_analysis: {
@@ -113,7 +119,7 @@ const MOCK_RESPONSES: ScanResponse[] = [
       },
       sender_analysis: {
         status: 'SUCCESS',
-        sender_analyzed: '+918250912345',
+        sender_analyzed: '+919812345678',
         risk_score: 82,
         is_spoofed_header: false,
         sender_category: 'PERSONAL_GSM',
@@ -164,8 +170,11 @@ const MOCK_RESPONSES: ScanResponse[] = [
     overall_risk_score: 8,
     risk_tier: 'SAFE',
     verdict: 'Legitimate Bank OTP Transaction Notification',
+    verdict_hi: 'वैध बैंक OTP लेनदेन सूचना',
     recommendation:
       'Normal verified communication. Remember to never share this OTP with any caller or in third-party forms.',
+    recommendation_hi:
+      'सामान्य सत्यापित संचार। याद रखें कि यह OTP किसी भी कॉलर या तृतीय-पक्ष फॉर्म में साझा न करें।',
     action_required: 'ALLOW',
     audit_trail: {
       url_analysis: {
@@ -242,7 +251,9 @@ function pickMockResponse(req: ScanRequest): ScanResponse {
     overall_risk_score: 42,
     risk_tier: 'CAUTION',
     verdict: 'Unverified Communication — Exercise Caution',
+    verdict_hi: 'असत्यापित संचार — सावधानी बरतें',
     recommendation: 'Could not definitively classify. Treat with caution.',
+    recommendation_hi: 'निश्चित रूप से वर्गीकृत नहीं किया जा सका। सावधानी से व्यवहार करें।',
     action_required: 'WARN_USER',
     timestamp: new Date().toISOString(),
     processing_time_ms: 250,
@@ -280,7 +291,7 @@ export async function scanMessage(req: ScanRequest): Promise<ScanResponse> {
     }
 
     return response.json() as Promise<ScanResponse>;
-  } catch (_err) {
+  } catch {
     // Backend offline → graceful demo fallback
     console.warn('[PhishLens] Backend unreachable — using offline mock response');
     // Simulate network latency
@@ -292,19 +303,89 @@ export async function scanMessage(req: ScanRequest): Promise<ScanResponse> {
 // ── UI Treatment Helper ───────────────────────────────────────
 
 /**
- * Maps risk_tier → UI rendering decisions.
- * Only CRITICAL triggers the InterceptionModal.
+ * Maps risk_tier + action_required → UI rendering decisions.
+ * The full-screen InterceptionModal triggers ONLY when
+ * action_required === 'BLOCK_TRANSACTION'.
  */
 export function getUiTreatment(tier: RiskTier, action_required?: string): UiTreatment {
-  const isBlock = action_required === 'BLOCK_TRANSACTION' || tier === 'CRITICAL' || tier === 'HIGH_RISK';
+  const showModal = action_required === 'BLOCK_TRANSACTION';
   switch (tier) {
     case 'SAFE':
       return { showModal: false, accentColor: '#00E676', label: 'SAFE' };
     case 'CAUTION':
       return { showModal: false, accentColor: '#FFB800', label: 'CAUTION' };
     case 'HIGH_RISK':
-      return { showModal: isBlock, accentColor: '#FF6B00', label: 'HIGH RISK' };
+      return { showModal, accentColor: '#FF6B00', label: 'HIGH RISK' };
     case 'CRITICAL':
-      return { showModal: true, accentColor: '#FF3366', label: 'CRITICAL' };
+      return { showModal, accentColor: '#FF3366', label: 'CRITICAL' };
+  }
+}
+
+// ── Day 4: Live Audit Feed ────────────────────────────────────
+
+const MOCK_AUDIT_LOGS: AuditLogEntry[] = [
+  {
+    scan_id: 'c7a8b3e1-9524-4f0e-b7d6-ec2d79d501b4',
+    timestamp: new Date(Date.now() - 120_000).toISOString(),
+    risk_tier: 'CRITICAL',
+    overall_risk_score: 92,
+    verdict: 'Confirmed Impersonation & Credential Harvesting Attack',
+    channel: 'sms',
+    processing_time_ms: 820.5,
+  },
+  {
+    scan_id: 'a1b2c3d4-1111-2222-3333-444455556666',
+    timestamp: new Date(Date.now() - 480_000).toISOString(),
+    risk_tier: 'HIGH_RISK',
+    overall_risk_score: 74,
+    verdict: 'Social Engineering — Utility Service Impersonation',
+    channel: 'sms',
+    processing_time_ms: 638,
+  },
+  {
+    scan_id: 'f290d4a9-8351-499b-98df-5847eec659a8',
+    timestamp: new Date(Date.now() - 900_000).toISOString(),
+    risk_tier: 'SAFE',
+    overall_risk_score: 8,
+    verdict: 'Legitimate Bank OTP Transaction Notification',
+    channel: 'sms',
+    processing_time_ms: 535.2,
+  },
+  {
+    scan_id: 'b5e9d002-77a4-42ff-9afc-3c118e5a12d1',
+    timestamp: new Date(Date.now() - 1_800_000).toISOString(),
+    risk_tier: 'CAUTION',
+    overall_risk_score: 42,
+    verdict: 'Unverified Communication — Exercise Caution',
+    channel: 'whatsapp',
+    processing_time_ms: 250,
+  },
+  {
+    scan_id: 'e7f3a014-2c55-4b8d-a923-7d66cc4f0011',
+    timestamp: new Date(Date.now() - 3_600_000).toISOString(),
+    risk_tier: 'SAFE',
+    overall_risk_score: 12,
+    verdict: 'Verified e-commerce order confirmation',
+    channel: 'email',
+    processing_time_ms: 412.3,
+  },
+];
+
+/**
+ * Fetches recent audit logs from `GET /api/v1/audit/recent`.
+ * Falls back to offline mock data when the backend is unreachable.
+ */
+export async function fetchRecentAuditLogs(): Promise<AuditLogEntry[]> {
+  try {
+    const response = await fetch(`${BASE_URL}/api/v1/audit/recent`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`${response.status}`);
+    return response.json() as Promise<AuditLogEntry[]>;
+  } catch {
+    // Backend offline → demo fallback
+    console.warn('[PhishLens] Audit API unreachable — using mock audit logs');
+    await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
+    return MOCK_AUDIT_LOGS;
   }
 }

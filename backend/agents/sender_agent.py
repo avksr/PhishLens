@@ -152,6 +152,7 @@ _ALL_OFFICIAL_KEYWORDS = _BANKING_KEYWORDS + _GOVT_KEYWORDS
 # O(1) existence checks without nested dict traversal.
 # ---------------------------------------------------------------------------
 
+
 def _build_registry() -> Tuple[Dict[str, dict], Set[Tuple[str, str]]]:
     """
     Load the TRAI DLT registry JSON from disk exactly ONCE.
@@ -354,6 +355,7 @@ def _verify_circle_prefix(operator_prefix: str) -> Tuple[bool, bool, str]:
         f"Operator prefix '{operator_prefix}' is not found in the TRAI circle registry. "
         "This is highly suspicious — legitimate TRAI DLT operators use only registered prefixes.",
     )
+
 
 def _normalise_homoglyphs(text: str) -> str:
     """

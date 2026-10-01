@@ -4,11 +4,25 @@ Every agent and pipeline component MUST import types from this module.
 Ref: schema_mocks.json
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, timezone
 import uuid
+
+
+class EvidenceItem(BaseModel):
+    tool: str
+    status: str
+    finding: str
+    raw_result: Optional[Dict[str, Any]] = None
+
+
+class PrdVerdictEnum(str, Enum):
+    SAFE = "SAFE"                # 0-30 Safe
+    SUSPICIOUS = "SUSPICIOUS"    # 31-65 Suspicious
+    LIKELY_SCAM = "LIKELY_SCAM"  # 66-100 Likely Scam
+
 
 
 class ChannelEnum(str, Enum):
@@ -155,14 +169,87 @@ class AuditTrail(BaseModel):
 
 class ScanResponse(BaseModel):
     scan_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    audit_id: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    overall_risk_score: int = Field(..., ge=0, le=100)
-    risk_tier: RiskTierEnum
+    overall_risk_score: Optional[int] = Field(default=None, ge=0, le=100)
+    risk_score: Optional[int] = None
+    verdict_category: Optional[PrdVerdictEnum] = None
+    risk_tier: Optional[RiskTierEnum] = None
     confidence: ConfidenceLevelEnum = ConfidenceLevelEnum.HIGH
-    verdict: str
+    reasons: List[str] = Field(default_factory=list, description="Plain-language, max 5, ordered by weight")
+    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(default_factory=list, description="tool name, finding, raw result summary, status")
+    recommended_action: Optional[str] = None
+    verdict: Optional[str] = None
     verdict_hi: Optional[str] = None
-    recommendation: str
+    recommendation: Optional[str] = None
     recommendation_hi: Optional[str] = None
-    action_required: ActionRequiredEnum
-    audit_trail: AuditTrail
-    processing_time_ms: float
+    action_required: Optional[ActionRequiredEnum] = None
+    audit_trail: Optional[AuditTrail] = None
+    processing_time_ms: float = 0.0
+    detected_input_type: Optional[str] = Field(
+        None, description="Auto-detected input type: web_url, upi_handle, or text_message"
+    )
+
+    @model_validator(mode="after")
+    def populate_prd_aliases(self) -> "ScanResponse":
+        # Synchronize risk_score and overall_risk_score
+        if self.risk_score is None and self.overall_risk_score is not None:
+            self.risk_score = self.overall_risk_score
+        elif self.overall_risk_score is None and self.risk_score is not None:
+            self.overall_risk_score = self.risk_score
+        elif self.overall_risk_score is None and self.risk_score is None:
+            self.overall_risk_score = 0
+            self.risk_score = 0
+
+        # Synchronize audit_id and scan_id
+        if not self.audit_id:
+            self.audit_id = self.scan_id
+        elif not self.scan_id:
+            self.scan_id = self.audit_id
+
+        # Determine verdict_category if not explicitly provided
+        score = self.risk_score if self.risk_score is not None else 0
+        if self.verdict_category is None:
+            if score <= 30:
+                self.verdict_category = PrdVerdictEnum.SAFE
+            elif score <= 65:
+                self.verdict_category = PrdVerdictEnum.SUSPICIOUS
+            else:
+                self.verdict_category = PrdVerdictEnum.LIKELY_SCAM
+
+        # Synchronize legacy risk_tier if not provided
+        if self.risk_tier is None:
+            if score < 25:
+                self.risk_tier = RiskTierEnum.SAFE
+            elif score < 50:
+                self.risk_tier = RiskTierEnum.CAUTION
+            elif score < 78:
+                self.risk_tier = RiskTierEnum.HIGH_RISK
+            else:
+                self.risk_tier = RiskTierEnum.CRITICAL
+
+        # Synchronize recommendations
+        if not self.recommended_action and self.recommendation:
+            self.recommended_action = self.recommendation
+        elif not self.recommendation and self.recommended_action:
+            self.recommendation = self.recommended_action
+        elif not self.recommended_action and not self.recommendation:
+            self.recommended_action = "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            self.recommendation = self.recommended_action
+
+        # Synchronize verdict
+        if not self.verdict:
+            self.verdict = f"Scan completed: {self.verdict_category.value}"
+
+        # Synchronize action_required
+        if self.action_required is None:
+            if self.verdict_category == PrdVerdictEnum.SAFE:
+                self.action_required = ActionRequiredEnum.ALLOW
+            elif self.verdict_category == PrdVerdictEnum.SUSPICIOUS:
+                self.action_required = ActionRequiredEnum.WARN_USER
+            else:
+                self.action_required = ActionRequiredEnum.BLOCK_TRANSACTION
+
+        return self
+
+

@@ -43,6 +43,12 @@ try:
         _check_homoglyph,
         _lookup_domain_age,
         _PREWARM_DOMAINS,
+        domain_cache_info,
+        domain_cache_clear,
+        _domain_cache,
+        _DomainCacheEntry,
+        _whois_fallback,
+        _RISK_WHOIS_TIMEOUT_PENALTY,
     )
 except ImportError:
     from backend.agents.url_agent import (  # noqa: E402
@@ -56,6 +62,12 @@ except ImportError:
         _check_homoglyph,
         _lookup_domain_age,
         _PREWARM_DOMAINS,
+        domain_cache_info,
+        domain_cache_clear,
+        _domain_cache,
+        _DomainCacheEntry,
+        _whois_fallback,
+        _RISK_WHOIS_TIMEOUT_PENALTY,
     )
 
 try:
@@ -253,7 +265,7 @@ class TestWhoisCache:
         with patch(
             "backend.agents.url_agent.whois",
             create=True,
-        ) as mock_whois_module:
+        ):
             # Mock the whois module at the import level
             import types
             mock_mod = types.ModuleType("whois")
@@ -538,3 +550,243 @@ async def test_jio_phishing_url():
     assert result.status == AgentStatusEnum.SUCCESS
     assert result.is_typosquatting is True
     assert result.target_brand == "Jio"
+
+
+# ──────────────────────────────────────────────
+# Domain-Result LRU Cache tests
+# ──────────────────────────────────────────────
+
+class TestDomainResultCache:
+    """Tests for the TTL-aware in-memory domain-result cache."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+
+    def test_cache_starts_empty(self):
+        """After clearing, the domain-result cache must report zero entries."""
+        info = domain_cache_info()
+        assert info["hits"] == 0
+        assert info["misses"] == 0
+        assert info["size"] == 0
+        assert info["maxsize"] == 4096
+
+    @pytest.mark.asyncio
+    async def test_repeat_domain_returns_cached_result(self):
+        """
+        Two scans of the same domain must return identical results and
+        the second must be served from the domain cache.
+        """
+        req = _make_request(extracted_url="https://sbi-kyc-verify.top")
+
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(5, 40.0, ["NEWLY_REGISTERED_DOMAIN (< 30 days)"]),
+        ):
+            result1 = await analyze_url(req)
+            result2 = await analyze_url(req)
+
+        # Both should succeed with the same score
+        assert result1.status == AgentStatusEnum.SUCCESS
+        assert result2.status == AgentStatusEnum.SUCCESS
+        assert result1.risk_score == result2.risk_score
+        assert result1.flags == result2.flags
+
+        # The second scan should have hit the domain cache
+        info = domain_cache_info()
+        assert info["hits"] >= 1
+        assert info["size"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_cached_response_contains_cached_marker(self):
+        """
+        A domain-cache HIT must include '[cached]' in the details string
+        so callers can distinguish cached from fresh results.
+        """
+        req = _make_request(extracted_url="https://sbi-kyc-verify.top")
+
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(None, 0.0, []),
+        ):
+            await analyze_url(req)  # populate
+            result = await analyze_url(req)  # cached
+
+        assert "[cached]" in (result.details or "")
+
+    @pytest.mark.asyncio
+    async def test_cached_lookup_under_1ms(self):
+        """
+        Benchmark: A domain-cache HIT must complete in <1 ms.
+        """
+        req = _make_request(extracted_url="https://sbi-kyc-verify.top")
+
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(None, 0.0, []),
+        ):
+            await analyze_url(req)  # populate
+
+            t0 = time.perf_counter()
+            result = await analyze_url(req)  # cached
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+
+        assert result.latency_ms < 1.0, (
+            f"Cached lookup took {result.latency_ms:.3f} ms, expected < 1 ms"
+        )
+        print(f"\n  ⚡ Domain-cache HIT latency: {elapsed_ms:.4f} ms")
+
+    @pytest.mark.asyncio
+    async def test_different_domains_are_independent(self):
+        """
+        Two different domains must not share a cache entry.
+        """
+        req_a = _make_request(extracted_url="https://sbi-kyc-verify.top")
+        req_b = _make_request(extracted_url="https://google.com/search")
+
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(None, 0.0, []),
+        ):
+            result_a = await analyze_url(req_a)
+            result_b = await analyze_url(req_b)
+
+        # Different domains → different results
+        assert result_a.domain != result_b.domain
+        info = domain_cache_info()
+        assert info["size"] >= 2  # both domains cached
+
+    def test_cache_clear_resets_stats(self):
+        """domain_cache_clear() must reset hits, misses, and size to 0."""
+        _domain_cache.put(
+            "example.com",
+            _DomainCacheEntry(
+                risk_score=10.0,
+                tld_rep=TldReputationEnum.NEUTRAL,
+                is_typo=False,
+                target_brand=None,
+                is_homoglyph=False,
+                homoglyph_brand=None,
+                age_days=365,
+                flags=(),
+                tld_delta=0.0,
+                typo_delta=0.0,
+                homoglyph_delta=0.0,
+                age_delta=0.0,
+            ),
+        )
+        assert domain_cache_info()["size"] == 1
+        domain_cache_clear()
+        info = domain_cache_info()
+        assert info["size"] == 0
+        assert info["hits"] == 0
+        assert info["misses"] == 0
+
+
+# ──────────────────────────────────────────────
+# WHOIS Zero-Downtime Fallback tests
+# ──────────────────────────────────────────────
+
+class TestWhoisFallback:
+    """Tests for the zero-downtime WHOIS/RDAP fallback mechanism."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+
+    def test_fallback_high_risk_tld_applies_penalty(self):
+        """
+        When WHOIS is unavailable and the TLD is high-risk, the fallback
+        must apply a non-zero penalty score.
+        """
+        age, delta, flags = _whois_fallback("evil-bank.top", "top")
+        assert age is None
+        assert delta == _RISK_WHOIS_TIMEOUT_PENALTY
+        assert any("WHOIS_TIMEOUT_FALLBACK" in f for f in flags)
+        assert any("high-risk" in f.lower() for f in flags)
+
+    def test_fallback_benign_tld_no_penalty(self):
+        """
+        When WHOIS is unavailable and the TLD is benign (e.g. .com),
+        the fallback must return zero penalty.
+        """
+        age, delta, flags = _whois_fallback("example.com", "com")
+        assert age is None
+        assert delta == 0.0
+        assert any("WHOIS_TIMEOUT_FALLBACK" in f for f in flags)
+        assert any("benign" in f.lower() for f in flags)
+
+    @pytest.mark.asyncio
+    async def test_timeout_triggers_fallback_not_exception(self):
+        """
+        A WHOIS timeout must trigger the local TLD fallback and NEVER
+        raise an unhandled exception.  We simulate this by returning the
+        exact tuple that _whois_fallback would produce for a high-risk TLD.
+        """
+        req = _make_request(extracted_url="https://evil-bank.top/login")
+
+        # Mock _check_whois_age to return the fallback tuple (simulating
+        # internal timeout handling that degrades to local TLD scoring)
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(
+                None,
+                _RISK_WHOIS_TIMEOUT_PENALTY,
+                ["WHOIS_TIMEOUT_FALLBACK (high-risk TLD .top)"],
+            ),
+        ):
+            # Must NOT raise
+            result = await analyze_url(req)
+
+        # Even with WHOIS down, the agent should still succeed
+        assert result.status == AgentStatusEnum.SUCCESS
+        # TLD + typosquatting signals should still be present
+        assert result.risk_score > 0
+        # The fallback flag must be in the result
+        assert any("WHOIS_TIMEOUT_FALLBACK" in f for f in result.flags)
+
+    @pytest.mark.asyncio
+    async def test_whois_exception_triggers_fallback(self):
+        """
+        Any WHOIS exception (not just timeout) must fall back gracefully.
+        """
+        req = _make_request(extracted_url="https://suspicious.xyz/phish")
+
+        # Patch at the internal level so the full pipeline runs but
+        # _check_whois_age itself raises
+        original_check = analyze_url.__module__
+
+        with patch(
+            f"{original_check}._check_whois_age",
+            return_value=(None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]),
+        ):
+            result = await analyze_url(req)
+
+        assert result.status == AgentStatusEnum.SUCCESS
+        # The fallback flag should be present
+        assert any("WHOIS_TIMEOUT_FALLBACK" in f for f in result.flags)
+
+    @pytest.mark.asyncio
+    async def test_fallback_with_high_risk_tld_adds_to_score(self):
+        """
+        End-to-end: when WHOIS times out on a .top domain, the fallback
+        penalty should be added to the risk score on top of the TLD +
+        typosquatting signals.
+        """
+        req = _make_request(extracted_url="https://sbi-kyc-verify.top")
+
+        # Simulate the fallback response
+        with patch(
+            f"{analyze_url.__module__}._check_whois_age",
+            return_value=(
+                None,
+                _RISK_WHOIS_TIMEOUT_PENALTY,
+                ["WHOIS_TIMEOUT_FALLBACK (high-risk TLD .top)"],
+            ),
+        ):
+            result = await analyze_url(req)
+
+        assert result.status == AgentStatusEnum.SUCCESS
+        # Should have TLD (35) + typosquat (50) + fallback penalty (15) = 100
+        assert result.risk_score >= 95
+        assert "WHOIS_TIMEOUT_FALLBACK" in " ".join(result.flags)

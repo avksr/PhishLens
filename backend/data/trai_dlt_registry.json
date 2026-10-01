@@ -261,6 +261,22 @@
       "brand_name": "BlueDart Express",
       "category": "Courier / Logistics",
       "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
+    },
+    "NDRFIN": {
+      "brand_name": "National Disaster Response Force (NDRF)",
+      "category": "Government / Emergency",
+      "operator_prefixes": ["VM", "AX", "AD", "CP", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "CYBERC": {
+      "brand_name": "I4C National Cyber Crime Portal (1930)",
+      "category": "Government / Law Enforcement",
+      "operator_prefixes": ["VM", "AX", "AD", "CP", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "DOTIND": {
+      "brand_name": "Department of Telecommunications (Sanchar Saathi)",
+      "category": "Government / Telecom",
+      "operator_prefixes": ["VM", "AX", "AD", "CP", "VK", "JK", "TM", "BW", "TA", "AT"]
     }
   }
 }
+
