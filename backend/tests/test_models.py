@@ -100,7 +100,8 @@ def test_prd_output_contract_explicit():
         evidence=evidence,
         risk_score=94,
         recommended_action="Do not open any link and report to 1930.",
-        audit_id="audit_abc_123"
+        audit_id="audit_abc_123",
+        detected_input_type="web_url"
     )
     assert resp.verdict_category == PrdVerdictEnum.LIKELY_SCAM
     assert resp.risk_score == 94
@@ -109,4 +110,6 @@ def test_prd_output_contract_explicit():
     assert resp.evidence[0].tool == "url_agent"
     assert resp.audit_id == "audit_abc_123"
     assert resp.recommended_action == "Do not open any link and report to 1930."
+    assert resp.detected_input_type == "web_url"
+
 
