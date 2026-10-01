@@ -132,10 +132,18 @@ _GOVT_KEYWORDS: List[Tuple[str, str]] = [
     ("power disconnection", "Electricity Provider"),
     ("Power disconnection", "Electricity Provider"),
     ("electricity supply", "Electricity Provider"),
+    ("electricity meter", "Electricity Provider"),
+    ("Electricity meter", "Electricity Provider"),
+    ("electricity supply will be disconnected", "Electricity Provider"),
     ("bijli", "Electricity Provider"),
     ("MSEDCL", "MSEDCL (Maharashtra Electricity)"),
     ("BESCOM", "BESCOM (Bangalore Electricity)"),
     ("TNEB", "TNEB (Tamil Nadu Electricity)"),
+    ("UPPCL", "UPPCL (Uttar Pradesh Electricity)"),
+    ("DISCOM", "Electricity DISCOM"),
+    ("India Post", "India Post"),
+    ("Speed Post", "India Post"),
+    ("BlueDart", "BlueDart Express"),
     ("Challan", "Government / Traffic Authority"),
     ("GSTN", "GSTN (GST Network)"),
     ("EPF", "EPFO"),
@@ -294,6 +302,10 @@ _GOVT_EMERGENCY_ENTITY_CODES: Set[str] = {
     "MSEPCL",  # MSEDCL (Maharashtra Electricity)
     "BESCOM",  # BESCOM (Bangalore Electricity)
     "TNEBSM",  # TNEB (Tamil Nadu Electricity)
+    "UPPCLS",  # UPPCL (Uttar Pradesh Power Corporation)
+    "DISCOM",  # Generic DISCOM (Electricity Distribution Companies)
+    "IPPOST",  # India Post
+    "BLDART",  # BlueDart Express (registered courier partner)
 }
 
 # ---------------------------------------------------------------------------
