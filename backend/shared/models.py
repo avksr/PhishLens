@@ -186,6 +186,9 @@ class ScanResponse(BaseModel):
     action_required: Optional[ActionRequiredEnum] = None
     audit_trail: Optional[AuditTrail] = None
     processing_time_ms: float = 0.0
+    detected_input_type: Optional[str] = Field(
+        None, description="Auto-detected input type: web_url, upi_handle, or text_message"
+    )
 
     @model_validator(mode="after")
     def populate_prd_aliases(self) -> "ScanResponse":
