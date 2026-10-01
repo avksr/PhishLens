@@ -24,8 +24,8 @@
   --critical:    #FF3366;
 
   --text-primary:   #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted:     #4B5563;
+  --text-secondary: #CBD5E1;
+  --text-muted:     #94A3B8; /* WCAG 2.1 AA compliant (> 4.5:1 contrast on #0B0F19 & #111827) */
 
   --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -81,4 +81,50 @@ body::before {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* ── Mobile Responsiveness (max-width: 480px and 375px) ──── */
+@media (max-width: 480px) {
+  .mobile-header-stack {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    height: auto !important;
+    padding: 0.75rem 1rem !important;
+    gap: 0.5rem !important;
+  }
+  .mobile-scanner-container {
+    padding: 0.875rem !important;
+    margin: 0 !important;
+  }
+  .mobile-textarea {
+    font-size: 0.9rem !important;
+    min-height: 100px !important;
+  }
+  .mobile-card-padding {
+    padding: 0.875rem !important;
+  }
+  .mobile-modal-fit {
+    width: 95vw !important;
+    max-width: 95vw !important;
+  }
+  .mobile-drawer-fit {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+  .mobile-gauge-scale {
+    transform: scale(0.85) !important;
+    transform-origin: center top !important;
+  }
+}
+
+@media (max-width: 375px) {
+  .mobile-header-stack {
+    padding: 0.625rem 0.75rem !important;
+  }
+  .mobile-scanner-container {
+    padding: 0.75rem !important;
+  }
+  .mobile-card-padding {
+    padding: 0.75rem !important;
+  }
 }

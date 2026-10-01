@@ -57,7 +57,7 @@ export default function App() {
     <div className="min-h-svh relative" style={{ background: '#0B0F19' }}>
 
       {/* ── Top nav bar ─────────────────────────────────────── */}
-      <nav className="sticky top-0 z-[100] flex items-center justify-between px-4 sm:px-6 h-[60px]"
+      <nav className="sticky top-0 z-[100] flex max-sm:flex-col max-sm:items-start max-sm:h-auto max-sm:py-2.5 max-sm:gap-2 sm:flex-row items-center justify-between px-3 sm:px-6 sm:h-[60px] mobile-header-stack"
         style={{
           background: 'rgba(11,15,25,0.85)',
           backdropFilter: 'blur(12px)',
@@ -65,25 +65,24 @@ export default function App() {
         }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-2.5">
-          <span className="text-2xl" aria-hidden>🛡️</span>
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          <span className="text-xl sm:text-2xl" aria-hidden>🛡️</span>
           <div>
-            <span style={{
-              fontSize: '18px', fontWeight: 800,
+            <span className="text-base sm:text-lg font-extrabold" style={{
               background: 'linear-gradient(135deg, #00F0FF 0%, #94A3B8 100%)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
               letterSpacing: '-0.4px',
             }}>PhishLens</span>
-            <span className="hidden sm:inline-block ml-2 text-[10.5px]" style={{
-              color: '#6B7280',
+            <span className="ml-2 text-[10px] sm:text-[10.5px]" style={{
+              color: '#94A3B8',
               fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.4px',
             }}>ScamShield AI</span>
           </div>
         </div>
 
         {/* Nav right — lang toggle + scan counter + status */}
-        <div className="flex items-center gap-2.5 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 max-sm:w-full max-sm:justify-between">
           {/* ── Language Toggle ─────────────────────────────── */}
           <button
             id="lang-toggle-btn"
@@ -99,12 +98,11 @@ export default function App() {
               color: '#00F0FF',
             }}
           >
-            <span aria-hidden className="text-sm">{lang === 'en' ? '🇬🇧' : '🇮🇳'}</span>
-            <span className="hidden sm:inline">{lang === 'en' ? 'EN' : 'हिंदी'}</span>
+            {lang === 'en' ? '🇮🇳 हिंदी' : '🇬🇧 English'}
           </button>
 
           {scanCount > 0 && (
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-2xl"
+            <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-2xl"
               style={{
                 background: 'rgba(0,240,255,0.06)', border: '1px solid rgba(0,240,255,0.15)',
               }}
@@ -120,7 +118,7 @@ export default function App() {
 
           {/* Current tier pill */}
           {treatment && (
-            <div className="hidden sm:block px-3.5 py-1 rounded-2xl text-[11.5px] font-bold tracking-wider transition-all duration-400"
+            <div className="px-2.5 sm:px-3.5 py-1 rounded-2xl text-[10.5px] sm:text-[11.5px] font-bold tracking-wider transition-all duration-400"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 color: treatment.accentColor,
@@ -228,7 +226,7 @@ export default function App() {
             {result && result.risk_tier === 'HIGH_RISK' && (
               <div
                 role="alert"
-                className="p-5 rounded-[14px]"
+                className="p-3.5 sm:p-5 rounded-[14px] mobile-card-padding"
                 style={{
                   background: '#0B0F19',
                   border: '1px solid #FF6B0055',
@@ -290,15 +288,13 @@ export default function App() {
               </div>
             )}
 
-            {/* Audit Trail */}
-            {result && (
-              <AuditTrailDrawer
-                auditTrail={result.audit_trail}
-                recommendation={resolveRecommendation(result)}
-                processingTimeMs={result.processing_time_ms}
-                lang={lang}
-              />
-            )}
+            {/* Audit Trail & Live Feed */}
+            <AuditTrailDrawer
+              auditTrail={result ? result.audit_trail : null}
+              recommendation={result ? resolveRecommendation(result) : undefined}
+              processingTimeMs={result ? result.processing_time_ms : undefined}
+              lang={lang}
+            />
           </div>
 
           {/* Right column — Risk Gauge (only when result exists) */}
@@ -309,10 +305,12 @@ export default function App() {
           )}
         </div>
 
-        {/* Mobile Risk Gauge — shown below scanner on small screens */}
+        {/* Mobile Risk Gauge — scaled down for mobile screens */}
         {result && (
-          <div className="block sm:hidden mt-5">
-            <RiskGauge result={result} isLoading={isLoading} />
+          <div className="block sm:hidden mt-4 flex justify-center w-full overflow-hidden">
+            <div className="transform scale-85 origin-center mobile-gauge-scale w-full flex justify-center">
+              <RiskGauge result={result} isLoading={isLoading} />
+            </div>
           </div>
         )}
 
@@ -323,7 +321,7 @@ export default function App() {
               width: '80px', height: '80px', borderRadius: '20px', fontSize: '40px',
               background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.12)',
             }}>🔍</div>
-            <p className="text-sm" style={{ margin: 0, color: '#6B7280', fontFamily: 'Inter, sans-serif' }}>
+            <p className="text-sm" style={{ margin: 0, color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
               {lang === 'hi'
                 ? 'स्कैनिंग शुरू करने के लिए ऊपर एक प्रीसेट परिदृश्य लोड करें या अपना संदेश पेस्ट करें।'
                 : 'Load a preset scenario or paste your own message above to begin scanning.'}
@@ -336,10 +334,10 @@ export default function App() {
       <footer className="flex items-center justify-between flex-wrap gap-2 px-4 sm:px-6 py-4"
         style={{ borderTop: '1px solid #1F2937' }}
       >
-        <span className="text-[11.5px]" style={{ color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
+        <span className="text-[11.5px]" style={{ color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
           PhishLens · ScamShield AI · TechExpo 2026
         </span>
-        <span className="text-[11.5px]" style={{ color: '#6B7280', fontFamily: 'JetBrains Mono, monospace' }}>
+        <span className="text-[11.5px]" style={{ color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
           Agents: Atharv · Avni · Vikas · Avika
         </span>
       </footer>

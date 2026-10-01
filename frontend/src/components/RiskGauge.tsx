@@ -62,7 +62,7 @@ function Tick({ score, active }: { score: number; active: boolean }) {
       <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y}
         stroke={active ? '#94A3B8' : '#374151'} strokeWidth="1.5" strokeLinecap="round" />
       <text x={label.x} y={label.y} textAnchor="middle" dominantBaseline="middle"
-        fill={active ? '#6B7280' : '#374151'}
+        fill={active ? '#CBD5E1' : '#94A3B8'}
         fontSize="9" fontFamily="JetBrains Mono, monospace">{score}</text>
     </g>
   );
@@ -125,11 +125,15 @@ export function RiskGauge({ result, isLoading = false }: RiskGaugeProps) {
   const needleBase2 = { x: CX + 8 * Math.cos(degToRad(needleDeg - 90)), y: CY + 8 * Math.sin(degToRad(needleDeg - 90)) };
 
   return (
-    <div style={{
-      background: '#111827', border: '1px solid #1F2937', borderRadius: '16px',
-      padding: '28px 24px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center',
-      gap: '0', boxShadow: '0 8px 40px rgba(0,0,0,0.5)', position: 'relative', overflow: 'hidden',
-    }}>
+    <div
+      className="mobile-card-padding"
+      style={{
+        background: '#111827', border: '1px solid #1F2937', borderRadius: '16px',
+        padding: '24px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: '0', boxShadow: '0 8px 40px rgba(0,0,0,0.5)', position: 'relative', overflow: 'hidden',
+        width: '100%', maxWidth: '340px',
+      }}
+    >
       {/* Glow behind gauge when score > 0 */}
       {result && (
         <div aria-hidden style={{
@@ -153,7 +157,7 @@ export function RiskGauge({ result, isLoading = false }: RiskGaugeProps) {
             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
               Risk Score
             </h3>
-            <p style={{ margin: 0, fontSize: '11px', color: '#4B5563', fontFamily: 'Inter, sans-serif' }}>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
               Composite threat probability
             </p>
           </div>
@@ -270,7 +274,7 @@ export function RiskGauge({ result, isLoading = false }: RiskGaugeProps) {
 
           {/* Scan ID */}
           <p style={{
-            margin: 0, fontSize: '10px', color: '#374151',
+            margin: 0, fontSize: '10px', color: '#94A3B8',
             fontFamily: 'JetBrains Mono, monospace', textAlign: 'center',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
@@ -279,7 +283,7 @@ export function RiskGauge({ result, isLoading = false }: RiskGaugeProps) {
         </div>
       ) : (
         <p style={{
-          margin: '8px 0 0', fontSize: '12px', color: '#374151',
+          margin: '8px 0 0', fontSize: '12px', color: '#94A3B8',
           fontFamily: 'Inter, sans-serif', textAlign: 'center',
         }}>
           {isLoading ? 'Running parallel agent analysis…' : 'Submit a message to see the risk score'}
