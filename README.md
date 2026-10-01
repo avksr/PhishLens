@@ -1,41 +1,50 @@
 <div align="center">
 
-# 🔍 PhishLens
+# ⚡ PhishLens
 
 ### Real-Time Explainable Multi-Vector Scam Interception Engine
 
+[![Hackathon Project](https://img.shields.io/badge/Hackathon-Ready-FF0055?style=for-the-badge&logo=target)](docs/TEAM_IMPLEMENTATION_PLAN.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python)](https://python.org)
-[![Groq](https://img.shields.io/badge/Groq-LLaMA3-F55036?style=for-the-badge)](https://groq.com)
-[![Compliance](https://img.shields.io/badge/Standards-GIGW%203.0%20Cybersecurity-blue?style=for-the-badge)](docs/TEAM_IMPLEMENTATION_PLAN.md)
+[![Groq LLaMA-3](https://img.shields.io/badge/Groq-LLaMA3-F55036?style=for-the-badge)](https://groq.com)
+[![Compliance](https://img.shields.io/badge/Compliance-GIGW%203.0%20Cybersecurity-00F0FF?style=for-the-badge)](docs/TEAM_IMPLEMENTATION_PLAN.md)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
-> **Stop scams before they strike.** PhishLens is an active, pre-transaction interception layer that evaluates messages, URLs, and payment requests across 3 parallel vectors to block scams in **sub-1000ms** before a user clicks an irreversible link, shares an OTP, or authorizes a fraudulent payment.
+> 🛑 **Stop scams BEFORE they strike.** Unlike reactive portals where victims report after losing their life savings, **PhishLens** is an active, pre-transaction interception layer. It evaluates messages, links, and payment requests across 3 parallel AI vectors in **under 1000ms** to block fraud before an irreversible OTP or payment is submitted.
 
-[🚀 Live Demo](#-quick-start) · [📖 Docs](#-how-phishlens-works) · [🐛 Report Bug](https://github.com/avksr/PhishLens/issues) · [💡 Request Feature](https://github.com/avksr/PhishLens/issues)
+[🚀 Quick Start](#-quick-start) · [🎯 Problem & Solution](#-the-problem--hackathon-mission) · [🧠 Architecture](#-how-phishlens-works) · [👥 Team Members](#-team-members)
 
 </div>
 
 ---
 
-## 📌 The Problem
+## 🎯 The Problem & Hackathon Mission
 
-Over **₹1,750 Crore** is lost annually to cyber fraud in India. Traditional solutions (such as Chakshu and post-hoc registries) operate **reactively** — victims report after funds or sensitive OTPs have already been stolen.
+Over **₹1,750 Crore** is stolen annually in India through sophisticated digital scams. Current government and telecom defenses (such as Chakshu) are **post-hoc registries** — victims only report after money is gone.
 
-Attackers systematically exploit three parallel vulnerabilities:
+### The 3 Fatal Attack Vectors
 
-| Vector | How Attackers Exploit It | PhishLens Interception Defense |
+| Attack Vector | How Cybercriminals Exploit It | PhishLens Interception Defense |
 |:---|:---|:---|
-| 🔗 **URL / Domain** | Register fresh phishing domains (< 7 days old) mimicking SBI, HDFC, Amazon — bypassing blacklists that update in 24–72 hours | Levenshtein typosquatting detection against official brands + high-risk TLD checks (`.top`, `.xyz`, `.club`, `.cfd`) + WHOIS domain age inspection |
-| 👤 **Sender Identity** | Use personal 10-digit GSM numbers (`+91-XXXXXXXXXX`) to impersonate official banks, bypassing SMS carrier filters | TRAI DLT header format verification (`^[A-Z]{2}-[A-Z]{6}$`) + certified entity cross-checks + GSM bank impersonation flagging |
-| 🧠 **Psychological Manipulation** | Craft fear-based panic ("blocked in 2 hours", "digital arrest", "CBI warrant") to bypass rational scrutiny | Psycholinguistic manipulation analysis via Groq LLaMA-3 / Gemini with deterministic <15ms offline heuristic fallback |
+| 🔗 **Domain Spoofing** | Register fresh lookalike domains (< 7 days old) mimicking SBI, HDFC, or ITR, bypassing 48-hour blacklists | Levenshtein typosquatting detection + high-risk TLD filtering (`.top`, `.xyz`, `.club`, `.cfd`) + WHOIS domain age checks |
+| 👤 **Identity Impersonation** | Use personal 10-digit GSM numbers (`+91-XXXXXXXXXX`) to send fake bank KYC alerts, bypassing carrier rules | TRAI DLT header regex validation (`^[A-Z]{2}-[A-Z]{6}$`) + certified entity cross-checks + GSM bank spoofing escalation |
+| 🧠 **Psychological Coercion** | Create extreme panic ("power cut tonight", "digital arrest by CBI", "account suspended in 2h") | Dual-mode intent engine (Groq LLaMA-3 + <15ms offline regex heuristics) detecting urgency, intimidation, and harvesting |
 
 ---
 
-## ✨ How PhishLens Works
+## 🏆 Why PhishLens Wins
 
-PhishLens runs **three independent AI agents in parallel** supervised by an async orchestrator, then synthesizes their findings through a dynamic scoring engine into a unified, explainable verdict in **< 1000ms** (Strict Hackathon SLA: < 5.0s).
+1. ⚡ **Sub-1000ms Interception SLA**: Runs 3 specialized agents concurrently via `asyncio.gather` with a strict `3.5s` supervisor timeout.
+2. 🛡️ **Pre-Transaction Hard Block**: Triggers a full-screen interception modal in the user payment flow before an OTP or UPI PIN is entered.
+3. ⚖️ **Dynamic Weight Redistribution**: Normalizes agent weights (URL 40%, Sender 30%, Intent 30%) on the fly if an agent is skipped or errors.
+4. 🚨 **Non-Linear Escalation Overrides**: Catches deceptive multi-vector combos that trick traditional linear weighted averages (e.g. Double Whammy, GSM Bank Spoofing).
+5. 🔒 **GIGW 3.0 & Zero-Trust Privacy**: Redacts 10-digit phones and OTPs before persisting to the immutable SQLite audit database.
+
+---
+
+## 🧠 How PhishLens Works
 
 <div align="center">
 
@@ -81,7 +90,7 @@ User Input (SMS / WhatsApp / Email / UPI)
 
 ---
 
-## 🚦 Risk Tiers & The 4-Tier Decision Matrix
+## 🚦 The 4-Tier Decision Matrix
 
 | Tier | Score Range | Frontend UI Behavior | Action Required | Interception Mode |
 |:---|:---|:---|:---|:---|
@@ -92,22 +101,7 @@ User Input (SMS / WhatsApp / Email / UPI)
 
 ---
 
-## ⚡ Dynamic Weight Redistribution & Escalation Overrides
-
-### Dynamic Weight Normalization
-When all agents are active, baseline weights are:
-- **URL Agent**: $40\%$ ($W_{url} = 0.40$)
-- **Sender Agent**: $30\%$ ($W_{sender} = 0.30$)
-- **Intent Agent**: $30\%$ ($W_{intent} = 0.30$)
-
-$$\text{Base Score} = (S_{url} \times W_{url}) + (S_{sender} \times W_{sender}) + (S_{intent} \times W_{intent})$$
-
-If any vector is missing (e.g. no URL in SMS $\to$ `status = SKIPPED`) or encounters a network error, its weight is zeroed out and remaining active agent weights are dynamically rebalanced to sum to $1.0$:
-
-$$w_i = \frac{W_i}{\sum_{k \in \text{active}} W_k}$$
-
-### Critical Escalation Overrides (Non-Linear Safety Net)
-Linear weighted averaging can fail against multi-layered deception. PhishLens enforces 5 deterministic escalation rules:
+## 🚨 Critical Escalation Overrides
 
 1. **Double Whammy (High-Risk URL + Spoofed / High-Risk Sender)**:
    - Condition: $S_{url} \ge 80$ AND $S_{sender} \ge 80$
@@ -127,73 +121,60 @@ Linear weighted averaging can fail against multi-layered deception. PhishLens en
 
 ---
 
-## 🔒 GIGW 3.0 & Zero-Trust Cybersecurity Compliance
-
-To comply with **GIGW 3.0** and zero-trust standards:
-- **Phone Redaction**: Personal Indian mobile numbers are redacted (e.g., `+91-XXXXX-3210`) before entering the audit storage layer.
-- **Credential Redaction**: 4 to 6-digit standalone OTPs and UPI PINs are scrubbed (`[REDACTED_CREDENTIAL]`).
-- **Audit DB**: Every scan produces an immutable, PII-sanitized audit trail in SQLite (`db_logger.py`).
-
----
-
 ## 🏗️ Project Structure
 
 ```
 PhishLens/
-├── backend/                         # FastAPI Python backend
-│   ├── main.py                      # App entry point
+├── backend/
+│   ├── main.py
 │   ├── api/
 │   │   ├── __init__.py
-│   │   └── routes.py                # POST /api/v1/scan and /health endpoints
+│   │   └── routes.py
 │   ├── shared/
 │   │   ├── __init__.py
-│   │   └── models.py                # 🔑 Shared Pydantic models (Single Source of Truth)
+│   │   └── models.py
 │   ├── agents/
 │   │   ├── __init__.py
-│   │   ├── url_agent.py             # Atharv — Typosquatting, WHOIS age, high-risk TLDs
-│   │   ├── sender_agent.py          # Avni   — TRAI DLT validation, GSM bank spoofing
-│   │   └── intent_agent.py          # Vikas  — Groq/Gemini LLM + <15ms offline fallback
+│   │   ├── url_agent.py
+│   │   ├── sender_agent.py
+│   │   └── intent_agent.py
 │   ├── core/
 │   │   ├── __init__.py
-│   │   ├── orchestrator.py          # Vansh  — Parallel asyncio.gather + 3.5s supervisor
-│   │   ├── scoring_engine.py        # Avika  — Dynamic weighting + escalation rules
-│   │   ├── verdict_utils.py         # Avika  — Human-readable explainable verdicts
-│   │   └── db_logger.py             # Vansh  — aiosqlite logger with PII masking
+│   │   ├── orchestrator.py
+│   │   ├── scoring_engine.py
+│   │   ├── verdict_utils.py
+│   │   └── db_logger.py
 │   ├── data/
-│   │   ├── brand_domains.json       # Legitimate banking domain mappings (Atharv)
-│   │   ├── high_risk_tlds.txt       # Malicious TLD blacklist (.top, .xyz, etc.)
-│   │   └── trai_dlt_registry.json   # Certified TRAI principal entity headers (Avni)
+│   │   ├── brand_domains.json
+│   │   ├── high_risk_tlds.txt
+│   │   └── trai_dlt_registry.json
 │   ├── prompts/
-│   │   └── intent_prompt.txt        # Vikas  — Deterministic JSON system prompt
+│   │   └── intent_prompt.txt
 │   ├── tests/
 │   │   ├── __init__.py
-│   │   ├── test_models.py           # Pydantic schema validation tests
-│   │   ├── test_scoring.py          # Scoring engine & escalation override tests
-│   │   └── test_pipeline.py         # End-to-end integration tests (< 1000ms SLA)
+│   │   ├── test_models.py
+│   │   ├── test_scoring.py
+│   │   └── test_pipeline.py
 │   └── requirements.txt
-│
-├── frontend/                        # React + Vite dashboard (Yuvraj)
+├── frontend/
 │   ├── src/
-│   │   ├── components/              # Speedometer, Interception Modal, Audit Drawer
+│   │   ├── components/
 │   │   ├── lib/
-│   │   │   └── api.ts               # API client
-│   │   ├── App.tsx                  # Main Cyber Dashboard
-│   │   └── index.css                # Dark cyber theme tokens (#0B0F19, #00F0FF, #FF3366)
+│   │   │   └── api.ts
+│   │   ├── App.tsx
+│   │   └── index.css
 │   └── package.json
-│
-├── datasets/                        # Standardized evaluation payloads
-│   ├── payloads_high_risk.json      # Critical attack test cases (GSM spoof, .top, panic)
-│   ├── payloads_safe.json           # Legitimate bank OTP & transactional messages
-│   └── payloads_edge_cases.json     # Skipped URLs, unusual headers, boundary tests
-│
+├── datasets/
+│   ├── payloads_high_risk.json
+│   ├── payloads_safe.json
+│   └── payloads_edge_cases.json
 ├── docs/
-│   ├── TEAM_IMPLEMENTATION_PLAN.md  # Squad engineering plan & execution checklist
-│   └── PhishLens_Architecture_Flowchart.png # High-res architecture diagram
-│
-├── schema_mocks.json                # Master data contract & mock responses
+│   ├── TEAM_IMPLEMENTATION_PLAN.md
+│   └── PhishLens_Architecture_Flowchart.png
+├── schema_mocks.json
 ├── .github/
 │   ├── workflows/
-│   │   └── ci.yml                   # GitHub Actions CI pipeline
+│   │   └── ci.yml
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.yml
 │   │   └── feature_request.md
@@ -207,12 +188,7 @@ PhishLens/
 
 ## ⚡ Quick Start
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- Optional: Free [Groq API Key](https://console.groq.com) or [Gemini API Key](https://aistudio.google.com/app/apikey) *(Pipeline runs fully functional in offline mode using local heuristics if omitted)*
-
-### 1. Clone the repo
+### 1. Clone the Repository
 ```bash
 git clone https://github.com/avksr/PhishLens.git
 cd PhishLens
@@ -221,31 +197,24 @@ cd PhishLens
 ### 2. Backend Setup
 ```bash
 cd backend
-
-# Create and activate virtual environment
 python -m venv venv
-# Windows:
+
+# Windows
 venv\Scripts\activate
-# macOS/Linux:
+# macOS/Linux
 source venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
-
-# (Optional) Set up environment variables
 cp .env.example .env
-# Edit .env with your GROQ_API_KEY if desired
 
-# Start the FastAPI server
+# Launch FastAPI Orchestrator
 uvicorn main:app --reload --port 8000
 ```
+- API Docs: `http://localhost:8000/docs`
 
-- API Endpoint: `http://localhost:8000`
-- Interactive Swagger Docs: `http://localhost:8000/docs`
-
-### 3. Run Backend Verification Suite
+### 3. Run Test Suite
 ```bash
-# From backend directory:
+# Run tests with pytest
 pytest tests/ -v
 ```
 
@@ -255,8 +224,7 @@ cd ../frontend
 npm install
 npm run dev
 ```
-
-- Dashboard UI: `http://localhost:5173`
+- Live UI: `http://localhost:5173`
 
 ---
 
@@ -264,7 +232,7 @@ npm run dev
 
 ### `POST /api/v1/scan`
 
-**Request:**
+**Sample Attack Request:**
 ```json
 {
   "content": "Dear Customer, Your SBI account has been suspended due to pending KYC update. Please verify OTP and submit PAN immediately within 2 hours at https://sbi-kyc-verify.top to avoid permanent deactivation.",
@@ -274,7 +242,7 @@ npm run dev
 }
 ```
 
-**Response (`ScanResponse`):**
+**Real-Time Interception Response (`ScanResponse`):**
 ```json
 {
   "scan_id": "c7a8b3e1-9524-4f0e-b7d6-ec2d79d501b4",
@@ -328,43 +296,18 @@ npm run dev
 }
 ```
 
-See [`schema_mocks.json`](schema_mocks.json) for all mock payloads across safe, caution, and attack scenarios.
-
 ---
 
-## 🛡️ Git Branch Strategy
+## 👥 Team Members
 
-```
-main          ← Production-ready release branch (protected)
-  └── dev     ← Integration branch (all feature branches merge here via PR)
-        ├── feature/vansh-orchestrator     (Vansh  - Backend Orchestration & DB)
-        ├── feature/atharv-url-agent       (Atharv - URL & Domain Intelligence)
-        ├── feature/avni-sender-agent      (Avni   - Sender & TRAI DLT Agent)
-        ├── feature/vikas-intent-agent     (Vikas  - LLM Intent & Fast Fallback)
-        ├── feature/avika-scoring-engine   (Avika  - Risk Scoring & Synthesis)
-        └── feature/yuvraj-frontend-ui     (Yuvraj - Frontend Dashboard & UI)
-```
-
-**PR Guidelines:**
-- ❌ Never push directly to `main` or `dev`.
-- ❌ Never commit `.env`, `venv/`, or `node_modules/`.
-- ✅ Always import shared schemas from `backend/shared/models.py`.
-- ✅ Ensure agent functions never crash the pipeline — return `status="ERROR"` on exceptions.
-- ✅ Run `pytest backend/tests/ -v` before submitting pull requests.
-
----
-
-## 👥 Engineering Squad
-
-| Member | Role & Module | Feature Branch | Key Deliverables |
-|:---|:---|:---|:---|
-| **Project Lead / PM** | Architecture, Datasets & Standards | `main` | End-to-end integration, test datasets, GIGW 3.0 compliance |
-| **Vansh** | Backend / Orchestrator | `feature/vansh-orchestrator` | Parallel `asyncio.gather` pipeline, 3.5s SLA supervisor, SQLite audit logger |
-| **Atharv** | URL & Domain Agent | `feature/atharv-url-agent` | Typosquatting checks, brand matching, WHOIS age, high-risk TLD filters |
-| **Avni** | Sender & TRAI DLT Agent | `feature/avni-sender-agent` | TRAI DLT regex validation, GSM bank spoofing detection, lookalike alerts |
-| **Vikas** | LLM Psycholinguistic Intent Agent | `feature/vikas-intent-agent` | Groq LLaMA-3 / Gemini prompt inference, <15ms offline heuristic engine |
-| **Avika** | Risk Scoring Engine & Synthesis | `feature/avika-scoring-engine` | Dynamic weight redistribution, escalation overrides, explainable verdicts |
-| **Yuvraj** | Frontend Dashboard & UI | `feature/yuvraj-frontend-ui` | React cyber UI, animated speedometer, pre-transaction interception modal |
+| Name | Role |
+| :--- | :--- |
+| **Vansh** | Backend / Orchestrator & DB Logging |
+| **Atharv** | URL & Domain Intelligence Agent |
+| **Avni** | Sender Identity & TRAI DLT Agent |
+| **Vikas** | LLM Psycholinguistic Intent Agent |
+| **Avika** | Risk Scoring Engine & Synthesis |
+| **Yuvraj** | Frontend Dashboard & UI |
 
 ---
 
@@ -375,5 +318,5 @@ Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
 ---
 
 <div align="center">
-Built with ❤️ for cyber defense hackathon · <a href="https://github.com/avksr/PhishLens">github.com/avksr/PhishLens</a>
+Built with ⚡ for real-time cyber defense · <a href="https://github.com/avksr/PhishLens">github.com/avksr/PhishLens</a>
 </div>
