@@ -8,9 +8,10 @@
 #   - Returns final ScanResponse matching schema_mocks.json
 # ============================================================
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Set
 import time
 import re
+from datetime import datetime, timezone
 from shared.models import (
     ScanRequest,
     ScanResponse,
@@ -36,6 +37,7 @@ from shared.models import (
     IdentityVerificationItem,
     AgentLatencyBreakdown,
     DetectedIntentEnum,
+    TldReputationEnum,
 )
 from core.verdict_utils import (
     generate_verdict,
@@ -117,25 +119,102 @@ def _compute_dynamic_weights(
     return result
 
 
+def _compute_noisy_or_base_score(
+    weights: Dict[str, float],
+    url_r: UrlAgentResult,
+    sender_r: SenderAgentResult,
+    intent_r: IntentAgentResult,
+    upi_r: Optional[UpiAgentResult] = None,
+) -> float:
+    """
+    Computes probabilistic Noisy-OR baseline aggregation across active vectors:
+      BaseScore = 100.0 * (1.0 - Π (1.0 - weight_i * (score_i / 100.0) * confidence_i))
+
+    Formula: 1 - Π(1 - weight × score × confidence)
+    """
+    w_url = weights.get("url_weight", 0.0)
+    w_sender = weights.get("sender_weight", 0.0)
+    w_intent = weights.get("intent_weight", 0.0)
+    w_upi = weights.get("upi_weight", 0.0)
+
+    # Confidences (in [0.0, 1.0])
+    c_url = 1.0 if url_r.status == AgentStatusEnum.SUCCESS else 0.0
+    c_sender = 1.0 if sender_r.status == AgentStatusEnum.SUCCESS else 0.0
+    c_intent = (intent_r.confidence if intent_r.confidence > 0.0 else 1.0) if intent_r.status == AgentStatusEnum.SUCCESS else 0.0
+    c_upi = 1.0 if (upi_r and upi_r.status == AgentStatusEnum.SUCCESS) else 0.0
+
+    # Scaled scores (in [0.0, 1.0])
+    s_url = max(0.0, min(100.0, url_r.risk_score)) / 100.0
+    s_sender = max(0.0, min(100.0, sender_r.risk_score)) / 100.0
+    s_intent = max(0.0, min(100.0, intent_r.risk_score)) / 100.0
+    s_upi = (max(0.0, min(100.0, upi_r.risk_score)) / 100.0) if upi_r else 0.0
+
+    terms = [
+        w_url * s_url * c_url,
+        w_sender * s_sender * c_sender,
+        w_intent * s_intent * c_intent,
+    ]
+    if upi_r and w_upi > 0.0:
+        terms.append(w_upi * s_upi * c_upi)
+
+    prod = 1.0
+    for term in terms:
+        clamped_term = max(0.0, min(1.0, term))
+        prod *= (1.0 - clamped_term)
+
+    noisy_or_prob = 1.0 - prod
+    return max(0.0, min(100.0, round(noisy_or_prob * 100.0, 2)))
+
+
+def _check_threat_feed_hit(url_r: UrlAgentResult) -> Tuple[bool, bool]:
+    """
+    Distinguishes authoritative threat feed hits (floor 85) from single reputation flags (weight only).
+    Returns: (is_confirmed_feed_hit, is_single_reputation_flag)
+    - Confirmed feed hit (OpenPhish, URLhaus, PhishTank): applies floor 85.
+    - Single SafeBrowsing / VirusTotal / AlienVault OTX flag: enters via weight only.
+    """
+    if url_r.status != AgentStatusEnum.SUCCESS:
+        return False, False
+
+    flags_upper = [f.upper() for f in url_r.flags]
+    details_upper = url_r.details.upper() if url_r.details else ""
+
+    confirmed_keywords = [
+        "OPENPHISH", "URLHAUS", "PHISHTANK", "CONFIRMED_FEED_HIT", "THREAT_FEED_HIT", "FEED_HIT"
+    ]
+    is_confirmed = (
+        any(any(k in f for k in confirmed_keywords) for f in flags_upper)
+        or any(k in details_upper for k in ["OPENPHISH", "URLHAUS", "PHISHTANK"])
+    )
+
+    reputation_keywords = [
+        "SAFEBROWSING", "SAFE_BROWSING", "VIRUSTOTAL", "VT_FLAG", "OTX_FLAG", "OTX"
+    ]
+    is_reputation = (
+        any(any(k in f for k in reputation_keywords) for f in flags_upper)
+        or any(k in details_upper for k in ["SAFE BROWSING", "VIRUSTOTAL", "OTX"])
+    )
+
+    return is_confirmed, is_reputation
+
+
 def _determine_confidence(
     url_r: UrlAgentResult,
     sender_r: SenderAgentResult,
     intent_r: IntentAgentResult,
     heuristics: List[str],
-    upi_r: Optional[UpiAgentResult] = None
+    upi_r: Optional[UpiAgentResult] = None,
+    osint_history: Optional[OsintHistoryResult] = None,
 ) -> ConfidenceLevelEnum:
     """
     Signal Completeness / Confidence Rating.
     Calculates epistemic certainty based on active vs. skipped/errored vectors.
-
-    Formula (mandatory 3 agents only; UPI is optional and weighted separately):
-      active_count      = agents with SUCCESS status
-      non_active_count  = agents with ERROR or SKIPPED status
+    Note: OSINT SKIPPED lowers confidence rating, not risk score.
 
     HIGH   → decisive heuristic fired (CRITICAL_ESCALATION / BENIGN_VERIFICATION)
-             OR all 3 mandatory agents returned SUCCESS.
-    MEDIUM → exactly 1 mandatory agent was SKIPPED or ERRORed.
-    LOW    → 2 or more mandatory agents were SKIPPED or ERRORed.
+             OR all active mandatory agents returned SUCCESS.
+    MEDIUM → exactly 1 agent was SKIPPED or ERRORed (including OSINT skipped).
+    LOW    → 2 or more agents were SKIPPED or ERRORed.
     """
     has_decisive_escalation = any(
         "CRITICAL_ESCALATION" in h or "BENIGN_VERIFICATION" in h
@@ -144,12 +223,16 @@ def _determine_confidence(
     if has_decisive_escalation:
         return ConfidenceLevelEnum.HIGH
 
-    # Count inactive (SKIPPED or ERROR) among the 3 mandatory agents only
+    # Count inactive (SKIPPED or ERROR) among the 3 mandatory agents
     mandatory_agents = [url_r, sender_r, intent_r]
     non_active_count = sum(
         1 for a in mandatory_agents
         if a.status in (AgentStatusEnum.ERROR, AgentStatusEnum.SKIPPED)
     )
+
+    # OSINT SKIPPED lowers epistemic confidence without penalizing risk score
+    if osint_history and osint_history.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR):
+        non_active_count += 1
 
     if non_active_count >= 2:
         return ConfidenceLevelEnum.LOW
@@ -235,7 +318,7 @@ def _build_claimed_vs_verified_matrix(
     )
 
     # 3. Website Pillar
-    if url_r.status == AgentStatusEnum.SUCCESS and url_r.url_analyzed:
+    if url_r.status == AgentStatusEnum.SUCCESS and (url_r.url_analyzed or url_r.domain):
         claimed_web = f"Official {claimed_org} Portal" if claimed_org != "Unknown Entity" else "Secure Official Portal"
         if url_r.is_typosquatting or url_r.risk_score >= 60:
             web_verified = f"Domain Mismatch / Typosquatting ({url_r.domain or url_r.url_analyzed})"
@@ -436,6 +519,10 @@ def _calculate_confidence_percentage(
     if intent_r.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR):
         confidence -= 10.0
 
+    # OSINT SKIPPED lowers confidence rating, not risk score
+    if osint_history and osint_history.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR):
+        confidence -= 5.0
+
     return round(max(50.0, min(99.0, confidence)), 1)
 
 
@@ -559,20 +646,23 @@ def compute_score(
     w_intent = weights.get("intent_weight", 0.0)
     w_upi = weights.get("upi_weight", 0.0)
 
-    # Step 2: Base Composite Calculation
-    base_score = (
-        (url_r.risk_score * w_url) +
-        (sender_r.risk_score * w_sender) +
-        (intent_r.risk_score * w_intent)
-    )
-    if upi_r and w_upi > 0.0:
-        base_score += (upi_r.risk_score * w_upi)
+    # Step 2: Base Composite Calculation via Probabilistic Noisy-OR
+    # Formula: 1 - Π (1 - weight × score × confidence)
+    base_score = _compute_noisy_or_base_score(weights, url_r, sender_r, intent_r, upi_r)
 
     final_score = base_score
     heuristics: List[str] = []
     sanitized_content = "".join(c for c in req.content if c not in _ZERO_WIDTH_CHARS)
 
-    # Step 3: Heuristic Escalation Rules
+    # Pre-build identity matrix for cross-agent inconsistency detection
+    matrix = _build_claimed_vs_verified_matrix(
+        req, url_r, sender_r, intent_r, upi_r, bank_verification
+    )
+
+    # Check threat intelligence feeds (Confirmed OpenPhish/URLhaus hit vs single reputation flag)
+    is_feed_hit, is_rep_flag = _check_threat_feed_hit(url_r)
+
+    # Step 3: Heuristic Escalation Rules & Abuse-Proof Threat Floors
 
     # Rule 0: Adversarial Evasion Tactics (Zero-width obfuscation, Cyrillic homoglyphs)
     adversarial_flags = _detect_adversarial_evasion(req.content)
@@ -622,12 +712,18 @@ def compute_score(
     if sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM and url_r.status == AgentStatusEnum.SUCCESS and url_r.risk_score >= 35:
         final_score = max(final_score, 50.0)
         heuristics.append("CAUTION_ESCALATION: High-risk or suspicious web link distributed via personal mobile number")
-    elif url_r.status == AgentStatusEnum.SUCCESS and url_r.risk_score >= 35:
+    elif (
+        url_r.status == AgentStatusEnum.SUCCESS
+        and url_r.risk_score >= 35
+        and (
+            url_r.tld_reputation == TldReputationEnum.HIGH_RISK
+            or any("TLD" in f.upper() for f in url_r.flags)
+        )
+    ):
         final_score = max(final_score, 38.0)
         heuristics.append("CAUTION_ESCALATION: Untrusted top-level domain commonly used for phishing")
 
     # Rule 4: Financial Extortion / Digital Arrest Threat
-    # Escalate if sender is not an official TRAI entity (avoids flagging official tax notices)
     if intent_r.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION and sender_r.sender_category != SenderCategoryEnum.OFFICIAL_TRAI_HEADER:
         final_score = max(final_score, 82.0)
         heuristics.append("HIGH_RISK_ESCALATION: Coercive psychological extortion detected from unverified sender")
@@ -646,30 +742,6 @@ def compute_score(
         final_score = max(final_score, 45.0)
         heuristics.append("CAUTION_ESCALATION: Psychological urgency or manipulation sent from private mobile number")
 
-    # Rule 5: Certified TRAI DLT Verified Transactional Communication (Safe Override)
-    is_official_trai = sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER
-    is_safe_intent = (
-        intent_r.detected_intent in [DetectedIntentEnum.BENIGN, DetectedIntentEnum.FINANCIAL_EXTORTION]
-        if is_official_trai else (intent_r.detected_intent == DetectedIntentEnum.BENIGN or intent_r.risk_score <= 20)
-    )
-    is_safe_or_skipped_url = (
-        url_r.status == AgentStatusEnum.SKIPPED
-        or (url_r.status == AgentStatusEnum.SUCCESS and url_r.risk_score <= 15 and not url_r.is_typosquatting)
-    )
-    if is_official_trai and is_safe_or_skipped_url and is_safe_intent:
-        final_score = min(final_score, 12.0)
-        heuristics.append("BENIGN_VERIFICATION: Verified TRAI DLT transactional communication with clean signals")
-
-    # Rule 5b: Benign Personal / Conversational Message Override
-    is_personal_gsm_clean = (
-        sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM
-        and not claims_bank
-        and sender_r.risk_score <= 15
-    )
-    if is_personal_gsm_clean and url_r.status == AgentStatusEnum.SKIPPED and intent_r.detected_intent == DetectedIntentEnum.BENIGN:
-        final_score = min(final_score, 10.0)
-        heuristics.append("BENIGN_VERIFICATION: Standard conversational message without fraud indicators")
-
     # Rule 6: Fraudulent UPI / VPA Collect Request Trap (Day 2 Enhancement)
     if upi_r and upi_r.status == AgentStatusEnum.SUCCESS and upi_r.risk_score >= 75:
         final_score = max(final_score, 90.0)
@@ -682,23 +754,85 @@ def compute_score(
     active_badges: List[str] = []
     proof_attached: Optional[str] = None
 
-    # Badge & Escalation 7: Bank Registered Account Name Mismatch
-    if bank_verification and bank_verification.status == AgentStatusEnum.SUCCESS and bank_verification.is_name_mismatch:
+    # Badge & Floor 7: Bank Registered Account Name Mismatch
+    has_bank_mismatch = bool(
+        bank_verification and bank_verification.status == AgentStatusEnum.SUCCESS and bank_verification.is_name_mismatch
+    )
+    if has_bank_mismatch:
         active_badges.append("💳 Fake UPI Detected")
-        final_score = max(final_score, 88.0)
-        heuristics.append("CRITICAL_ESCALATION: Registered bank account holder name does not match claimed institutional identity")
 
-    # Badge & Escalation 8: OSINT Past History Scam Records
-    if osint_history and osint_history.status == AgentStatusEnum.SUCCESS and osint_history.total_complaints > 0:
+    # Badge & Floor 10: Cross-Agent Contradiction Detection
+    has_identity_contradiction = bool(matrix and matrix.has_identity_contradiction)
+    if has_identity_contradiction:
+        active_badges.append("⚠️ Identity Contradiction")
+
+    # Rule 8 Abuse-Proof: OSINT Past History Scam Records
+    has_osint_hit = bool(
+        osint_history and osint_history.status == AgentStatusEnum.SUCCESS and osint_history.total_complaints > 0
+    )
+    osint_floor: Optional[float] = None
+    is_osint_corroborated = False
+
+    if has_osint_hit:
         active_badges.append(f"⚠️ Flagged {osint_history.total_complaints}x for Scam")
         proof_attached = osint_history.proof_snippet
-        if osint_history.total_complaints >= 3:
-            final_score = max(final_score, 94.0)
+
+        # 1. Distinct reporters / sources analysis
+        sources: Set[str] = {r.source for r in osint_history.reports if r.source}
+        if osint_history.internal_reports_count > 0 and osint_history.external_forum_mentions > 0:
+            sources.add("Internal Crowdsource")
+            sources.add("External Forums")
+        distinct_sources = len(sources)
+
+        # 2. Time decay: reports >180d decay to 0.4x; 90-180d decay to 0.7x; <=90d or no date = 1.0x
+        decayed_complaints = 0.0
+        now_dt = datetime.now(timezone.utc)
+        if osint_history.reports:
+            for rep in osint_history.reports:
+                freq = rep.frequency_flagged or 1
+                decay_factor = 1.0
+                if rep.date_reported:
+                    try:
+                        d_str = rep.date_reported[:10]
+                        rep_dt = datetime.fromisoformat(d_str).replace(tzinfo=timezone.utc)
+                        age_days = (now_dt - rep_dt).days
+                        if age_days > 180:
+                            decay_factor = 0.4
+                        elif age_days > 90:
+                            decay_factor = 0.7
+                    except Exception:
+                        decay_factor = 1.0
+                decayed_complaints += (freq * decay_factor)
         else:
-            final_score = max(final_score, 86.0)
-        heuristics.append(
-            f"CRITICAL_ESCALATION: Target identified in prior scam reports ({osint_history.proof_snippet or 'Community flagged'})"
+            decayed_complaints = float(osint_history.total_complaints)
+
+        # 3. Independent Corroboration Check
+        # Corroborated if multiple distinct sources (>=2) OR decayed complaints >=3 OR another vector shows threat
+        has_vector_corroboration = (
+            (url_r.status == AgentStatusEnum.SUCCESS and url_r.risk_score >= 35)
+            or (sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM and (claims_bank or sender_r.risk_score >= 35))
+            or (intent_r.detected_intent not in [DetectedIntentEnum.BENIGN] and intent_r.risk_score >= 35)
+            or (upi_r and upi_r.status == AgentStatusEnum.SUCCESS and upi_r.risk_score >= 40)
+            or has_bank_mismatch
+            or has_identity_contradiction
+            or is_feed_hit
         )
+        is_osint_corroborated = (distinct_sources >= 2 or decayed_complaints >= 3 or has_vector_corroboration)
+
+        if is_osint_corroborated:
+            if decayed_complaints >= 3 or osint_history.total_complaints >= 3:
+                osint_floor = 94.0
+            else:
+                osint_floor = 86.0
+            heuristics.append(
+                f"CRITICAL_ESCALATION: Target identified in prior scam reports ({osint_history.proof_snippet or 'Corroborated intelligence'})"
+            )
+        else:
+            # Abuse-Proof: Uncorroborated community complaints are capped at HIGH_RISK (max 75.0)
+            osint_floor = 65.0
+            heuristics.append(
+                f"HIGH_RISK_ESCALATION: Uncorroborated OSINT scam complaint ({osint_history.total_complaints} reports) — capped at HIGH_RISK to prevent reporter abuse"
+            )
 
     # Badge: AI Text Detection
     if ai_text and ai_text.status == AgentStatusEnum.SUCCESS and ai_text.is_ai_generated:
@@ -713,7 +847,6 @@ def compute_score(
         active_badges.append("❌ Forged ID")
 
     # Escalation 9: Multimodal Weaponization Multiplier
-    # (AI Text + Morphed Image or Forged Document)
     is_ai = bool(ai_text and ai_text.is_ai_generated)
     is_visual_forged = bool((vision_r and vision_r.is_morphed) or (doc_r and doc_r.is_forged))
     if is_ai and is_visual_forged:
@@ -723,16 +856,70 @@ def compute_score(
         final_score = max(final_score, 85.0)
         heuristics.append("CRITICAL_ESCALATION: Visual tampering or forged credentials detected")
 
-    # Badge & Escalation 10: Cross-Agent Contradiction Detection (Point 7 & 8)
-    matrix = _build_claimed_vs_verified_matrix(
-        req, url_r, sender_r, intent_r, upi_r, bank_verification
+    # ── EXPLICIT PRECEDENCE: Identity/OSINT/Feed Floors Beat Whitelist Cap ──
+    has_hard_floor = bool(
+        has_bank_mismatch
+        or has_identity_contradiction
+        or (osint_floor is not None and is_osint_corroborated)
+        or is_feed_hit
+        or (url_r.risk_score >= 80 and sender_r.risk_score >= 80)
+        or (is_personal_gsm and claims_bank and (is_kyc_or_panic or intent_r.risk_score >= 50))
+        or (is_otp_harvest and (url_r.risk_score >= 50 or sender_r.risk_score >= 50))
+        or (is_discom_threat and is_personal_gsm)
+        or (intent_r.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION and sender_r.sender_category != SenderCategoryEnum.OFFICIAL_TRAI_HEADER)
     )
-    if matrix.has_identity_contradiction:
-        active_badges.append("⚠️ Identity Contradiction")
+
+    # Rule 5: Certified TRAI DLT Verified Transactional Communication (Safe Override)
+    # Whitelist cap applies ONLY if NO hard identity/OSINT/threat floors exist!
+    is_official_trai = sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER
+    is_safe_intent = (
+        intent_r.detected_intent in [DetectedIntentEnum.BENIGN, DetectedIntentEnum.FINANCIAL_EXTORTION]
+        if is_official_trai else (intent_r.detected_intent == DetectedIntentEnum.BENIGN or intent_r.risk_score <= 20)
+    )
+    is_safe_or_skipped_url = (
+        url_r.status == AgentStatusEnum.SKIPPED
+        or (url_r.status == AgentStatusEnum.SUCCESS and url_r.risk_score <= 15 and not url_r.is_typosquatting)
+    )
+
+    is_personal_gsm_clean = (
+        sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM
+        and not claims_bank
+        and sender_r.risk_score <= 15
+    )
+
+    if not has_hard_floor:
+        if is_official_trai and is_safe_or_skipped_url and is_safe_intent:
+            final_score = min(final_score, 12.0)
+            heuristics.append("BENIGN_VERIFICATION: Verified TRAI DLT transactional communication with clean signals")
+        elif is_personal_gsm_clean and url_r.status == AgentStatusEnum.SKIPPED and intent_r.detected_intent == DetectedIntentEnum.BENIGN:
+            final_score = min(final_score, 10.0)
+            heuristics.append("BENIGN_VERIFICATION: Standard conversational message without fraud indicators")
+
+    # Enforce Floors with absolute precedence over any caps
+    if has_bank_mismatch:
+        final_score = max(final_score, 88.0)
+        heuristics.append("CRITICAL_ESCALATION: Registered bank account holder name does not match claimed institutional identity")
+
+    if has_identity_contradiction:
         final_score = max(final_score, 92.0)
         heuristics.append(
             f"CRITICAL_ESCALATION: IDENTITY_CONTRADICTION_DETECTED ({matrix.contradiction_details or 'Cross-vector inconsistency'})"
         )
+
+    if osint_floor is not None:
+        if is_osint_corroborated:
+            final_score = max(final_score, osint_floor)
+        else:
+            # Abuse-Proof: Uncorroborated community complaint elevated to high-risk but capped below CRITICAL
+            final_score = max(final_score, osint_floor)
+            final_score = min(final_score, 75.0)
+
+    # Confirmed feed hit = floor 85; single Safe Browsing/VT/OTX flag = weight only
+    if is_feed_hit:
+        final_score = max(final_score, 85.0)
+        heuristics.append("CRITICAL_ESCALATION: Confirmed phishing URL detected in authoritative threat intelligence feed (OpenPhish/URLhaus)")
+    elif is_rep_flag:
+        heuristics.append("INFO_SIGNAL: External reputation indicator (SafeBrowsing/VT/OTX) incorporated via standard vector weight only")
 
     # Clamp score to [0, 100] and round to integer
     rounded_score = int(round(max(0.0, min(100.0, final_score))))
@@ -761,7 +948,7 @@ def compute_score(
         action_required = ActionRequiredEnum.ALLOW
 
     # Step 5: Epistemic Confidence Rating
-    confidence = _determine_confidence(url_r, sender_r, intent_r, heuristics, upi_r)
+    confidence = _determine_confidence(url_r, sender_r, intent_r, heuristics, upi_r, osint_history)
 
     # Step 6: Dual-Language Explanations & Actionable Advisories (English + Hindi)
     verdict = generate_verdict(risk_tier, url_r, sender_r, intent_r, heuristics, upi_r)

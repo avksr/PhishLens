@@ -169,6 +169,19 @@ async def evaluate_benchmark(dataset_path: Path, export_json_path: Optional[Path
     detection_rate = round((scam_detected / scam_total * 100) if scam_total > 0 else 0.0, 2)
     fp_rate = round((benign_false_positives / benign_total * 100) if benign_total > 0 else 0.0, 2)
     explanation_rate = round((explanation_verified / len(cases) * 100) if cases else 0.0, 2)
+
+    # Statistical Confusion Matrix:
+    # Positive = Scam, Negative = Benign
+    tp = scam_detected
+    fn = scam_total - scam_detected
+    fp = benign_false_positives
+    tn = benign_total - benign_false_positives
+
+    precision = round((tp / (tp + fp) * 100) if (tp + fp) > 0 else 0.0, 2)
+    recall = round((tp / (tp + fn) * 100) if (tp + fn) > 0 else 0.0, 2)
+    specificity = round((tn / (tn + fp) * 100) if (tn + fp) > 0 else 0.0, 2)
+    f1_score = round((2 * (precision / 100.0) * (recall / 100.0) / ((precision + recall) / 100.0)) if (precision + recall) > 0 else 0.0, 4)
+    accuracy = round(((tp + tn) / len(cases) * 100) if cases else 0.0, 2)
     
     # Latency percentiles
     p50_latency = _calc_percentile(latencies, 0.50)
@@ -243,10 +256,25 @@ async def evaluate_benchmark(dataset_path: Path, export_json_path: Optional[Path
     print(f" 4. Median Pipeline Latency: {p50_latency:6.1f} ms                      [{lat_status}]")
     print(f" 5. Latency Percentiles    : P50={p50_latency}ms | P90={p90_latency}ms | P95={p95_latency}ms | P99={p99_latency}ms")
     print(f" 6. Mean / Min / Max Latency: {mean_latency}ms / {min_latency}ms / {max_latency}ms")
+    print("=" * 80)
+
+    print("\n" + "=" * 80)
+    print(" STATISTICAL CONFUSION MATRIX & CLASSIFICATION METRICS")
+    print("=" * 80)
+    print(f"                     Actual Scam (Pos)    Actual Benign (Neg)      Total")
+    print(f"  Predicted Scam:    TP = {tp:<6}          FP = {fp:<6}             {tp + fp}")
+    print(f"  Predicted Benign:  FN = {fn:<6}          TN = {tn:<6}             {fn + tn}")
+    print(f"  Total Ground Truth:{scam_total:<6}                 {benign_total:<6}                    {len(cases)}")
+    print("-" * 80)
+    print(f"  • Precision        : {precision:6.2f}%   (Positive Predictive Value)")
+    print(f"  • Recall (TPR)     : {recall:6.2f}%   (True Positive Scam Detection Rate)")
+    print(f"  • Specificity (TNR): {specificity:6.2f}%   (True Negative Benign Retention Rate)")
+    print(f"  • F1 Score         : {f1_score:6.4f}   (Harmonic Mean of Precision & Recall)")
+    print(f"  • Overall Accuracy : {accuracy:6.2f}%")
     print("=" * 80 + "\n")
 
     report_data = {
-        "report_version": "2.0",
+        "report_version": "2.1",
         "system_name": "PhishLens (ScamShield AI)",
         "timestamp_utc": eval_timestamp,
         "git_commit_sha": commit_sha,
@@ -262,6 +290,19 @@ async def evaluate_benchmark(dataset_path: Path, export_json_path: Optional[Path
             "false_positive_rate_percent": fp_rate,
             "explanation_coverage_percent": explanation_rate,
             "all_prd_targets_met": all_passed
+        },
+        "confusion_matrix": {
+            "true_positives": tp,
+            "false_positives": fp,
+            "true_negatives": tn,
+            "false_negatives": fn
+        },
+        "classification_metrics": {
+            "precision_percent": precision,
+            "recall_percent": recall,
+            "specificity_percent": specificity,
+            "f1_score": f1_score,
+            "accuracy_percent": accuracy
         },
         "target_benchmarks": {
             "scam_detection_rate": ">= 85.0%",
