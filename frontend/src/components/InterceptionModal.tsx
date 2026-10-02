@@ -4,6 +4,7 @@
 // ────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from "@/components/ui/button";
 import type { ScanResponse, Language } from '../lib/types';
 
 // ── Countdown hook ────────────────────────────────────────────
@@ -104,8 +105,6 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
   }, []);
 
   const isHighRisk = result.risk_tier === 'HIGH_RISK';
-  const borderColor = isHighRisk ? '#FF6B00' : '#FF3366';
-  const glowColor   = isHighRisk ? 'rgba(255,107,0,0.35)' : 'rgba(255,51,102,0.35)';
   const label = lang === 'hi'
     ? (isHighRisk ? 'उच्च जोखिम का पता चला' : '⚠ लेनदेन फिशलेंस द्वारा अवरुद्ध')
     : (isHighRisk ? 'HIGH RISK DETECTED' : '⚠ TRANSACTION INTERCEPTED BY PHISHLENS');
@@ -116,12 +115,7 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
       <div
         aria-hidden
         onClick={onAbort}
-        className="fixed inset-0 z-[1000]"
-        style={{
-          background: 'rgba(0,0,0,0.85)',
-          backdropFilter: 'blur(8px)',
-          animation: 'pl-modal-bg 0.3s ease',
-        }}
+        className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-sm animate-in fade-in duration-300"
       />
 
       {/* ── Modal panel ─────────────────────────────────────── */}
@@ -131,57 +125,44 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
         aria-labelledby="modal-headline"
         aria-describedby="modal-desc"
         ref={modalRef}
-        className="fixed inset-0 z-[1001] flex items-center justify-center p-2 sm:p-4 pointer-events-none"
+        className="fixed inset-0 z-[1001] flex items-center justify-center p-3 sm:p-4 pointer-events-none"
       >
         <div
-          className="pointer-events-auto w-[95vw] sm:w-full max-w-[640px] max-h-[92svh] overflow-y-auto relative overflow-hidden rounded-xl sm:rounded-2xl mobile-modal-fit"
-          style={{
-            background: '#0B0F19',
-            border: `1px solid ${borderColor}`,
-            boxShadow: `0 0 0 1px ${borderColor}55, 0 0 60px ${glowColor}, 0 24px 80px rgba(0,0,0,0.8)`,
-            animation: 'pl-modal-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
+          className={`pointer-events-auto w-[95vw] sm:w-full max-w-[640px] max-h-[92svh] overflow-y-auto relative rounded-2xl mobile-modal-fit bg-zinc-950 border ${
+            isHighRisk
+              ? 'border-orange-500/30 shadow-[0_0_40px_rgba(249,115,22,0.15)]'
+              : 'border-rose-500/30 shadow-[0_0_40px_rgba(244,63,94,0.15)]'
+          } animate-in zoom-in-95 duration-300`}
         >
           {/* Animated scanline sweep */}
-          <div aria-hidden className="absolute top-0 left-0 right-0 h-0.5"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${borderColor}, transparent)`,
-              animation: 'pl-scanline 2.5s ease-in-out infinite',
-            }}
+          <div
+            aria-hidden
+            className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent ${
+              isHighRisk ? 'via-orange-500' : 'via-rose-500'
+            } to-transparent animate-pulse`}
           />
 
-          {/* Corner accents */}
-          {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map(corner => (
-            <div key={corner} aria-hidden className="absolute w-5 h-5" style={{
-              ...(corner.includes('top') ? { top: 0 } : { bottom: 0 }),
-              ...(corner.includes('left') ? { left: 0 } : { right: 0 }),
-              borderTop: corner.includes('top') ? `2px solid ${borderColor}` : 'none',
-              borderBottom: corner.includes('bottom') ? `2px solid ${borderColor}` : 'none',
-              borderLeft: corner.includes('left') ? `2px solid ${borderColor}` : 'none',
-              borderRight: corner.includes('right') ? `2px solid ${borderColor}` : 'none',
-              borderRadius: corner === 'top-left' ? '16px 0 0 0' : corner === 'top-right' ? '0 16px 0 0'
-                : corner === 'bottom-left' ? '0 0 0 16px' : '0 0 16px 0',
-            }} />
-          ))}
-
-          <div className="p-4 sm:p-8 pb-5 sm:pb-7 mobile-card-padding">
+          <div className="p-5 sm:p-8 mobile-card-padding">
             {/* ── Warning icon + tier badge ──────────────────── */}
             <div className="flex items-center justify-between mb-5">
-              <div style={{
-                width: 56, height: 56, borderRadius: '14px', fontSize: '28px',
-                background: `${borderColor}15`, border: `1px solid ${borderColor}45`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                animation: 'pl-icon-pulse 1.5s ease-in-out infinite',
-                boxShadow: `0 0 24px ${borderColor}30`,
-              }} aria-hidden>🚨</div>
+              <div
+                className={`w-14 h-14 rounded-2xl text-2xl flex items-center justify-center shrink-0 border ${
+                  isHighRisk
+                    ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 shadow-[0_0_24px_rgba(249,115,22,0.25)]'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-[0_0_24px_rgba(244,63,94,0.25)]'
+                }`}
+                aria-hidden
+              >
+                🚨
+              </div>
 
-              <div className="px-3.5 py-1.5 rounded-full text-xs font-extrabold" style={{
-                fontFamily: 'JetBrains Mono, monospace', letterSpacing: '1px',
-                color: borderColor, border: `1px solid ${borderColor}55`,
-                background: `${borderColor}12`,
-                boxShadow: `0 0 16px ${borderColor}30`,
-                animation: 'pl-badge-flash 1s ease-in-out infinite',
-              }}>
+              <div
+                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold font-mono tracking-wider border backdrop-blur-sm ${
+                  isHighRisk
+                    ? 'text-orange-400 border-orange-500/40 bg-orange-500/10 shadow-[0_0_16px_rgba(249,115,22,0.2)]'
+                    : 'text-rose-400 border-rose-500/40 bg-rose-500/10 shadow-[0_0_16px_rgba(244,63,94,0.2)]'
+                }`}
+              >
                 {result.risk_tier}
               </div>
             </div>
@@ -189,39 +170,36 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
             {/* ── Headline ──────────────────────────────────── */}
             <h2
               id="modal-headline"
-              className="text-lg sm:text-2xl font-extrabold mb-3.5"
-              style={{
-                margin: '0 0 14px',
-                fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
-                color: '#F1F5F9',
-                letterSpacing: '-0.3px',
-                lineHeight: 1.25,
-              }}
+              className="text-lg sm:text-2xl font-extrabold text-zinc-100 font-sans tracking-tight leading-tight mb-3.5 m-0"
             >
               {label}
             </h2>
 
             {/* Risk score bar */}
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-3xl font-extrabold leading-none" style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                color: borderColor,
-              }}>{result.overall_risk_score}</span>
+            <div className="flex items-center gap-3.5 mb-4">
+              <span
+                className={`text-3xl font-extrabold leading-none font-mono ${
+                  isHighRisk ? 'text-orange-400' : 'text-rose-400'
+                }`}
+              >
+                {result.overall_risk_score}
+              </span>
               <div className="flex-1">
                 <div className="flex justify-between mb-1">
-                  <span className="text-[10px]" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+                  <span className="text-[10px] text-zinc-500 font-sans">
                     {lang === 'hi' ? 'जोखिम स्कोर' : 'Risk Score'}
                   </span>
-                  <span className="text-[10px]" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>/ 100</span>
+                  <span className="text-[10px] text-zinc-500 font-sans">/ 100</span>
                 </div>
-                <div className="h-1.5 rounded-sm overflow-hidden" style={{ background: '#1F2937' }}>
-                  <div style={{
-                    height: '100%', borderRadius: '3px',
-                    width: `${result.overall_risk_score}%`,
-                    background: `linear-gradient(90deg, ${isHighRisk ? '#FF6B00' : '#FF3366'}, ${isHighRisk ? '#FF3366' : '#FF0055'})`,
-                    boxShadow: `0 0 10px ${borderColor}80`,
-                    transition: 'width 0.8s ease',
-                  }} />
+                <div className="h-1.5 rounded-full overflow-hidden bg-white/[0.04]">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ease-out ${
+                      isHighRisk
+                        ? 'bg-gradient-to-r from-orange-500 to-rose-500 shadow-[0_0_10px_rgba(249,115,22,0.6)]'
+                        : 'bg-gradient-to-r from-rose-500 to-red-600 shadow-[0_0_10px_rgba(244,63,94,0.6)]'
+                    }`}
+                    style={{ width: `${result.overall_risk_score}%` }}
+                  />
                 </div>
               </div>
             </div>
@@ -229,31 +207,27 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
             {/* ── Reason box ────────────────────────────────── */}
             <div
               id="modal-desc"
-              className="p-3.5 sm:p-4 rounded-lg mb-4"
-              style={{
-                background: `${borderColor}0D`, border: `1px solid ${borderColor}30`,
-              }}
+              className={`p-3.5 sm:p-4 rounded-xl mb-4 border ${
+                isHighRisk
+                  ? 'bg-orange-500/5 border-orange-500/25'
+                  : 'bg-rose-500/5 border-rose-500/25'
+              }`}
             >
-              <p className="text-[10.5px] font-bold uppercase tracking-wider mb-2" style={{
-                color: borderColor, fontFamily: 'Inter, sans-serif',
-              }}>
+              <p
+                className={`text-[11px] font-bold uppercase tracking-wider mb-1.5 font-sans ${
+                  isHighRisk ? 'text-orange-400' : 'text-rose-400'
+                }`}
+              >
                 {lang === 'hi' ? 'खतरा विश्लेषण' : 'Threat Analysis'}
               </p>
-              <p className="text-[13.5px] leading-relaxed font-medium" style={{
-                margin: 0, color: '#F1F5F9', fontFamily: 'Inter, sans-serif',
-              }}>
+              <p className="m-0 text-[13px] sm:text-[13.5px] leading-relaxed font-medium text-zinc-100 font-sans">
                 {recommendation}
               </p>
             </div>
 
             {/* ── Verdict ───────────────────────────────────── */}
-            <p className="text-xs mb-6 p-2 sm:p-3 rounded-lg" style={{
-              margin: '0 0 24px',
-              color: '#CBD5E1',
-              fontFamily: 'JetBrains Mono, monospace', lineHeight: '1.5',
-              background: '#111827', border: '1px solid #1F2937',
-            }}>
-              <span style={{ color: '#94A3B8' }}>{lang === 'hi' ? 'फैसला: ' : 'verdict: '}</span>
+            <p className="text-xs mb-5 p-2.5 sm:p-3 rounded-xl bg-black/40 border border-white/[0.06] text-zinc-300 font-mono leading-relaxed m-0">
+              <span className="text-zinc-600">{lang === 'hi' ? 'फैसला: ' : 'verdict: '}</span>
               {verdict}
             </p>
 
@@ -265,11 +239,9 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
                 { label: lang === 'hi' ? 'इरादा स्कोर' : 'Intent Score', value: `${result.audit_trail.intent_analysis.risk_score}`, show: true },
                 { label: lang === 'hi' ? 'विलंबता' : 'Latency', value: `${result.processing_time_ms.toFixed(0)}ms`, show: true },
               ].filter(x => x.show).map(m => (
-                <div key={m.label} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg" style={{
-                  background: '#111827', border: '1px solid #1F2937',
-                }}>
-                  <span className="text-sm font-bold" style={{ color: '#F1F5F9', fontFamily: 'JetBrains Mono, monospace' }}>{m.value}</span>
-                  <span className="text-[9.5px] uppercase tracking-wider" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>{m.label}</span>
+                <div key={m.label} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl bg-black/40 border border-white/[0.06]">
+                  <span className="text-sm font-bold font-mono text-zinc-100">{m.value}</span>
+                  <span className="text-[9.5px] uppercase tracking-wider text-zinc-500 font-sans">{m.label}</span>
                 </div>
               ))}
             </div>
@@ -277,94 +249,56 @@ export function InterceptionModal({ result, lang, onAbort, onProceedAnyway }: In
             {/* ── Action buttons ────────────────────────────── */}
             <div className="flex flex-col gap-2.5">
               {/* Primary — Abort */}
-              <button
+              <Button
                 id="modal-abort-btn"
                 type="button"
                 onClick={handleAbortAndReport}
                 disabled={reportCopied}
-                className="w-full py-3.5 sm:py-4 px-6 rounded-xl border-none text-white text-sm sm:text-base font-extrabold flex items-center justify-center gap-2 transition-all duration-300"
-                style={{
-                  fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
-                  cursor: reportCopied ? 'default' : 'pointer',
-                  letterSpacing: '0.2px',
-                  background: reportCopied
-                    ? 'linear-gradient(135deg, #00E676, #00C853)'
-                    : `linear-gradient(135deg, ${isHighRisk ? '#FF6B00' : '#FF3366'}, ${isHighRisk ? '#FF3366' : '#CC002A'})`,
-                  boxShadow: reportCopied
-                    ? '0 0 24px rgba(0,230,118,0.5), 0 4px 16px rgba(0,0,0,0.5)'
-                    : `0 0 24px ${borderColor}50, 0 4px 16px rgba(0,0,0,0.5)`,
-                }}
+                className={`w-full h-auto py-3.5 sm:py-4 px-6 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all duration-300 text-white ${
+                  reportCopied
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 shadow-[0_0_25px_rgba(0,230,118,0.4)]'
+                    : isHighRisk
+                    ? 'bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-400 hover:to-rose-500 shadow-[0_0_25px_rgba(249,115,22,0.4)]'
+                    : 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 shadow-[0_0_25px_rgba(244,63,94,0.4)]'
+                }`}
               >
                 {reportCopied
                   ? (lang === 'hi' ? '✅ रिपोर्ट कॉपी हो गई! 1930 डायल करें' : '✅ Report Copied! Dial 1930')
                   : (lang === 'hi' ? <>🛑 लेनदेन रद्द करें और रिपोर्ट करें</> : <>🛑 Abort Transaction &amp; Report</>)}
-              </button>
+              </Button>
 
               {/* Secondary — Proceed anyway (with countdown friction) */}
-              <button
+              <Button
                 id="modal-proceed-btn"
                 type="button"
+                variant="outline"
                 onClick={proceedEnabled ? onProceedAnyway : undefined}
                 disabled={!proceedEnabled}
-                className="w-full py-3 px-6 rounded-xl text-sm flex items-center justify-center gap-2 transition-all duration-200"
-                style={{
-                  border: `1px solid ${proceedEnabled ? '#374151' : '#1F2937'}`,
-                  background: 'transparent',
-                  color: proceedEnabled ? '#94A3B8' : '#64748B',
-                  fontFamily: 'Inter, sans-serif', fontWeight: 500,
-                  cursor: proceedEnabled ? 'pointer' : 'not-allowed',
-                }}
+                className="w-full h-auto py-3 px-6 rounded-xl text-xs sm:text-sm font-medium border-white/[0.08] bg-zinc-950 text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
               >
                 {proceedEnabled ? (
                   lang === 'hi' ? 'मैं जोखिम समझता/समझती हूँ (फिर भी आगे बढ़ें)' : 'I Understand the Risks (Proceed Anyway)'
                 ) : (
                   <>
-                    <svg aria-hidden width="14" height="14" viewBox="0 0 14 14"
-                      style={{ animation: 'pl-spin 1s linear infinite', flexShrink: 0 }}>
-                      <circle cx="7" cy="7" r="5" stroke="#374151" strokeWidth="1.5" fill="none"/>
-                      <path d="M7 2a5 5 0 0 1 5 5" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+                    <svg aria-hidden width="14" height="14" viewBox="0 0 16 16" className="animate-spin shrink-0 text-zinc-500">
+                      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" fill="none"/>
+                      <path d="M8 2a6 6 0 0 1 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none"/>
                     </svg>
                     {lang === 'hi'
                       ? `मैं जोखिम समझता/समझती हूँ — ${countdown}s प्रतीक्षा करें`
                       : `I Understand the Risks — wait ${countdown}s`}
                   </>
                 )}
-              </button>
+              </Button>
             </div>
 
             {/* Footer note */}
-            <p className="text-[10.5px] text-center mt-4 leading-relaxed" style={{
-              margin: '16px 0 0', color: '#94A3B8',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}>
+            <p className="text-[10.5px] text-center mt-4 leading-relaxed text-zinc-600 font-mono m-0">
               scan_id: {result.scan_id} · {lang === 'hi' ? 'इंटरसेप्ट किया' : 'intercepted in'} {result.processing_time_ms.toFixed(0)}ms
             </p>
           </div>
         </div>
       </div>
-
-      <style>{`
-        @keyframes pl-modal-bg { from { opacity: 0 } to { opacity: 1 } }
-        @keyframes pl-modal-in {
-          from { opacity: 0; transform: scale(0.88) translateY(20px); }
-          to   { opacity: 1; transform: scale(1)    translateY(0); }
-        }
-        @keyframes pl-scanline {
-          0%   { transform: translateX(-100%); opacity: 0; }
-          10%  { opacity: 1; }
-          90%  { opacity: 1; }
-          100% { transform: translateX(200%); opacity: 0; }
-        }
-        @keyframes pl-icon-pulse {
-          0%, 100% { transform: scale(1);    box-shadow: 0 0 24px rgba(255,51,102,0.3); }
-          50%       { transform: scale(1.08); box-shadow: 0 0 40px rgba(255,51,102,0.55); }
-        }
-        @keyframes pl-badge-flash {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.65; }
-        }
-        @keyframes pl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </>
   );
 }
