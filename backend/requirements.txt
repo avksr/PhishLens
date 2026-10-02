@@ -12,3 +12,6 @@ pytest>=9.0.3
 pytest-asyncio>=0.23.7
 flake8>=7.1.0
 slowapi>=0.1.9
+rapidfuzz>=3.9.0
+phonenumbers>=8.13.0
+
