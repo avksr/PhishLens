@@ -33,7 +33,8 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={
-            "error": "Internal Server Error",
+            "error": "Internal server error",
+            "code": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred during request processing. Please try again later.",
             "path": request.url.path
         }

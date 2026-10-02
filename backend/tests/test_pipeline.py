@@ -262,3 +262,22 @@ async def test_audit_inspection_endpoint_us5():
         assert "not found" in not_found_res.json()["detail"].lower()
 
 
+@pytest.mark.asyncio
+async def test_global_gigw_exception_handler():
+    """Verify Task 1.5: Unhandled server errors return sanitized JSON 500 without leaking Python tracebacks."""
+    import httpx
+    from main import app
+
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    with patch("api.routes.run_pipeline", side_effect=RuntimeError("Simulated database failure")):
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8000") as client:
+            res = await client.post("/api/v1/scan", json={"content": "hello world"})
+            assert res.status_code == 500
+            data = res.json()
+            assert data["error"] == "Internal server error"
+            assert data["code"] == "INTERNAL_SERVER_ERROR"
+            assert "Traceback" not in res.text
+            assert "RuntimeError" not in res.text
+
+
+

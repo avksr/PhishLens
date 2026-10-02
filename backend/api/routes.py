@@ -16,13 +16,7 @@ async def scan_payload(req: ScanRequest, request: Request) -> ScanResponse:
     Executes Atharv (URL), Avni (Sender), and Vikas (Intent) in parallel,
     then computes unified risk score via Avika's Scoring Engine.
     """
-    try:
-        return await run_pipeline(req)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Scan pipeline execution error: {str(e)}"
-        )
+    return await run_pipeline(req)
 
 
 @router.get("/audit/recent", status_code=status.HTTP_200_OK)
