@@ -1,8 +1,8 @@
 {
   "report_version": "2.0",
   "system_name": "PhishLens (ScamShield AI)",
-  "timestamp_utc": "2026-10-01T08:40:02.032681+00:00",
-  "git_commit_sha": "4a7270d6d51901eb358c54bc8ad625d699d587c4",
+  "timestamp_utc": "2026-10-02T17:57:01.888682+00:00",
+  "git_commit_sha": "f3184f9566ac0d48f878db8a2a2a84b60412d5de",
   "dataset_name": "benchmark_60.json",
   "summary": {
     "total_cases_evaluated": 60,
@@ -23,13 +23,13 @@
     "median_latency": "< 1000.0ms"
   },
   "latency_percentiles_ms": {
-    "p50_median": 1.96,
-    "p90": 9.3,
-    "p95": 10.99,
-    "p99": 24.55,
-    "mean": 4.23,
-    "min": 1.15,
-    "max": 40.59
+    "p50_median": 3.83,
+    "p90": 12.62,
+    "p95": 14.55,
+    "p99": 30.94,
+    "mean": 6.35,
+    "min": 1.67,
+    "max": 52.31
   },
   "category_breakdown": [
     {
@@ -39,7 +39,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.49,
+      "mean_latency_ms": 3.15,
       "avg_risk_score": 45
     },
     {
@@ -49,7 +49,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 7.14,
+      "mean_latency_ms": 12.61,
       "avg_risk_score": 92
     },
     {
@@ -59,7 +59,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.52,
+      "mean_latency_ms": 4.47,
       "avg_risk_score": 2
     },
     {
@@ -69,7 +69,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.51,
+      "mean_latency_ms": 3.38,
       "avg_risk_score": 2
     },
     {
@@ -79,7 +79,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.86,
+      "mean_latency_ms": 6.51,
       "avg_risk_score": 45
     },
     {
@@ -89,7 +89,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 3.86,
+      "mean_latency_ms": 5.32,
       "avg_risk_score": 92
     },
     {
@@ -99,7 +99,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.68,
+      "mean_latency_ms": 3.46,
       "avg_risk_score": 2
     },
     {
@@ -109,7 +109,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.88,
+      "mean_latency_ms": 1.68,
       "avg_risk_score": 2
     },
     {
@@ -119,7 +119,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.39,
+      "mean_latency_ms": 3.6,
       "avg_risk_score": 2
     },
     {
@@ -129,7 +129,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.46,
+      "mean_latency_ms": 2.03,
       "avg_risk_score": 2
     },
     {
@@ -139,7 +139,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.31,
+      "mean_latency_ms": 3.9,
       "avg_risk_score": 2
     },
     {
@@ -149,7 +149,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.55,
+      "mean_latency_ms": 2.45,
       "avg_risk_score": 82
     },
     {
@@ -159,7 +159,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 3.43,
+      "mean_latency_ms": 4.82,
       "avg_risk_score": 82
     },
     {
@@ -169,7 +169,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 40.59,
+      "mean_latency_ms": 52.31,
       "avg_risk_score": 92
     },
     {
@@ -179,8 +179,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.26,
-      "avg_risk_score": 45
+      "mean_latency_ms": 3.15,
+      "avg_risk_score": 92
     },
     {
       "category": "Digital Arrest / CBI Extortion",
@@ -189,7 +189,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.62,
+      "mean_latency_ms": 3.73,
       "avg_risk_score": 82
     },
     {
@@ -199,7 +199,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.28,
+      "mean_latency_ms": 3.4,
       "avg_risk_score": 88
     },
     {
@@ -209,7 +209,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 5.91,
+      "mean_latency_ms": 7.9,
       "avg_risk_score": 92
     },
     {
@@ -219,8 +219,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.73,
-      "avg_risk_score": 45
+      "mean_latency_ms": 3.24,
+      "avg_risk_score": 88
     },
     {
       "category": "Fake Cyber Police Video Call",
@@ -229,7 +229,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.75,
+      "mean_latency_ms": 3.0,
       "avg_risk_score": 82
     },
     {
@@ -239,7 +239,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 7.63,
+      "mean_latency_ms": 13.41,
       "avg_risk_score": 50
     },
     {
@@ -249,8 +249,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.29,
-      "avg_risk_score": 88
+      "mean_latency_ms": 5.06,
+      "avg_risk_score": 92
     },
     {
       "category": "Fake Traffic e-Challan Penalty",
@@ -259,7 +259,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 9.4,
+      "mean_latency_ms": 11.46,
       "avg_risk_score": 88
     },
     {
@@ -269,7 +269,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 3.15,
+      "mean_latency_ms": 4.09,
       "avg_risk_score": 2
     },
     {
@@ -279,8 +279,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.65,
-      "avg_risk_score": 45
+      "mean_latency_ms": 4.92,
+      "avg_risk_score": 88
     },
     {
       "category": "Guaranteed Crypto Trading Multiplier",
@@ -289,7 +289,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 9.49,
+      "mean_latency_ms": 16.09,
       "avg_risk_score": 50
     },
     {
@@ -299,7 +299,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.8,
+      "mean_latency_ms": 2.18,
       "avg_risk_score": 25
     },
     {
@@ -309,7 +309,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.99,
+      "mean_latency_ms": 6.16,
       "avg_risk_score": 92
     },
     {
@@ -319,7 +319,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.63,
+      "mean_latency_ms": 2.13,
       "avg_risk_score": 2
     },
     {
@@ -329,7 +329,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 3.88,
+      "mean_latency_ms": 7.28,
       "avg_risk_score": 92
     },
     {
@@ -339,8 +339,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 5.8,
-      "avg_risk_score": 58
+      "mean_latency_ms": 9.85,
+      "avg_risk_score": 92
     },
     {
       "category": "IRCTC Train Ticket Confirmed",
@@ -349,7 +349,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 4.32,
+      "mean_latency_ms": 3.19,
       "avg_risk_score": 2
     },
     {
@@ -359,7 +359,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.91,
+      "mean_latency_ms": 3.26,
       "avg_risk_score": 5
     },
     {
@@ -369,7 +369,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 6.77,
+      "mean_latency_ms": 10.04,
       "avg_risk_score": 92
     },
     {
@@ -379,8 +379,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 10.88,
-      "avg_risk_score": 58
+      "mean_latency_ms": 9.35,
+      "avg_risk_score": 92
     },
     {
       "category": "Indian Bank Interest Credit",
@@ -389,7 +389,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.59,
+      "mean_latency_ms": 1.8,
       "avg_risk_score": 2
     },
     {
@@ -399,7 +399,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 8.42,
+      "mean_latency_ms": 12.74,
       "avg_risk_score": 50
     },
     {
@@ -409,7 +409,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 13.04,
+      "mean_latency_ms": 10.1,
       "avg_risk_score": 50
     },
     {
@@ -419,8 +419,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.9,
-      "avg_risk_score": 45
+      "mean_latency_ms": 4.68,
+      "avg_risk_score": 94
     },
     {
       "category": "Kotak Credit Card Statement",
@@ -429,7 +429,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.24,
+      "mean_latency_ms": 3.72,
       "avg_risk_score": 2
     },
     {
@@ -439,7 +439,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 13.4,
+      "mean_latency_ms": 14.54,
       "avg_risk_score": 50
     },
     {
@@ -449,8 +449,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.59,
-      "avg_risk_score": 45
+      "mean_latency_ms": 4.3,
+      "avg_risk_score": 94
     },
     {
       "category": "Ola Cabs Booking Confirmation",
@@ -459,7 +459,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.35,
+      "mean_latency_ms": 3.45,
       "avg_risk_score": 5
     },
     {
@@ -469,7 +469,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 7.95,
+      "mean_latency_ms": 11.67,
       "avg_risk_score": 45
     },
     {
@@ -479,7 +479,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.38,
+      "mean_latency_ms": 2.34,
       "avg_risk_score": 2
     },
     {
@@ -489,7 +489,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 4.27,
+      "mean_latency_ms": 8.33,
       "avg_risk_score": 92
     },
     {
@@ -499,7 +499,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 5.63,
+      "mean_latency_ms": 14.74,
       "avg_risk_score": 45
     },
     {
@@ -509,7 +509,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.75,
+      "mean_latency_ms": 3.77,
       "avg_risk_score": 20
     },
     {
@@ -519,7 +519,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.02,
+      "mean_latency_ms": 3.14,
       "avg_risk_score": 20
     },
     {
@@ -529,7 +529,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.15,
+      "mean_latency_ms": 1.94,
       "avg_risk_score": 20
     },
     {
@@ -539,7 +539,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.55,
+      "mean_latency_ms": 3.12,
       "avg_risk_score": 20
     },
     {
@@ -549,8 +549,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.37,
-      "avg_risk_score": 45
+      "mean_latency_ms": 2.46,
+      "avg_risk_score": 92
     },
     {
       "category": "SBI KYC Phishing (.top)",
@@ -559,8 +559,8 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 3.69,
-      "avg_risk_score": 92
+      "mean_latency_ms": 4.46,
+      "avg_risk_score": 94
     },
     {
       "category": "SBI NetBanking Login OTP",
@@ -569,7 +569,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.78,
+      "mean_latency_ms": 3.53,
       "avg_risk_score": 2
     },
     {
@@ -579,7 +579,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 2.2,
+      "mean_latency_ms": 4.64,
       "avg_risk_score": 3
     },
     {
@@ -589,7 +589,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.48,
+      "mean_latency_ms": 3.5,
       "avg_risk_score": 45
     },
     {
@@ -599,7 +599,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.26,
+      "mean_latency_ms": 1.67,
       "avg_risk_score": 25
     },
     {
@@ -609,7 +609,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.47,
+      "mean_latency_ms": 1.83,
       "avg_risk_score": 25
     },
     {
@@ -619,7 +619,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 9.29,
+      "mean_latency_ms": 9.81,
       "avg_risk_score": 50
     },
     {
@@ -629,7 +629,7 @@
       "passed_cases": 1,
       "failed_cases": 0,
       "pass_rate_percent": 100.0,
-      "mean_latency_ms": 1.17,
+      "mean_latency_ms": 1.87,
       "avg_risk_score": 2
     }
   ],
@@ -641,7 +641,7 @@
       "actual": "LIKELY_SCAM",
       "score": 82,
       "pass": true,
-      "latency_ms": 3.43,
+      "latency_ms": 4.82,
       "reasons": [
         "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
         "Uses legal or institutional coercion to extort immediate payment without due process"
@@ -655,7 +655,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 40.59,
+      "latency_ms": 52.31,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating Electricity Provider",
@@ -667,23 +667,23 @@
       "id": "scam_003",
       "category": "Mahavitaran Power Cut Extortion",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 45,
+      "actual": "LIKELY_SCAM",
+      "score": 94,
       "pass": true,
-      "latency_ms": 1.59,
+      "latency_ms": 4.3,
       "reasons": [
         "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
       ],
-      "action_required": "WARN_USER"
+      "action_required": "BLOCK_TRANSACTION"
     },
     {
       "id": "scam_004",
       "category": "SBI KYC Phishing (.top)",
       "expected": "LIKELY_SCAM",
       "actual": "LIKELY_SCAM",
-      "score": 92,
+      "score": 94,
       "pass": true,
-      "latency_ms": 3.69,
+      "latency_ms": 4.46,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating State Bank of India",
@@ -698,7 +698,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 2.99,
+      "latency_ms": 6.16,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating HDFC Bank",
@@ -713,7 +713,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 3.88,
+      "latency_ms": 7.28,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Website link mimics official ICICI Bank portal but uses unauthorized domain (icici-rewards-cash.club)",
@@ -728,7 +728,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 3.86,
+      "latency_ms": 5.32,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating Axis Bank",
@@ -743,7 +743,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 4.27,
+      "latency_ms": 8.33,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating Punjab National Bank",
@@ -758,7 +758,7 @@
       "actual": "LIKELY_SCAM",
       "score": 82,
       "pass": true,
-      "latency_ms": 1.62,
+      "latency_ms": 3.73,
       "reasons": [
         "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
         "Uses legal or institutional coercion to extort immediate payment without due process"
@@ -772,7 +772,7 @@
       "actual": "LIKELY_SCAM",
       "score": 82,
       "pass": true,
-      "latency_ms": 1.55,
+      "latency_ms": 2.45,
       "reasons": [
         "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
         "Uses legal or institutional coercion to extort immediate payment without due process"
@@ -786,7 +786,7 @@
       "actual": "LIKELY_SCAM",
       "score": 88,
       "pass": true,
-      "latency_ms": 1.28,
+      "latency_ms": 3.4,
       "reasons": [
         "Private 10-digit mobile number (personal GSM) impersonating UIDAI (Aadhaar Authority)",
         "Official alerts from UIDAI (Aadhaar Authority) are never issued from private 10-digit mobile numbers",
@@ -801,7 +801,7 @@
       "actual": "SUSPICIOUS",
       "score": 45,
       "pass": true,
-      "latency_ms": 1.48,
+      "latency_ms": 3.5,
       "reasons": [
         "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
       ],
@@ -814,7 +814,7 @@
       "actual": "LIKELY_SCAM",
       "score": 82,
       "pass": true,
-      "latency_ms": 1.75,
+      "latency_ms": 3.0,
       "reasons": [
         "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
         "Uses legal or institutional coercion to extort immediate payment without due process"
@@ -828,7 +828,7 @@
       "actual": "SUSPICIOUS",
       "score": 50,
       "pass": true,
-      "latency_ms": 7.63,
+      "latency_ms": 13.41,
       "reasons": [
         "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns"
       ],
@@ -838,51 +838,51 @@
       "id": "scam_015",
       "category": "Deceptive UPI Refund Trap",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 45,
+      "actual": "LIKELY_SCAM",
+      "score": 92,
       "pass": true,
-      "latency_ms": 2.26,
+      "latency_ms": 3.15,
       "reasons": [
         "Official alerts from State Bank of India are never issued from private 10-digit mobile numbers",
         "Payment address 'refund-desk@oksbi' impersonates an institutional desk on a consumer PSP handle"
       ],
-      "action_required": "WARN_USER"
+      "action_required": "BLOCK_TRANSACTION"
     },
     {
       "id": "scam_016",
       "category": "Google Pay Cashback VPA Lure",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 45,
+      "actual": "LIKELY_SCAM",
+      "score": 88,
       "pass": true,
-      "latency_ms": 1.65,
+      "latency_ms": 4.92,
       "reasons": [
         "Payment address 'gpay-cashback@ybl' impersonates an institutional desk on a consumer PSP handle"
       ],
-      "action_required": "WARN_USER"
+      "action_required": "BLOCK_TRANSACTION"
     },
     {
       "id": "scam_017",
       "category": "PhonePe Diwali Prize VPA Trap",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 45,
+      "actual": "LIKELY_SCAM",
+      "score": 92,
       "pass": true,
-      "latency_ms": 1.37,
+      "latency_ms": 2.46,
       "reasons": [
         "Official alerts from Paytm Payments Bank are never issued from private 10-digit mobile numbers",
         "Payment address 'phonepe-rewards@paytm' impersonates an institutional desk on a consumer PSP handle"
       ],
-      "action_required": "WARN_USER"
+      "action_required": "BLOCK_TRANSACTION"
     },
     {
       "id": "scam_018",
       "category": "Fake Electricity Bill UPI Payment",
       "expected": "LIKELY_SCAM",
       "actual": "LIKELY_SCAM",
-      "score": 88,
+      "score": 92,
       "pass": true,
-      "latency_ms": 1.29,
+      "latency_ms": 5.06,
       "reasons": [
         "Private 10-digit mobile number (personal GSM) impersonating Electricity Provider",
         "Coercive intimidation threatening immediate police arrest, court summons, or power cutoff",
@@ -894,14 +894,14 @@
       "id": "scam_019",
       "category": "Fake Airline Refund Handle",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 45,
+      "actual": "LIKELY_SCAM",
+      "score": 88,
       "pass": true,
-      "latency_ms": 1.73,
+      "latency_ms": 3.24,
       "reasons": [
         "Payment address 'indigo-refund@ibl' impersonates an institutional desk on a consumer PSP handle"
       ],
-      "action_required": "WARN_USER"
+      "action_required": "BLOCK_TRANSACTION"
     },
     {
       "id": "scam_020",
@@ -910,7 +910,7 @@
       "actual": "SUSPICIOUS",
       "score": 45,
       "pass": true,
-      "latency_ms": 5.63,
+      "latency_ms": 14.74,
       "reasons": [
         "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
       ],
@@ -923,7 +923,7 @@
       "actual": "SUSPICIOUS",
       "score": 45,
       "pass": true,
-      "latency_ms": 1.86,
+      "latency_ms": 6.51,
       "reasons": [
         "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
       ],
@@ -936,7 +936,7 @@
       "actual": "SUSPICIOUS",
       "score": 50,
       "pass": true,
-      "latency_ms": 9.49,
+      "latency_ms": 16.09,
       "reasons": [
         "Uses high-risk top-level domain (.xyz) commonly favored by ephemeral phishing campaigns"
       ],
@@ -949,7 +949,7 @@
       "actual": "SUSPICIOUS",
       "score": 50,
       "pass": true,
-      "latency_ms": 8.42,
+      "latency_ms": 12.74,
       "reasons": [
         "Uses high-risk top-level domain (.club) commonly favored by ephemeral phishing campaigns",
         "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
@@ -960,23 +960,23 @@
       "id": "scam_024",
       "category": "KBC Jio Lucky Draw WhatsApp Scam",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 45,
+      "actual": "LIKELY_SCAM",
+      "score": 94,
       "pass": true,
-      "latency_ms": 1.9,
+      "latency_ms": 4.68,
       "reasons": [
         "Promises fraudulent lottery rewards or part-time video-liking income requiring upfront fees"
       ],
-      "action_required": "WARN_USER"
+      "action_required": "BLOCK_TRANSACTION"
     },
     {
       "id": "scam_025",
       "category": "IRCTC Fake Ticket Refund",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 58,
+      "actual": "LIKELY_SCAM",
+      "score": 92,
       "pass": true,
-      "latency_ms": 5.8,
+      "latency_ms": 9.85,
       "reasons": [
         "Website link mimics official IRCTC Indian Railways portal but uses unauthorized domain (irctc-refund-portal.top)",
         "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns",
@@ -991,7 +991,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 6.77,
+      "latency_ms": 10.04,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Website link mimics official Income Tax India portal but uses unauthorized domain (incometax-refund-gov.xyz)",
@@ -1006,7 +1006,7 @@
       "actual": "SUSPICIOUS",
       "score": 45,
       "pass": true,
-      "latency_ms": 7.95,
+      "latency_ms": 11.67,
       "reasons": [
         "Employs artificial urgency ('disconnected tonight', 'blocked within 2 hours') to trigger panic"
       ],
@@ -1019,7 +1019,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 7.14,
+      "latency_ms": 12.61,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating UIDAI (Aadhaar Authority)",
@@ -1034,7 +1034,7 @@
       "actual": "SUSPICIOUS",
       "score": 45,
       "pass": true,
-      "latency_ms": 1.49,
+      "latency_ms": 3.15,
       "reasons": [
         "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
       ],
@@ -1047,7 +1047,7 @@
       "actual": "LIKELY_SCAM",
       "score": 88,
       "pass": true,
-      "latency_ms": 9.4,
+      "latency_ms": 11.46,
       "reasons": [
         "Private 10-digit mobile number (personal GSM) impersonating Government / Traffic Authority",
         "Official alerts from Government / Traffic Authority are never issued from private 10-digit mobile numbers",
@@ -1062,7 +1062,7 @@
       "actual": "SUSPICIOUS",
       "score": 50,
       "pass": true,
-      "latency_ms": 9.29,
+      "latency_ms": 9.81,
       "reasons": [
         "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns"
       ],
@@ -1075,7 +1075,7 @@
       "actual": "SUSPICIOUS",
       "score": 50,
       "pass": true,
-      "latency_ms": 13.04,
+      "latency_ms": 10.1,
       "reasons": [
         "Uses high-risk top-level domain (.icu) commonly favored by ephemeral phishing campaigns"
       ],
@@ -1088,7 +1088,7 @@
       "actual": "SUSPICIOUS",
       "score": 50,
       "pass": true,
-      "latency_ms": 13.4,
+      "latency_ms": 14.54,
       "reasons": [
         "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns"
       ],
@@ -1101,7 +1101,7 @@
       "actual": "LIKELY_SCAM",
       "score": 92,
       "pass": true,
-      "latency_ms": 5.91,
+      "latency_ms": 7.9,
       "reasons": [
         "Phishing link detected originating from an unverified or high-risk sender",
         "Private 10-digit mobile number (personal GSM) impersonating EPFO",
@@ -1113,10 +1113,10 @@
       "id": "scam_035",
       "category": "India Post Parcel Re-delivery Fee",
       "expected": "LIKELY_SCAM",
-      "actual": "SUSPICIOUS",
-      "score": 58,
+      "actual": "LIKELY_SCAM",
+      "score": 92,
       "pass": true,
-      "latency_ms": 10.88,
+      "latency_ms": 9.35,
       "reasons": [
         "Website link mimics official India Post / IPPB portal but uses unauthorized domain (indiapost-parcel-tracking.top)",
         "Uses high-risk top-level domain (.top) commonly favored by ephemeral phishing campaigns",
@@ -1131,7 +1131,7 @@
       "actual": "SAFE",
       "score": 25,
       "pass": true,
-      "latency_ms": 1.8,
+      "latency_ms": 2.18,
       "reasons": [
         "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
       ],
@@ -1144,7 +1144,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.78,
+      "latency_ms": 3.53,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1157,7 +1157,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.63,
+      "latency_ms": 2.13,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1170,7 +1170,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 2.68,
+      "latency_ms": 3.46,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1183,7 +1183,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 2.24,
+      "latency_ms": 3.72,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1196,7 +1196,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.38,
+      "latency_ms": 2.34,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1209,7 +1209,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.39,
+      "latency_ms": 3.6,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1222,7 +1222,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.46,
+      "latency_ms": 2.03,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1235,7 +1235,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 2.59,
+      "latency_ms": 1.8,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1248,7 +1248,7 @@
       "actual": "SAFE",
       "score": 25,
       "pass": true,
-      "latency_ms": 1.26,
+      "latency_ms": 1.67,
       "reasons": [
         "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
       ],
@@ -1261,7 +1261,7 @@
       "actual": "SAFE",
       "score": 3,
       "pass": true,
-      "latency_ms": 2.2,
+      "latency_ms": 4.64,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1274,7 +1274,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.17,
+      "latency_ms": 1.87,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1287,7 +1287,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.51,
+      "latency_ms": 3.38,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1300,7 +1300,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 3.15,
+      "latency_ms": 4.09,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1313,7 +1313,7 @@
       "actual": "SAFE",
       "score": 25,
       "pass": true,
-      "latency_ms": 1.47,
+      "latency_ms": 1.83,
       "reasons": [
         "Demands urgent submission of Aadhaar, PAN, NetBanking login, or verification codes"
       ],
@@ -1326,7 +1326,7 @@
       "actual": "SAFE",
       "score": 5,
       "pass": true,
-      "latency_ms": 1.35,
+      "latency_ms": 3.45,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1339,7 +1339,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 4.32,
+      "latency_ms": 3.19,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1352,7 +1352,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.88,
+      "latency_ms": 1.68,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1365,7 +1365,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.52,
+      "latency_ms": 4.47,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1378,7 +1378,7 @@
       "actual": "SAFE",
       "score": 20,
       "pass": true,
-      "latency_ms": 1.15,
+      "latency_ms": 1.94,
       "reasons": [
         "No external phishing links or suspicious URLs detected in message",
         "Communication content conforms to standard benign transactional guidelines"
@@ -1392,7 +1392,7 @@
       "actual": "SAFE",
       "score": 20,
       "pass": true,
-      "latency_ms": 2.02,
+      "latency_ms": 3.14,
       "reasons": [
         "No external phishing links or suspicious URLs detected in message",
         "Communication content conforms to standard benign transactional guidelines"
@@ -1406,7 +1406,7 @@
       "actual": "SAFE",
       "score": 20,
       "pass": true,
-      "latency_ms": 2.55,
+      "latency_ms": 3.12,
       "reasons": [
         "No external phishing links or suspicious URLs detected in message",
         "Communication content conforms to standard benign transactional guidelines"
@@ -1420,7 +1420,7 @@
       "actual": "SAFE",
       "score": 20,
       "pass": true,
-      "latency_ms": 1.75,
+      "latency_ms": 3.77,
       "reasons": [
         "No external phishing links or suspicious URLs detected in message",
         "Communication content conforms to standard benign transactional guidelines"
@@ -1434,7 +1434,7 @@
       "actual": "SAFE",
       "score": 2,
       "pass": true,
-      "latency_ms": 1.31,
+      "latency_ms": 3.9,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],
@@ -1447,7 +1447,7 @@
       "actual": "SAFE",
       "score": 5,
       "pass": true,
-      "latency_ms": 1.91,
+      "latency_ms": 3.26,
       "reasons": [
         "Verified authentic commercial communication matching official TRAI DLT registry"
       ],

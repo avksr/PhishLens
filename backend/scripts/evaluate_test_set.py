@@ -38,6 +38,9 @@ repo_root = backend_dir.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
+# Enforce deterministic, offline evaluation for reproducible benchmarking
+os.environ.setdefault("OSINT_OFFLINE", "1")
+
 from shared.models import ScanRequest, ScanResponse, PrdVerdictEnum, RiskTierEnum
 from core.orchestrator import run_pipeline
 
