@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 import time
+import urllib.parse
 from typing import Dict, List, Optional, Set, Tuple
 
 from shared.models import (
@@ -35,6 +36,56 @@ from shared.models import (
     ScanRequest,
     UpiAgentResult,
 )
+from agents.bank_identity_agent import (
+    verify_bank_identity,
+    compute_fuzzy_name_match,
+)
+
+# ---------------------------------------------------------------------------
+# Canonical Brand Portals for VPA Typosquatting Detection
+# ---------------------------------------------------------------------------
+_CANONICAL_PORTAL_NAMES = [
+    "onlinesbi", "sbibank", "hdfcbank", "icicibank", "axisbank",
+    "kotakbank", "pnbindia", "paytm", "phonepe", "bhimupi",
+    "sbicard", "billdesk", "razorpay"
+]
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+
+def _detect_vpa_typosquatting(local_part: str) -> Optional[Tuple[str, float]]:
+    """
+    Detect if localpart typosquats a major banking or payment portal.
+    e.g. 'onllnesbi' vs 'onlinesbi' or 'sblbank' vs 'sbibank'.
+    Returns (matched_brand, similarity_score) if detected, else None.
+    """
+    clean_lp = re.sub(r"[-._0-9]", "", local_part.lower())
+    if not clean_lp or len(clean_lp) < 4:
+        return None
+    for brand in _CANONICAL_PORTAL_NAMES:
+        if clean_lp != brand:
+            dist = _levenshtein(clean_lp, brand)
+            max_l = max(len(clean_lp), len(brand))
+            ratio = (1.0 - (dist / max_l)) * 100.0
+            if (dist <= 2 and ratio >= 75.0) or compute_fuzzy_name_match(clean_lp, brand) >= 82.0:
+                return brand, max(ratio, 85.0)
+    return None
+
 
 # ---------------------------------------------------------------------------
 # UPI VPA Regex
@@ -45,6 +96,82 @@ from shared.models import (
 _UPI_VPA_RE = re.compile(
     r"\b([a-zA-Z0-9.\-_]{1,256})@([a-zA-Z0-9]{2,20})\b"
 )
+
+# ---------------------------------------------------------------------------
+# UPI Deep Link (Payment URI) Regex
+# ---------------------------------------------------------------------------
+# Matches the NPCI/BHIM UPI payment deep-link format:
+#   upi://pay?pa=<vpa>&pn=<payee_name>&am=<amount>&...
+# These appear in QR codes, WhatsApp links, and SMS messages sent by scammers.
+# pa  = Payment Address (VPA)          — REQUIRED
+# pn  = Payee Name (display name)       — optional but used for impersonation
+# am  = Amount (pre-filled rupee value) — optional
+_UPI_DEEPLINK_RE = re.compile(
+    r"upi://pay\?[^\s\"'<>]{5,500}",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Bank / Utility Keywords for Payee-Name (pn) Impersonation Detection
+# ---------------------------------------------------------------------------
+# When a UPI deep link's pn parameter claims to be one of these institutions
+# but the VPA (pa) is hosted on a consumer-only PSP handle (@ybl, @axl, @ibl)
+# or a fintech handle, it is a near-certain merchant-spoofing attempt.
+_BANK_UTILITY_KEYWORDS: Dict[str, str] = {
+    # Major Indian banks
+    "sbi": "State Bank of India",
+    "state bank": "State Bank of India",
+    "hdfc": "HDFC Bank",
+    "icici": "ICICI Bank",
+    "axis": "Axis Bank",
+    "pnb": "Punjab National Bank",
+    "kotak": "Kotak Mahindra Bank",
+    "canara": "Canara Bank",
+    "union bank": "Union Bank of India",
+    "bank of baroda": "Bank of Baroda",
+    "bob": "Bank of Baroda",
+    "idbi": "IDBI Bank",
+    "rbl": "RBL Bank",
+    "idfc": "IDFC First Bank",
+    "yes bank": "Yes Bank",
+    "indian bank": "Indian Bank",
+    # Government & fintech brands
+    "uidai": "UIDAI (Aadhaar)",
+    "aadhaar": "UIDAI (Aadhaar)",
+    "epfo": "EPFO",
+    "incometax": "Income Tax Department",
+    "income tax": "Income Tax Department",
+    "irctc": "IRCTC",
+    "npci": "NPCI",
+    "rbi": "Reserve Bank of India",
+    "sebi": "SEBI",
+    "government": "Government of India",
+    "govt": "Government of India",
+    "ministry": "Government of India",
+    # Electricity DISCOMs
+    "msedcl": "MSEDCL (Maharashtra Electricity)",
+    "bescom": "BESCOM (Bangalore Electricity)",
+    "tneb": "TNEB (Tamil Nadu Electricity)",
+    "uppcl": "UPPCL (UP Electricity)",
+    "discom": "Electricity DISCOM",
+    "electricity": "Electricity Provider",
+    "bijli": "Electricity Provider",
+    # Courier / logistics
+    "india post": "India Post",
+    "bluedart": "BlueDart Express",
+    "dtdc": "DTDC Courier",
+    "delhivery": "Delhivery Courier",
+    # Telecom
+    "airtel": "Airtel",
+    "jio": "Jio",
+    "bsnl": "BSNL",
+    # Payments platforms
+    "paytm": "Paytm",
+    "phonepe": "PhonePe",
+    "googlepay": "Google Pay",
+    "google pay": "Google Pay",
+    "amazon pay": "Amazon Pay",
+}
 
 # ---------------------------------------------------------------------------
 # NPCI-Registered PSP Handle Registry
@@ -373,6 +500,52 @@ def _extract_vpas_from_text(text: str) -> List[Tuple[str, str]]:
     return results
 
 
+def _parse_upi_deeplink(text: str) -> Optional[Dict[str, str]]:
+    """
+    Search *text* for a UPI payment deep link (`upi://pay?...`) and parse
+    the query parameters.  Returns a dict with keys:
+        pa  — UPI VPA / payment address (always present if match found)
+        pn  — payee display name (URL-decoded, may be absent)
+        am  — pre-filled amount in INR (may be absent)
+    Returns None if no deep link is found.
+
+    Examples
+    --------
+    >>> _parse_upi_deeplink("Pay here: upi://pay?pa=refund-sbi@oksbi&pn=SBI%20Refund&am=1500")
+    {'pa': 'refund-sbi@oksbi', 'pn': 'SBI Refund', 'am': '1500'}
+    """
+    match = _UPI_DEEPLINK_RE.search(text)
+    if not match:
+        return None
+    # Extract the full matched URI and parse its query string.
+    uri = match.group(0)
+    # urllib.parse.urlparse handles the upi:// scheme.
+    parsed = urllib.parse.urlparse(uri)
+    params = urllib.parse.parse_qs(parsed.query, keep_blank_values=False)
+    # parse_qs returns lists; take the first value for each key.
+    result: Dict[str, str] = {}
+    for key in ("pa", "pn", "am", "cu", "tn"):
+        values = params.get(key)
+        if values:
+            result[key] = urllib.parse.unquote_plus(values[0])
+    if "pa" not in result:
+        return None  # pa (payment address) is mandatory
+    return result
+
+
+def _get_brand_from_payee_name(payee_name: str) -> Optional[str]:
+    """
+    Check whether a UPI deep-link payee name (pn parameter) claims to
+    belong to a known bank, utility, or official institution.
+    Returns the canonical institution name if found, else None.
+    """
+    pn_lower = payee_name.lower()
+    for keyword, institution in _BANK_UTILITY_KEYWORDS.items():
+        if keyword in pn_lower:
+            return institution
+    return None
+
+
 def _get_brand_from_localpart(local_part: str) -> Optional[str]:
     """
     Scan the VPA local-part for any known brand/institution keyword.
@@ -415,11 +588,61 @@ def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, value))
 
 
+async def _enrich_with_bank_identity(
+    res: UpiAgentResult,
+    req: ScanRequest,
+    claimed_hint: Optional[str] = None
+) -> UpiAgentResult:
+    """Enrich UpiAgentResult with registered name, name match score, and sandbox provider."""
+    if not res.detected_vpa:
+        return res
+
+    claimed = (
+        (req.metadata.get("claimed_identity") if req.metadata else None)
+        or claimed_hint
+        or res.target_entity
+        or _get_brand_from_localpart(res.detected_vpa.split("@")[0])
+    )
+
+    try:
+        identity_info = await verify_bank_identity(res.detected_vpa, claimed)
+        verif = identity_info["verification"]
+        res.registered_name = verif.registered_name
+        res.claimed_name = claimed
+        res.name_match_score = identity_info["name_match_score"]
+        res.name_match_status = identity_info["name_match_status"]
+        res.provider = identity_info["provider"]
+
+        for f in identity_info["flags"]:
+            if f not in res.flags:
+                res.flags.append(f)
+
+        if identity_info["name_match_status"] == "MISMATCH":
+            res.is_spoofed_merchant = True
+            res.risk_score = _clamp(max(res.risk_score, 75.0))
+            res.details += (
+                f"\n\n[Simulated Verification - {identity_info['provider']}] "
+                f"Bank identity mismatch: Claimed '{claimed or 'Official Entity'}' but registered to "
+                f"'{verif.registered_name}' ({verif.bank_name}). Match score: {identity_info['name_match_score']}%."
+            )
+        elif identity_info["name_match_status"] == "MATCH":
+            res.details += (
+                f"\n\n[Simulated Verification - {identity_info['provider']}] "
+                f"Bank identity verified: Account registered to '{verif.registered_name}' ({verif.bank_name}). "
+                f"Match score: {identity_info['name_match_score']}%."
+            )
+    except Exception:
+        res.provider = "SANDBOX_MOCK"
+
+    return res
+
+
 # ---------------------------------------------------------------------------
 # Main Agent Function
 # ---------------------------------------------------------------------------
 
 async def analyze_upi(req: ScanRequest) -> UpiAgentResult:
+
     """
     UPI VPA Deception Detection Agent entry point.
 
@@ -444,12 +667,134 @@ async def analyze_upi(req: ScanRequest) -> UpiAgentResult:
 async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
     """Core UPI analysis pipeline — called inside try block in analyze_upi."""
     # ------------------------------------------------------------------
-    # Step 1: Extract VPA candidates from content + sender field
+    # Step 0: UPI Deep Link (QR / Payment URI) Parsing
+    # ------------------------------------------------------------------
+    # Check for a upi://pay?... deep link FIRST — these appear in QR codes
+    # and WhatsApp messages.  If found, we analyse the parsed parameters
+    # (especially pn = payee name) before falling through to VPA scoring.
     # ------------------------------------------------------------------
     search_corpus = req.content
     if req.sender:
         search_corpus = req.sender + " " + search_corpus
 
+    deeplink_result = _parse_upi_deeplink(search_corpus)
+    if deeplink_result:
+        vpa_from_link = deeplink_result["pa"].lower()
+        payee_name = deeplink_result.get("pn", "")
+        amount = deeplink_result.get("am", "")
+
+        # Split the VPA into local-part and PSP handle for analysis.
+        if "@" in vpa_from_link:
+            dl_local, dl_psp = vpa_from_link.rsplit("@", 1)
+        else:
+            dl_local, dl_psp = vpa_from_link, ""
+
+        dl_flags: List[str] = ["UPI_DEEPLINK_DETECTED"]
+        dl_risk = 0.0
+
+        # ── Deep-link Check A: Consumer-only handle with bank/utility payee name ──
+        # e.g.  pn="SBI Refund" but pa=refund-sbi@ybl
+        # Real banks never send payment requests via @ybl, @axl, or @ibl.
+        if dl_psp in _CONSUMER_ONLY_HANDLES and payee_name:
+            institution = _get_brand_from_payee_name(payee_name)
+            if institution:
+                dl_flags.append("DEEPLINK_PAYEE_NAME_IMPERSONATION")
+                dl_flags.append("CONSUMER_HANDLE_INSTITUTIONAL_LOCALPART")
+                dl_flags.append("DECEPTIVE_UPI_VPA_DETECTED")
+                dl_risk += 75.0
+                amount_note = (
+                    f" The payment amount shown is ₹{amount}." if amount else ""
+                )
+                latency_ms = (time.perf_counter() - t_start) * 1000.0
+                raw_res = UpiAgentResult(
+                    status=AgentStatusEnum.SUCCESS,
+                    risk_score=_clamp(dl_risk),
+                    detected_vpa=vpa_from_link,
+                    is_spoofed_merchant=True,
+                    target_entity=institution,
+                    flags=dl_flags,
+                    details=(
+                        f"⚠️ यह UPI लिंक खतरनाक है! / This UPI payment link is dangerous!\n\n"
+                        f"इस लिंक में payee का नाम ('{payee_name}') '{institution}' का है, "
+                        f"लेकिन असली payment address ('{vpa_from_link}') एक personal PhonePe "
+                        f"account का है — जिसे कोई भी बैंक या सरकारी संस्था कभी इस्तेमाल नहीं करती।\n\n"
+                        f"In plain English: The payment link shows the name '{payee_name}' "
+                        f"(suggesting it belongs to '{institution}'), but the actual UPI address "
+                        f"'{vpa_from_link}' belongs to a personal PhonePe account ('{dl_psp}'). "
+                        f"No real bank or government body uses a personal PhonePe ID to collect money."
+                        + amount_note +
+                        " Do NOT pay — this is a common scam technique."
+                    ),
+                    latency_ms=round(latency_ms, 3),
+                )
+                return await _enrich_with_bank_identity(raw_res, req, institution)
+
+        # ── Deep-link Check B: Brand cross-validation (local-part vs PSP) ──
+        brand_in_dl_local = _get_brand_from_localpart(dl_local)
+        psp_entry_dl = _PSP_REGISTRY.get(dl_psp)
+        if brand_in_dl_local and psp_entry_dl:
+            if not _psp_belongs_to_brand(dl_psp, brand_in_dl_local):
+                dl_flags.append("DEEPLINK_BRAND_MISMATCH_PSP_VS_LOCALPART")
+                dl_flags.append("DECEPTIVE_UPI_VPA_DETECTED")
+                dl_risk += 55.0
+                psp_owner = psp_entry_dl.get("entity", dl_psp)
+                amount_note = f" Amount shown: ₹{amount}." if amount else ""
+                latency_ms = (time.perf_counter() - t_start) * 1000.0
+                raw_res = UpiAgentResult(
+                    status=AgentStatusEnum.SUCCESS,
+                    risk_score=_clamp(dl_risk),
+                    detected_vpa=vpa_from_link,
+                    is_spoofed_merchant=True,
+                    target_entity=brand_in_dl_local,
+                    flags=dl_flags,
+                    details=(
+                        f"⚠️ इस UPI link का payment address संदेहास्पद है! / Suspicious UPI deep link detected!\n\n"
+                        f"Payment address '{vpa_from_link}' में '{brand_in_dl_local}' का नाम है, "
+                        f"लेकिन '@{dl_psp}' वास्तव में '{psp_owner}' से जुड़ा है।\n\n"
+                        f"In plain English: The payment address claims to be '{brand_in_dl_local}', "
+                        f"but the '@{dl_psp}' part of the address actually belongs to '{psp_owner}', "
+                        f"not '{brand_in_dl_local}'. This mismatch is a classic scammer trick."
+                        + amount_note
+                    ),
+                    latency_ms=round(latency_ms, 3),
+                )
+                return await _enrich_with_bank_identity(raw_res, req, brand_in_dl_local)
+
+        # ── Deep-link Check C: Scam keywords in local-part ──
+        kw_score_dl, kw_flags_dl = _score_localpart_scam_keywords(dl_local)
+        if kw_score_dl >= 30.0:
+            dl_flags.extend(kw_flags_dl)
+            dl_flags.append("DEEPLINK_SUSPICIOUS_SCAM_PATTERN")
+            dl_risk += kw_score_dl
+            amount_note = f" Amount shown: ₹{amount}." if amount else ""
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            raw_res = UpiAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                risk_score=_clamp(dl_risk),
+                detected_vpa=vpa_from_link,
+                is_spoofed_merchant=True,
+                target_entity=None,
+                flags=dl_flags,
+                details=(
+                    f"⚠️ यह UPI लिंक संदेहजनक है! / This UPI payment link looks suspicious!\n\n"
+                    f"Payment address '{vpa_from_link}' में ऐसे शब्द हैं जो आमतौर पर "
+                    f"धोखेबाज़ इस्तेमाल करते हैं (जैसे 'refund', 'helpdesk', 'reward')।\n\n"
+                    f"In plain English: The UPI address '{vpa_from_link}' contains keywords "
+                    f"commonly used in scams (such as 'refund', 'helpdesk', or 'reward'). "
+                    f"Legitimate organisations do not use such words in their payment addresses."
+                    + amount_note
+                ),
+                latency_ms=round(latency_ms, 3),
+            )
+            return await _enrich_with_bank_identity(raw_res, req, payee_name)
+
+
+        # Deep link found but no strong deceptive signal — note it and fall through.
+        flags.append("UPI_DEEPLINK_DETECTED")
+
+    # ------------------------------------------------------------------
+    # Step 1: Extract VPA candidates from content + sender field
+    # ------------------------------------------------------------------
     vpa_candidates = _extract_vpas_from_text(search_corpus)
 
     if not vpa_candidates:
@@ -457,7 +802,10 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
         return UpiAgentResult(
             status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="No UPI payment address (like someone@bankname) was found in this message.",
+            details=(
+                "इस संदेश में कोई UPI payment address (जैसे someone@bankname) नहीं मिला। / "
+                "No UPI payment address was found in this message."
+            ),
             latency_ms=round(latency_ms, 3),
         )
 
@@ -491,32 +839,30 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 candidate_flags.append("CONSUMER_HANDLE_INSTITUTIONAL_LOCALPART")
                 candidate_flags.append("DECEPTIVE_UPI_VPA_DETECTED")
                 risk_score += 60.0
-                # Build a detailed explanation
-                note = (psp_entry or {}).get(
-                    "note",
-                    f"@{psp_handle} is assigned to individual consumer accounts only — "
-                    "official banks and institutions do NOT use this PSP handle."
-                )
-                explanation = (
-                    f"The UPI address '{vpa_full}' is suspicious. "
-                    f"The part before '@' suggests it belongs to '{brand_in_local}', "
-                    f"but '@{psp_handle}' is a handle assigned exclusively to personal "
-                    "PhonePe user accounts — it is never used by any bank or "
-                    "official institution. This is a common trick used by scammers."
-                )
                 # This is a very high-confidence deceptive signal — short-circuit.
                 candidate_score = _clamp(risk_score)
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
-                return UpiAgentResult(
+                raw_res = UpiAgentResult(
                     status=AgentStatusEnum.SUCCESS,
                     risk_score=candidate_score,
                     detected_vpa=vpa_full,
                     is_spoofed_merchant=True,
                     target_entity=brand_in_local,
                     flags=candidate_flags,
-                    details=explanation,
+                    details=(
+                        f"⚠️ यह UPI address धोखाधड़ी का संकेत है! / This UPI address is a fraud signal!\n\n"
+                        f"'{vpa_full}' में '@' से पहले का हिस्सा '{brand_in_local}' का नाम दर्शाता है, "
+                        f"लेकिन '@{psp_handle}' एक personal PhonePe account का address है — "
+                        f"जिसे कोई भी बैंक या सरकारी संस्था कभी उपयोग नहीं करती।\n\n"
+                        f"In plain English: The UPI address '{vpa_full}' pretends to belong to "
+                        f"'{brand_in_local}', but '@{psp_handle}' is exclusively assigned to "
+                        f"personal PhonePe user accounts — no real bank or institution ever "
+                        f"uses this handle. This is one of the most common tricks used by "
+                        f"online fraudsters in India. Do NOT send money to this address."
+                    ),
                     latency_ms=round(latency_ms, 3),
                 )
+                return await _enrich_with_bank_identity(raw_res, req, brand_in_local)
 
         # ── Check 3: Brand cross-validation ─────────────────────────────
         # Does the local-part claim Bank X while the PSP belongs to Bank Y?
@@ -527,25 +873,39 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 candidate_flags.append("DECEPTIVE_UPI_VPA_DETECTED")
                 risk_score += 50.0
                 psp_owner = psp_entry.get("entity", psp_handle)
-                explanation = (
-                    f"The UPI address '{vpa_full}' claims to be from '{brand_claimed_in_local}', "
-                    f"but the '@{psp_handle}' part of the address actually belongs to "
-                    f"'{psp_owner}', not '{brand_claimed_in_local}'. "
-                    f"The real {brand_claimed_in_local} would use their own payment address, "
-                    f"not one registered to a different bank or service."
-                )
                 candidate_score = _clamp(risk_score)
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
-                return UpiAgentResult(
+                raw_res = UpiAgentResult(
                     status=AgentStatusEnum.SUCCESS,
                     risk_score=candidate_score,
                     detected_vpa=vpa_full,
                     is_spoofed_merchant=True,
                     target_entity=brand_claimed_in_local,
                     flags=candidate_flags,
-                    details=explanation,
+                    details=(
+                        f"UPI handle '{vpa_full}' impersonates official '{brand_claimed_in_local}' "
+                        f"merchant on '{psp_owner}' payment service. "
+                        f"The address uses '{brand_claimed_in_local}' in the name before '@', "
+                        f"but '@{psp_handle}' actually belongs to '{psp_owner}' — "
+                        f"not to '{brand_claimed_in_local}'. The real '{brand_claimed_in_local}' "
+                        "would always use their own registered UPI handle — never one from a different bank or service. "
+                        "This is a classic impersonation scam.\n\n"
+                        f"[हिंदी] '{vpa_full}' में '{brand_claimed_in_local}' का नाम है, लेकिन "
+                        f"'@{psp_handle}' वास्तव में '{psp_owner}' से संबंधित है, "
+                        f"'{brand_claimed_in_local}' से नहीं। यह एक क्लासिक धोखाधड़ी का तरीका है।"
+                    ),
                     latency_ms=round(latency_ms, 3),
                 )
+                return await _enrich_with_bank_identity(raw_res, req, brand_claimed_in_local)
+
+        # ── Check 3.5: VPA Typosquatting in Local-Part ───────────────────
+        typo_match = _detect_vpa_typosquatting(local_part)
+        if typo_match:
+            typo_brand, typo_sim = typo_match
+            candidate_flags.append("VPA_TYPOSQUATTING_DETECTED")
+            candidate_flags.append("DECEPTIVE_UPI_VPA_DETECTED")
+            risk_score += 45.0
+
 
         # ── Check 4: Scam keyword scoring in local-part ──────────────────
         kw_score, kw_flags = _score_localpart_scam_keywords(local_part)
@@ -569,18 +929,44 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
             # Build the appropriate details string
             if final_score < 20.0:
                 details_str = (
+                    f"✅ '{vpa_full}' UPI address '{psp_label}' के साथ registered है "
+                    f"और कोई संदेहास्पद pattern नहीं मिला। / "
                     f"The UPI address '{vpa_full}' is registered with '{psp_label}'. "
-                    "No suspicious patterns were detected."
+                    "No suspicious patterns were detected. This address appears safe."
                 )
                 is_spoofed = False
                 target_ent = None
             else:
+                # Translate flag names to citizen-friendly phrases
+                friendly_reasons = []
+                for flag in candidate_flags:
+                    if flag == "UNREGISTERED_PSP_HANDLE":
+                        friendly_reasons.append("unrecognised payment service provider")
+                    elif flag == "SCAM_KEYWORD_REFUND":
+                        friendly_reasons.append("'refund' keyword commonly used in fraud")
+                    elif flag == "SCAM_KEYWORD_SUPPORT_DESK":
+                        friendly_reasons.append("'helpdesk/support' keyword — scammers pose as customer care")
+                    elif flag == "SCAM_KEYWORD_KYC":
+                        friendly_reasons.append("'KYC' keyword — a top trigger for UPI scams")
+                    elif flag == "SCAM_KEYWORD_PRIZE_LOTTERY":
+                        friendly_reasons.append("prize/lottery/reward claim — almost always a scam")
+                    elif flag == "SCAM_KEYWORD_GOVT_IMPERSONATION":
+                        friendly_reasons.append("government name used — verify through official channels only")
+                    elif flag == "SCAM_KEYWORD_LAW_ENFORCEMENT":
+                        friendly_reasons.append("police/court name used — a pressure tactic by fraudsters")
+                    elif flag == "NUMERIC_HEAVY_LOCALPART_SUSPICIOUS":
+                        friendly_reasons.append("mostly numbers in the address — typical of temporary mule accounts")
+                    elif flag == "SUSPICIOUS_SCAM_PATTERN_IN_VPA":
+                        friendly_reasons.append("overall pattern matches known scam UPI addresses")
+                    else:
+                        friendly_reasons.append(flag.replace("_", " ").lower())
                 details_str = (
-                    f"The UPI address '{vpa_full}' (payment service: {psp_label}) "
-                    "shows warning signs that it may be fraudulent. "
-                    "Reasons: " + ", ".join(
-                        flag.replace("_", " ").lower() for flag in candidate_flags
-                    ) + "."
+                    f"⚠️ '{vpa_full}' (payment service: {psp_label}) "
+                    f"में कुछ संदेहास्पद संकेत मिले हैं। / "
+                    f"The UPI address '{vpa_full}' (via {psp_label}) shows warning signs:\n"
+                    + "\n".join(f"  • {r}" for r in friendly_reasons) +
+                    "\n\nतुरंत भुगतान न करें — पहले इस address की जाँच करें। / "
+                    "Do NOT pay immediately — verify this address before sending any money."
                 )
                 is_spoofed = bool(candidate_flags)
                 target_ent = brand_claimed_in_local
@@ -604,10 +990,17 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
         return UpiAgentResult(
             status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="A UPI address was found but it could not be scored. Please review manually.",
+            details=(
+                "इस संदेश में एक UPI address मिला लेकिन उसे score नहीं किया जा सका। "
+                "कृपया manually जाँचें। / "
+                "A UPI address was found but could not be fully analysed. "
+                "Please verify this address manually before making any payment."
+            ),
             latency_ms=round(latency_ms, 3),
         )
 
     latency_ms = (time.perf_counter() - t_start) * 1000.0
     best_result.latency_ms = round(latency_ms, 3)
-    return best_result
+    return await _enrich_with_bank_identity(best_result, req)
+
+

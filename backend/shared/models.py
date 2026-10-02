@@ -16,6 +16,8 @@ class EvidenceItem(BaseModel):
     status: str
     finding: str
     raw_result: Optional[Dict[str, Any]] = None
+    provider: Optional[str] = Field(default=None, description="Source provider or SANDBOX_MOCK for simulated checks")
+
 
 
 class PrdVerdictEnum(str, Enum):
@@ -31,6 +33,8 @@ class ChannelEnum(str, Enum):
     EMAIL = "email"
     QR_PAYMENT = "qr_payment"
     WEB_URL = "web_url"
+    UPI_HANDLE = "upi_handle"
+    TEXT_MESSAGE = "text_message"
     UNKNOWN = "unknown"
 
 
@@ -85,6 +89,9 @@ class ScanRequest(BaseModel):
     )
     extracted_url: Optional[str] = Field(None, description="Pre-extracted or user-provided URL to inspect")
     channel: ChannelEnum = Field(default=ChannelEnum.SMS, description="Ingestion channel")
+    input_type: Optional[str] = Field(
+        None, description="Auto-classified input type: web_url, upi_handle, or text_message"
+    )
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
 
 
@@ -102,9 +109,11 @@ class UrlAgentResult(BaseModel):
     domain: Optional[str] = None
     tld: Optional[str] = None
     domain_age_days: Optional[int] = None
+    registrar: Optional[str] = None
     is_typosquatting: bool = False
     target_brand: Optional[str] = None
     tld_reputation: TldReputationEnum = TldReputationEnum.NEUTRAL
+    safe_browsing_threat: Optional[str] = None
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
@@ -123,6 +132,9 @@ class SenderAgentResult(BaseModel):
     # Added by Avni — sender_agent.py audit fields (optional, backward-compatible)
     raw_sender: Optional[str] = None
     normalised_sender: Optional[str] = None
+    phone_type: Optional[str] = Field(default=None, description="e.g. MOBILE, PROMOTIONAL_140, SERVICE_160, TOLL_FREE, LANDLINE, INVALID")
+    email_analysis: Optional[Dict[str, Any]] = Field(default=None, description="Detailed email header and pattern checks")
+    provider: Optional[str] = Field(default="TRAI_DLT_REGISTRY", description="Provider attribution or SANDBOX_MOCK")
 
 
 class IntentAgentResult(BaseModel):
@@ -146,6 +158,13 @@ class UpiAgentResult(BaseModel):
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
+    # Added by Avni — Bank Identity & Sandbox verification fields
+    registered_name: Optional[str] = Field(default=None, description="Official bank-registered name for VPA")
+    claimed_name: Optional[str] = Field(default=None, description="Claimed identity in message or payee name")
+    name_match_score: Optional[float] = Field(default=None, ge=0.0, le=100.0, description="Fuzzy name match score (0-100)")
+    name_match_status: Optional[str] = Field(default=None, description="MATCH, MISMATCH, or UNVERIFIED")
+    provider: Optional[str] = Field(default="SANDBOX_MOCK", description="Verification provider tag, e.g. SANDBOX_MOCK")
+
 
 
 # --- Composite Output Models ---
@@ -177,13 +196,16 @@ class ScanResponse(BaseModel):
     risk_tier: Optional[RiskTierEnum] = None
     confidence: ConfidenceLevelEnum = ConfidenceLevelEnum.HIGH
     reasons: List[str] = Field(default_factory=list, description="Plain-language, max 5, ordered by weight")
-    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(default_factory=list, description="tool name, finding, raw result summary, status")
+    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(
+        default_factory=list, description="tool name, finding, raw result summary, status"
+    )
     recommended_action: Optional[str] = None
     verdict: Optional[str] = None
     verdict_hi: Optional[str] = None
     recommendation: Optional[str] = None
     recommendation_hi: Optional[str] = None
     action_required: Optional[ActionRequiredEnum] = None
+    detected_input_type: Optional[str] = None
     audit_trail: Optional[AuditTrail] = None
     processing_time_ms: float = 0.0
     detected_input_type: Optional[str] = Field(
@@ -234,7 +256,9 @@ class ScanResponse(BaseModel):
         elif not self.recommendation and self.recommended_action:
             self.recommendation = self.recommended_action
         elif not self.recommended_action and not self.recommendation:
-            self.recommended_action = "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            self.recommended_action = (
+                "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            )
             self.recommendation = self.recommended_action
 
         # Synchronize verdict

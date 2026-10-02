@@ -330,6 +330,7 @@ const MOCK_AUDIT_LOGS: AuditLogEntry[] = [
     risk_tier: 'CRITICAL',
     overall_risk_score: 92,
     verdict: 'Confirmed Impersonation & Credential Harvesting Attack',
+    verdict_hi: 'पुष्टि: प्रतिरूपण एवं क्रेडेंशियल हार्वेस्टिंग हमला',
     channel: 'sms',
     processing_time_ms: 820.5,
   },
@@ -339,6 +340,7 @@ const MOCK_AUDIT_LOGS: AuditLogEntry[] = [
     risk_tier: 'HIGH_RISK',
     overall_risk_score: 74,
     verdict: 'Social Engineering — Utility Service Impersonation',
+    verdict_hi: 'सोशल इंजीनियरिंग — बिजली सेवा प्रतिरूपण',
     channel: 'sms',
     processing_time_ms: 638,
   },
@@ -348,6 +350,7 @@ const MOCK_AUDIT_LOGS: AuditLogEntry[] = [
     risk_tier: 'SAFE',
     overall_risk_score: 8,
     verdict: 'Legitimate Bank OTP Transaction Notification',
+    verdict_hi: 'वैध बैंक ओटीपी लेनदेन अधिसूचना',
     channel: 'sms',
     processing_time_ms: 535.2,
   },
@@ -357,6 +360,7 @@ const MOCK_AUDIT_LOGS: AuditLogEntry[] = [
     risk_tier: 'CAUTION',
     overall_risk_score: 42,
     verdict: 'Unverified Communication — Exercise Caution',
+    verdict_hi: 'असत्यापित संचार — सावधानी बरतें',
     channel: 'whatsapp',
     processing_time_ms: 250,
   },
@@ -366,18 +370,19 @@ const MOCK_AUDIT_LOGS: AuditLogEntry[] = [
     risk_tier: 'SAFE',
     overall_risk_score: 12,
     verdict: 'Verified e-commerce order confirmation',
+    verdict_hi: 'सत्यापित ई-कॉमर्स ऑर्डर पुष्टि',
     channel: 'email',
     processing_time_ms: 412.3,
   },
 ];
 
 /**
- * Fetches recent audit logs from `GET /api/v1/audit/recent`.
+ * Fetches recent audit logs from `GET /api/v1/audit/recent?limit=10`.
  * Falls back to offline mock data when the backend is unreachable.
  */
-export async function fetchRecentAuditLogs(): Promise<AuditLogEntry[]> {
+export async function fetchRecentAuditLogs(limit: number = 10): Promise<AuditLogEntry[]> {
   try {
-    const response = await fetch(`${BASE_URL}/api/v1/audit/recent`, {
+    const response = await fetch(`${BASE_URL}/api/v1/audit/recent?limit=${limit}`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) throw new Error(`${response.status}`);
@@ -386,6 +391,6 @@ export async function fetchRecentAuditLogs(): Promise<AuditLogEntry[]> {
     // Backend offline → demo fallback
     console.warn('[PhishLens] Audit API unreachable — using mock audit logs');
     await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
-    return MOCK_AUDIT_LOGS;
+    return MOCK_AUDIT_LOGS.slice(0, limit);
   }
 }

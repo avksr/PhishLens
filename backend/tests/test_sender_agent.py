@@ -679,3 +679,238 @@ async def test_demo_gsm_impersonation_electricity_cutoff() -> None:
     assert "COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM" in result.flags or (
         result.brand_claimed is not None
     ), "Electricity cut-off scam from GSM must flag brand impersonation"
+
+
+# ===========================================================================
+# ──────────────── NEW TESTS: AVNI DAY-4 — UTILITY TRAI INTEGRATION ──────────
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Test 16 — BESCOM Official TRAI Header (Bangalore Electricity)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_bescom_official_header() -> None:
+    """
+    AD-BESCOM (BESCOM \u2014 Bangalore Electricity Supply Company) is a registered
+    TRAI DLT sender and must be verified as OFFICIAL_TRAI_HEADER with
+    risk_score <= 10 and the GOVERNMENT_EMERGENCY_WHITELISTED flag.
+    """
+    req = _make_request(
+        content="Dear Customer, your BESCOM electricity bill of Rs.1,240 is due on "
+                "05-Oct-2026. Pay at bescom.org or nearest BBMP/BESCOM office. "
+                "For queries call 1912.",
+        sender="AD-BESCOM",
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS, (
+        f"BESCOM header failed with: {result.details}"
+    )
+    assert result.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER, (
+        f"AD-BESCOM must be OFFICIAL_TRAI_HEADER, got {result.sender_category}"
+    )
+    assert result.risk_score <= 10.0, (
+        f"BESCOM official header must have risk_score <= 10, got {result.risk_score}"
+    )
+    assert result.is_spoofed_header is False, (
+        "Verified BESCOM header must NOT be flagged as spoofed."
+    )
+    assert "VERIFIED_TRAI_DLT_SENDER_HEADER" in result.flags, (
+        f"Expected VERIFIED_TRAI_DLT_SENDER_HEADER flag, got {result.flags}"
+    )
+    assert "GOVERNMENT_EMERGENCY_WHITELISTED" in result.flags, (
+        "BESCOM must carry GOVERNMENT_EMERGENCY_WHITELISTED flag."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 17 — UPPCL Official TRAI Header (UP Electricity)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_uppcls_official_header() -> None:
+    """
+    VK-UPPCLS (UPPCL \u2014 Uttar Pradesh Power Corporation Ltd) must be verified
+    as OFFICIAL_TRAI_HEADER with risk_score <= 10.
+    """
+    req = _make_request(
+        content="UPPCL: Your electricity bill of Rs.850 is pending. Pay before "
+                "10-Oct-2026 to avoid disconnection. Visit upenergy.in or dial 1912.",
+        sender="VK-UPPCLS",
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS, (
+        f"UPPCLS header failed with: {result.details}"
+    )
+    assert result.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER, (
+        f"VK-UPPCLS must be OFFICIAL_TRAI_HEADER, got {result.sender_category}"
+    )
+    assert result.risk_score <= 10.0, (
+        f"UPPCLS official header must have risk_score <= 10, got {result.risk_score}"
+    )
+    assert result.is_spoofed_header is False
+    assert "VERIFIED_TRAI_DLT_SENDER_HEADER" in result.flags
+    assert "GOVERNMENT_EMERGENCY_WHITELISTED" in result.flags, (
+        "UPPCLS must carry GOVERNMENT_EMERGENCY_WHITELISTED flag."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 18 — Generic DISCOM Official TRAI Header
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_discom_official_header() -> None:
+    """
+    CP-DISCOM (Generic DISCOM / Electricity Utility) must be verified as
+    OFFICIAL_TRAI_HEADER with risk_score <= 10 and whitelisted.
+    """
+    req = _make_request(
+        content="Alert: Your electricity bill of Rs.1,100 is overdue. "
+                "Please pay immediately to avoid power disconnection. Helpline: 19121.",
+        sender="CP-DISCOM",
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS, (
+        f"DISCOM header failed: {result.details}"
+    )
+    assert result.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER, (
+        f"CP-DISCOM must be OFFICIAL_TRAI_HEADER, got {result.sender_category}"
+    )
+    assert result.risk_score <= 10.0, (
+        f"DISCOM official header must have risk_score <= 10, got {result.risk_score}"
+    )
+    assert result.is_spoofed_header is False
+    assert "GOVERNMENT_EMERGENCY_WHITELISTED" in result.flags
+
+
+# ---------------------------------------------------------------------------
+# Test 19 — India Post Official TRAI Header (CP-IPPOST)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_india_post_ippost_official_header() -> None:
+    """
+    CP-IPPOST (India Post) must be verified as OFFICIAL_TRAI_HEADER with
+    risk_score <= 10 and GOVERNMENT_EMERGENCY_WHITELISTED flag.
+    """
+    req = _make_request(
+        content="India Post: Your Speed Post EMS ED123456789IN has been dispatched "
+                "and is expected to be delivered by 04-Oct-2026. "
+                "Track at indiapost.gov.in.",
+        sender="CP-IPPOST",
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS, (
+        f"IPPOST header failed: {result.details}"
+    )
+    assert result.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER, (
+        f"CP-IPPOST must be OFFICIAL_TRAI_HEADER, got {result.sender_category}"
+    )
+    assert result.risk_score <= 10.0, (
+        f"India Post official header must have risk_score <= 10, got {result.risk_score}"
+    )
+    assert result.is_spoofed_header is False
+    assert "VERIFIED_TRAI_DLT_SENDER_HEADER" in result.flags
+    assert "GOVERNMENT_EMERGENCY_WHITELISTED" in result.flags
+
+
+# ---------------------------------------------------------------------------
+# Test 20 — BlueDart Official TRAI Header (CP-BLDART)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_bluedart_official_header() -> None:
+    """
+    CP-BLDART (BlueDart Express) must be verified as OFFICIAL_TRAI_HEADER
+    with risk_score <= 10.
+    """
+    req = _make_request(
+        content="BlueDart: Your shipment #BD7823401 is out for delivery today. "
+                "Estimated delivery 2 PM \u2013 6 PM. For assistance call 1860-233-1234.",
+        sender="CP-BLDART",
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS, (
+        f"BLDART header failed: {result.details}"
+    )
+    assert result.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER, (
+        f"CP-BLDART must be OFFICIAL_TRAI_HEADER, got {result.sender_category}"
+    )
+    assert result.risk_score <= 10.0, (
+        f"BlueDart official header must have risk_score <= 10, got {result.risk_score}"
+    )
+    assert result.is_spoofed_header is False
+    assert "VERIFIED_TRAI_DLT_SENDER_HEADER" in result.flags
+    assert "GOVERNMENT_EMERGENCY_WHITELISTED" in result.flags
+
+
+# ---------------------------------------------------------------------------
+# Test 21 — Non-Whitelisted DISCOM Header from 10-Digit GSM (Scam Escalation)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_discom_scam_from_gsm_number() -> None:
+    """
+    A DISCOM-themed message (electricity disconnection threat) arriving from a
+    10-digit personal GSM number (not a registered TRAI DLT header) must
+    escalate to HIGH risk (>= 85) with PERSONAL_GSM category.
+
+    Fraudsters commonly impersonate electricity companies to demand immediate
+    payment and avoid detection \u2014 this test ensures such messages are caught.
+    """
+    req = _make_request(
+        content="BESCOM: Your electricity supply will be disconnected today at 5 PM "
+                "due to non-payment of Rs.2,300. Pay immediately at http://bescom-bill.online "
+                "or call 9988776655.",
+        sender="9988776655",  # personal GSM \u2014 NOT a TRAI DLT header
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS, (
+        f"DISCOM GSM scam test failed: {result.details}"
+    )
+    assert result.sender_category == SenderCategoryEnum.PERSONAL_GSM, (
+        f"Expected PERSONAL_GSM for GSM sender, got {result.sender_category}"
+    )
+    assert result.risk_score >= 85.0, (
+        f"DISCOM impersonation from GSM must have risk_score >= 85, got {result.risk_score}"
+    )
+    assert "COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM" in result.flags or (
+        result.brand_claimed is not None
+    ), "Electricity DISCOM impersonation from GSM must identify the spoofed entity."
+
+
+# ---------------------------------------------------------------------------
+# Test 22 — UPPCL Scam from Personal GSM (Non-Whitelisted Escalation)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sender_agent_uppcl_scam_from_gsm_number() -> None:
+    """
+    A UPPCL-themed message arriving from a 10-digit GSM number must be flagged
+    as PERSONAL_GSM with HIGH risk. UPPCL only communicates via official TRAI
+    DLT headers (e.g. VK-UPPCLS), never from personal mobile numbers.
+    """
+    req = _make_request(
+        content="UPPCL Notice: Your electricity meter will be disconnected tonight. "
+                "Immediate payment of Rs.1,800 required. Call helpline: 9123456780.",
+        sender="9123456780",  # personal GSM
+    )
+    result: SenderAgentResult = await analyze_sender(req)
+
+    assert result.status == AgentStatusEnum.SUCCESS
+    assert result.sender_category == SenderCategoryEnum.PERSONAL_GSM, (
+        f"UPPCL scam via GSM must be PERSONAL_GSM, got {result.sender_category}"
+    )
+    assert result.risk_score >= 85.0, (
+        f"Expected risk_score >= 85, got {result.risk_score}"
+    )
+    assert result.brand_claimed is not None, (
+        "brand_claimed must identify the impersonated electricity provider."
+    )

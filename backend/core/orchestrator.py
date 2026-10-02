@@ -19,7 +19,8 @@ from shared.models import (
     SenderAgentResult,
     IntentAgentResult,
     UpiAgentResult,
-    AgentStatusEnum
+    AgentStatusEnum,
+    ChannelEnum
 )
 from agents.url_agent import analyze_url
 from agents.sender_agent import analyze_sender
@@ -33,6 +34,45 @@ logger = logging.getLogger("phishlens.orchestrator")
 TIMEOUT_SECONDS = 3.5
 URL_REGEX = re.compile(r'https?://[^\s<>"]+')  # URL extraction
 UPI_VPA_REGEX = re.compile(r'\b[a-zA-Z0-9.\-_]{1,256}@[a-zA-Z0-9]{2,20}\b')  # UPI VPA detection
+
+URL_STANDALONE_REGEX = re.compile(
+    r'^(?:https?://|www\.)[^\s/$.?#].[^\s]*$',
+    re.IGNORECASE
+)
+DOMAIN_STANDALONE_REGEX = re.compile(
+    r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?:/[^\s]*)?$',
+    re.IGNORECASE
+)
+UPI_STANDALONE_REGEX = re.compile(
+    r'^(?:upi://pay\?[^\s]+|[a-zA-Z0-9.\-_]{1,256}@[a-zA-Z0-9]{2,20})$',
+    re.IGNORECASE
+)
+
+
+def classify_input_type(content: str) -> str:
+    """
+    Auto-classifies free-text input into 'web_url', 'upi_handle', or 'text_message'
+    per FR-1 & FR-2 specifications.
+    """
+    if not content:
+        return "text_message"
+
+    text = content.strip()
+
+    # Check standalone UPI VPA or upi:// payment URI
+    if UPI_STANDALONE_REGEX.match(text):
+        return "upi_handle"
+
+    # Check standalone URL with explicit scheme or www.
+    if URL_STANDALONE_REGEX.match(text):
+        return "web_url"
+
+    # Check single-token domain format e.g. "sbi-kyc-verify.top" or "google.com/path"
+    if " " not in text and "\n" not in text and DOMAIN_STANDALONE_REGEX.match(text):
+        if "@" not in text:
+            return "web_url"
+
+    return "text_message"
 
 
 async def safe_url(req: ScanRequest) -> UrlAgentResult:
@@ -132,16 +172,34 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
     with 3.5s SLA supervisor, delegates synthesis to Avika's scoring engine,
     and logs to SQLite audit DB.
     """
-    # Step 1: URL Pre-Extraction Fallback
-    if req.extracted_url is None:
-        url_match = URL_REGEX.search(req.content)
-        if url_match:
-            req.extracted_url = url_match.group(0)
+    # Step 0: Input Type Auto-Detection (FR-1 & FR-2)
+    detected_type = classify_input_type(req.content)
+    req.input_type = detected_type
+    if req.metadata is None:
+        req.metadata = {}
+    req.metadata["input_type"] = detected_type
+
+    if detected_type == "web_url":
+        if req.extracted_url is None:
+            stripped = req.content.strip()
+            req.extracted_url = stripped if stripped.startswith(("http://", "https://")) else f"https://{stripped}"
+        if req.channel in (ChannelEnum.SMS, ChannelEnum.UNKNOWN):
+            req.channel = ChannelEnum.WEB_URL
+    elif detected_type == "upi_handle":
+        if req.channel in (ChannelEnum.SMS, ChannelEnum.UNKNOWN):
+            req.channel = ChannelEnum.UPI_HANDLE
+    else:
+        # Step 1: URL Pre-Extraction Fallback for general text messages
+        if req.extracted_url is None:
+            url_match = URL_REGEX.search(req.content)
+            if url_match:
+                req.extracted_url = url_match.group(0)
 
     # Step 1b: Determine whether to run the UPI agent
-    # Only activate if a UPI VPA pattern (@psp) is detected in content or sender.
+    # Activate if classified as upi_handle OR a UPI VPA pattern (@psp) is detected in content/sender.
     has_upi_signal = bool(
-        UPI_VPA_REGEX.search(req.content)
+        detected_type == "upi_handle"
+        or UPI_VPA_REGEX.search(req.content)
         or (req.sender and UPI_VPA_REGEX.search(req.sender))
     )
 
@@ -167,6 +225,7 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
 
     # Step 3: Synthesis Delegation
     response: ScanResponse = compute_score(req, url_r, sender_r, intent_r, upi_r)
+    response.detected_input_type = detected_type
 
     # Step 4: Asynchronous Audit Logging (non-blocking)
     try:

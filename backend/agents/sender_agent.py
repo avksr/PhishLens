@@ -43,6 +43,16 @@ from shared.models import (
     SenderAgentResult,
     SenderCategoryEnum,
 )
+from agents.email_agent import analyze_email
+
+# ---------------------------------------------------------------------------
+# Optional phonenumbers Import with Graceful Fallback
+# ---------------------------------------------------------------------------
+try:
+    import phonenumbers
+    _HAS_PHONENUMBERS = True
+except ImportError:
+    _HAS_PHONENUMBERS = False
 
 # ---------------------------------------------------------------------------
 # Constants & Pre-compiled Patterns
@@ -61,6 +71,16 @@ _CIRCLE_PREFIX_REGISTRY_PATH: Path = (
 # Official TRAI DLT header format: <2-letter operator>-<6-letter entity code>
 # Examples: VM-SBIINB, AX-HDFCBK, AD-ICICIB, VK-PNBSMS
 _TRAI_HEADER_RE = re.compile(r"^([A-Z]{2})-([A-Z]{6})$")
+
+# TRAI 140-series promotional telemarketing numbers (e.g. 140XXXXXXX)
+_TRAI_140_RE = re.compile(r"^(?:\+91|91)?(140\d{7})$")
+
+# TRAI 160-series transactional / service numbers (e.g. 160XXXXXXX)
+_TRAI_160_RE = re.compile(r"^(?:\+91|91)?(160\d{7})$")
+
+# Toll-free 1800 series
+_TOLL_FREE_RE = re.compile(r"^(?:\+91|91)?(1800\d{6,7})$")
+
 
 # TRAI-like header pattern that allows digit-substituted entity codes.
 # e.g. VM-SB1INB (where '1' is substituted for 'I') — used in fuzzy spoof detection.
@@ -132,10 +152,18 @@ _GOVT_KEYWORDS: List[Tuple[str, str]] = [
     ("power disconnection", "Electricity Provider"),
     ("Power disconnection", "Electricity Provider"),
     ("electricity supply", "Electricity Provider"),
+    ("electricity meter", "Electricity Provider"),
+    ("Electricity meter", "Electricity Provider"),
+    ("electricity supply will be disconnected", "Electricity Provider"),
     ("bijli", "Electricity Provider"),
     ("MSEDCL", "MSEDCL (Maharashtra Electricity)"),
     ("BESCOM", "BESCOM (Bangalore Electricity)"),
     ("TNEB", "TNEB (Tamil Nadu Electricity)"),
+    ("UPPCL", "UPPCL (Uttar Pradesh Electricity)"),
+    ("DISCOM", "Electricity DISCOM"),
+    ("India Post", "India Post"),
+    ("Speed Post", "India Post"),
+    ("BlueDart", "BlueDart Express"),
     ("Challan", "Government / Traffic Authority"),
     ("GSTN", "GSTN (GST Network)"),
     ("EPF", "EPFO"),
@@ -294,6 +322,15 @@ _GOVT_EMERGENCY_ENTITY_CODES: Set[str] = {
     "MSEPCL",  # MSEDCL (Maharashtra Electricity)
     "BESCOM",  # BESCOM (Bangalore Electricity)
     "TNEBSM",  # TNEB (Tamil Nadu Electricity)
+    "UPPCLS",  # UPPCL (Uttar Pradesh Power Corporation)
+    "DISCOM",  # Generic DISCOM (Electricity Distribution Companies)
+    "IPPOST",  # India Post
+    "BLDART",  # BlueDart Express (registered courier partner)
+    "DELHIV",  # Delhivery Courier
+    "NDRFIN",  # National Disaster Response Force (NDRF)
+    "POLICN",  # National Police DLT (NCRB / MHA)
+    "CYBERC",  # I4C National Cyber Crime Reporting Portal
+    "DOTIND",  # Department of Telecommunications (Sanchar Saathi)
 }
 
 # ---------------------------------------------------------------------------
@@ -429,6 +466,44 @@ def _fuzzy_entity_code_lookup(entity_code: str) -> Optional[str]:
     return None
 
 
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculate Levenshtein edit distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+
+def _find_near_miss_entity_code(entity_code: str) -> Optional[Tuple[str, int]]:
+    """
+    Search _ALL_ENTITY_CODES for a near-miss code with Levenshtein distance 1 or 2.
+    Catches spoofed headers like 'VM-SBIINM' (1 edit from 'VM-SBIINB') or
+    'AX-HDFCBX' (1 edit from 'AX-HDFCBK').
+    Returns (closest_registered_code, distance) if found, else None.
+    """
+    best_match: Optional[str] = None
+    min_dist = 99
+    for registered_code in _ALL_ENTITY_CODES:
+        dist = _levenshtein_distance(entity_code, registered_code)
+        if 0 < dist <= 2 and dist < min_dist:
+            min_dist = dist
+            best_match = registered_code
+    if best_match:
+        return best_match, min_dist
+    return None
+
+
+
 def _extract_phone_from_content(content: str) -> Optional[str]:
     """
     Scan message body for an embedded phone number.
@@ -466,21 +541,23 @@ def _clamp_score(score: float) -> float:
 # ---------------------------------------------------------------------------
 
 # Pre-compiled patterns for entity extraction from free-form message text.
-# Indian phone number: optional +91/91 country prefix (with optional space/dash),
-# then 10 digits starting with 6–9, allowing optional spaces or dashes between
-# digit groups (e.g. "+91 98765 43210", "987-654-3210", "9876543210").
-# The capture group is deliberately wide; digits are normalised post-match.
+# Indian phone number: optional +91/91 country prefix with optional space/dash,
+# then exactly 10 digits starting with 6–9.  The PRD FR-2 canonical pattern is:
+#   (?:\+?91[\s\-]?)?([6-9]\d{9})\b
+# We allow an optional trailing word-boundary to prevent partial matches.
 _ENTITY_PHONE_RE = re.compile(
-    r"(?:(?:\+91|91)[\s\-]?)?([6-9][0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9])(?![0-9])"
+    r"(?:\+?91[\s\-]?)?([6-9]\d{9})\b"
 )
 
 # TRAI DLT header: exactly 2 uppercase letters, a hyphen, 6 uppercase letters.
+# PRD FR-2 canonical pattern: \b([A-Z]{2})-([A-Z]{6})\b
 _ENTITY_TRAI_HEADER_RE = re.compile(r"\b([A-Z]{2}-[A-Z]{6})\b")
 
 # Currency amounts: Rs / INR / ₹ followed by optional space, then a number
 # (supports commas, decimals, e.g. Rs 1,499 / INR 20000 / ₹2.50).
+# PRD FR-2 canonical pattern: (?:Rs\.?\s*|INR\s*|₹\s*)([\d,]+(?:\.\d{1,2})?)
 _ENTITY_CURRENCY_RE = re.compile(
-    r"(?:Rs\.?|INR|\u20b9)\s*([\d,]+(?:\.\d{1,2})?)",
+    r"(?:Rs\.?\s*|INR\s*|\u20b9\s*)([\d,]+(?:\.\d{1,2})?)",
     re.IGNORECASE,
 )
 
@@ -627,9 +704,40 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 normalised_sender=None,
             )
 
+    # ── Email / Message Analysis Check ──
+    is_email_input = bool(
+        (req.channel and req.channel.value == "email")
+        or (raw_sender and "@" in raw_sender)
+        or (req.metadata and ("headers" in req.metadata or "email_headers" in req.metadata))
+        or re.search(r"^(?:from|subject|reply-to):", req.content, re.IGNORECASE | re.MULTILINE)
+    )
+    if is_email_input:
+        email_res = analyze_email(req)
+        if email_res.get("is_email"):
+            category = (
+                SenderCategoryEnum.LOOKALIKE_HEADER
+                if email_res.get("display_name_spoofed") or email_res.get("has_reply_to_mismatch")
+                else (SenderCategoryEnum.OFFICIAL_TRAI_HEADER if email_res.get("risk_score", 0) <= 20 else SenderCategoryEnum.UNKNOWN)
+            )
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=category,
+                risk_score=_clamp_score(email_res["risk_score"]),
+                is_spoofed_header=bool(email_res.get("display_name_spoofed") or email_res.get("has_reply_to_mismatch")),
+                flags=email_res.get("flags", []),
+                details=email_res.get("details", ""),
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender or email_res.get("from_header"),
+                normalised_sender=email_res.get("from_domain"),
+                email_analysis=email_res,
+                provider="EMAIL_ANALYZER_ENGINE",
+            )
+
     # ------------------------------------------------------------------
     # Step 2: TRAI DLT Certified Header Validation (O(1) in-memory lookup)
     # ------------------------------------------------------------------
+
     trai_match = _TRAI_HEADER_RE.match(normalised)
     if trai_match:
         operator_prefix = trai_match.group(1)   # e.g. "VM"
@@ -766,6 +874,32 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 normalised_sender=normalised,
             )
 
+        # ── Dynamic Levenshtein Near-Miss Header Spoofing (e.g. VM-SBIINM mimicking VM-SBIINB) ──
+        near_miss = _find_near_miss_entity_code(entity_code)
+        if near_miss:
+            near_code, dist = near_miss
+            near_entry = _REGISTRY[near_code]
+            flags.append("CRITICAL_NEAR_MISS_HEADER_SPOOF")
+            flags.append("UNVERIFIED_LOOKALIKE_HEADER")
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=SenderCategoryEnum.LOOKALIKE_HEADER,
+                risk_score=_clamp_score(88.0),
+                is_spoofed_header=True,
+                brand_claimed=near_entry.get("brand_name"),
+                flags=flags,
+                details=(
+                    f"The sender ID '{normalised}' differs by only {dist} letter(s) from "
+                    f"the official '{near_entry['brand_name']}' header ({near_code}). "
+                    "Scammers register near-miss alphabetic headers to deceive recipients "
+                    "into trusting a spoofed sender."
+                ),
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender,
+                normalised_sender=normalised,
+            )
+
         # ── Check operator prefix: valid TRAI operator but unregistered entity ──
         if prefix_valid and operator_prefix in _VALID_OPERATOR_PREFIXES:
             flags.append("VALID_OPERATOR_PREFIX_BUT_UNKNOWN_ENTITY")
@@ -774,6 +908,7 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             flags.append("UNREGISTERED_TRAI_CIRCLE_PREFIX")
         flags.append("UNREGISTERED_TRAI_FORMAT_HEADER")
         # Falls through to lookalike detection below with elevated risk.
+
 
     # ------------------------------------------------------------------
     # Step 2.5: TRAI-Like Header With Digit Substitutions (Fuzzy Spoof)
@@ -811,28 +946,134 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             )
 
     # ------------------------------------------------------------------
-    # Step 3: Personal GSM Bank Impersonation Detection
+    # Step 3: Phone Number Classification (TRAI 140, 160, GSM, Toll-Free)
     # ------------------------------------------------------------------
+    # ── Check TRAI 140-series promotional telemarketing ──
+    m140 = _TRAI_140_RE.match(normalised)
+    if m140:
+        clean_num = m140.group(1)
+        phone_type = "PROMOTIONAL_140"
+        brand = _detect_official_keyword(req.content)
+        is_scam_pattern = bool(
+            brand or re.search(r"\b(kyc|blocked|suspended|otp|urgent|verify|electricity|bill|pan|aadhaar|debit|credit|account)\b", req.content, re.I)
+        )
+        if is_scam_pattern:
+            flags.append("PROMOTIONAL_140_FINANCIAL_SCAM")
+            flags.append("TRAI_140_REGULATORY_VIOLATION")
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=SenderCategoryEnum.PERSONAL_GSM,
+                risk_score=_clamp_score(90.0),
+                phone_type=phone_type,
+                brand_claimed=brand,
+                flags=flags,
+                details=(
+                    f"Sender '{clean_num}' is a TRAI 140-series promotional telemarketing number. "
+                    "Under TRAI regulations, 140-series numbers are strictly prohibited from transmitting "
+                    "banking, KYC, account suspension, or financial transaction requests. "
+                    "This message is a confirmed regulatory violation and high-probability scam."
+                ),
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender,
+                normalised_sender=clean_num,
+            )
+        else:
+            flags.append("PROMOTIONAL_140_SERIES")
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=SenderCategoryEnum.PERSONAL_GSM,
+                risk_score=_clamp_score(35.0),
+                phone_type=phone_type,
+                flags=flags,
+                details=f"Sender '{clean_num}' is a TRAI 140-series commercial marketing number.",
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender,
+                normalised_sender=clean_num,
+            )
+
+    # ── Check TRAI 160-series transactional / service ──
+    m160 = _TRAI_160_RE.match(normalised)
+    if m160:
+        clean_num = m160.group(1)
+        phone_type = "SERVICE_160"
+        flags.append("TRAI_160_SERVICE_SERIES")
+        flags.append("VERIFIED_TRANSACTIONAL_SENDER")
+        latency_ms = (time.perf_counter() - t_start) * 1000.0
+        return SenderAgentResult(
+            status=AgentStatusEnum.SUCCESS,
+            sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+            risk_score=_clamp_score(10.0),
+            phone_type=phone_type,
+            flags=flags,
+            details=(
+                f"Sender '{clean_num}' originates from TRAI's official 160-series, "
+                "which is mandated for legitimate transactional and service communication."
+            ),
+            latency_ms=round(latency_ms, 3),
+            raw_sender=raw_sender,
+            normalised_sender=clean_num,
+        )
+
+    # ── Check Toll-free 1800 ──
+    m_tf = _TOLL_FREE_RE.match(normalised)
+    if m_tf:
+        clean_num = m_tf.group(1)
+        phone_type = "TOLL_FREE"
+        flags.append("TOLL_FREE_SERIES")
+        latency_ms = (time.perf_counter() - t_start) * 1000.0
+        return SenderAgentResult(
+            status=AgentStatusEnum.SUCCESS,
+            sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+            risk_score=_clamp_score(15.0),
+            phone_type=phone_type,
+            flags=flags,
+            details=f"Sender '{clean_num}' is a verified toll-free helpline number.",
+            latency_ms=round(latency_ms, 3),
+            raw_sender=raw_sender,
+            normalised_sender=clean_num,
+        )
+
+    # ── Check Standard Indian GSM Mobile ──
     if _INDIAN_GSM_RE.match(normalised):
+        phone_type = "MOBILE"
+        # Validate format using phonenumbers if present
+        if _HAS_PHONENUMBERS:
+            try:
+                p_parsed = phonenumbers.parse(normalised, "IN")
+                if not phonenumbers.is_valid_number(p_parsed):
+                    flags.append("INVALID_PHONE_NUMBER_FORMAT")
+            except Exception:
+                pass
+
         brand = _detect_official_keyword(req.content)
         if brand:
             flags.append("COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM")
             flags.append("MISSING_TRAI_OFFICIAL_HEADER")
+            # Mask the phone number for citizen-friendly display: show prefix + XXX
+            masked_number = (
+                "+91-" + normalised[:5] + "XXXXX"
+                if len(normalised) == 10
+                else normalised
+            )
             latency_ms = (time.perf_counter() - t_start) * 1000.0
             return SenderAgentResult(
                 status=AgentStatusEnum.SUCCESS,
                 sender_category=SenderCategoryEnum.PERSONAL_GSM,
                 risk_score=_clamp_score(85.0),
+                phone_type=phone_type,
                 brand_claimed=brand,
                 is_spoofed_header=False,
                 flags=flags,
                 details=(
-                    f"This message is sent from a personal mobile number ({normalised}) "
-                    f"but claims to be from '{brand}'. "
+                    f"Sender is a personal 10-digit mobile number ({masked_number}) "
+                    f"claiming to represent '{brand}'. "
                     "In India, all banks and government agencies are required by TRAI "
-                    "to send messages using a registered letter-based sender ID (like VM-SBIINB), "
-                    "never from a personal 10-digit phone number. "
-                    "This is a strong indicator of fraud."
+                    "to send messages using a registered alphabetic sender ID (e.g. VM-SBIINB), "
+                    "never from a personal mobile phone number. "
+                    "Receiving such a message from a private number is a strong warning sign of fraud — "
+                    "do not click any links or call back the number."
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
@@ -845,6 +1086,7 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             status=AgentStatusEnum.SUCCESS,
             sender_category=SenderCategoryEnum.PERSONAL_GSM,
             risk_score=_clamp_score(40.0),
+            phone_type=phone_type,
             flags=flags,
             details=(
                 f"Sender is a personal Indian mobile number ({normalised}). "
@@ -856,6 +1098,7 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             raw_sender=raw_sender,
             normalised_sender=normalised,
         )
+
 
     # ------------------------------------------------------------------
     # Step 4: Lookalike / Spoofed Header Detection
