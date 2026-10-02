@@ -407,16 +407,33 @@ def build_evidence_list(
             "tool": "sender_agent",
             "status": "ERROR",
             "finding": "Sender verification tool could not verify header (timeout/error)",
-            "raw_result": f"error={sender_r.details or 'Timeout'}"
+            "raw_result": f"error={sender_r.details or 'Timeout'}",
+            "provider": sender_r.provider or "TRAI_DLT_REGISTRY"
         })
     else:
         cat_str = sender_r.sender_category.value if hasattr(sender_r.sender_category, "value") else str(sender_r.sender_category)
         flags_str = ", ".join(sender_r.flags) if sender_r.flags else "NORMAL"
+        phone_extra = f", type={sender_r.phone_type}" if sender_r.phone_type else ""
         evidence.append({
             "tool": "sender_agent",
             "status": "SUCCESS",
-            "finding": f"Sender {sender_r.sender_analyzed or 'unspecified'} classified as {cat_str} ({flags_str})",
-            "raw_result": f"risk={sender_r.risk_score:.0f}, category={cat_str}, brand_claimed={sender_r.brand_claimed or 'None'}"
+            "finding": f"Sender {sender_r.sender_analyzed or 'unspecified'} classified as {cat_str} ({flags_str}){phone_extra}",
+            "raw_result": f"risk={sender_r.risk_score:.0f}, category={cat_str}, brand_claimed={sender_r.brand_claimed or 'None'}",
+            "provider": sender_r.provider or "TRAI_DLT_REGISTRY"
+        })
+
+    # Dedicated Email Security Tool Result if email analysis performed
+    if sender_r.email_analysis:
+        ea = sender_r.email_analysis
+        evidence.append({
+            "tool": "email_agent",
+            "status": "SUCCESS" if ea.get("risk_score", 0) <= 25 else "FLAGGED",
+            "finding": (
+                f"Email Security: SPF={ea.get('spf_status')}, DKIM={ea.get('dkim_status')}, "
+                f"ReplyToMismatch={ea.get('has_reply_to_mismatch')}, DisplayNameSpoofed={ea.get('display_name_spoofed')}"
+            ),
+            "raw_result": ea,
+            "provider": ea.get("provider", "EMAIL_ANALYZER_ENGINE")
         })
 
     # Intent Agent Tool Result
@@ -444,25 +461,52 @@ def build_evidence_list(
                 "tool": "upi_agent",
                 "status": "SKIPPED",
                 "finding": "No UPI VPA handle detected in message",
-                "raw_result": "vpa=None, status=SKIPPED"
+                "raw_result": "vpa=None, status=SKIPPED",
+                "provider": upi_r.provider or "SANDBOX_MOCK"
             })
         elif upi_r.status == "ERROR":
             evidence.append({
                 "tool": "upi_agent",
                 "status": "ERROR",
                 "finding": "UPI VPA verification tool could not complete check",
-                "raw_result": f"error={upi_r.details or 'Timeout'}"
+                "raw_result": f"error={upi_r.details or 'Timeout'}",
+                "provider": upi_r.provider or "SANDBOX_MOCK"
             })
         else:
             flags_str = ", ".join(upi_r.flags) if upi_r.flags else "VALID_PSP"
+            name_str = f", registered_name='{upi_r.registered_name}'" if upi_r.registered_name else ""
+            match_str = f", match={upi_r.name_match_status}" if upi_r.name_match_status else ""
             evidence.append({
                 "tool": "upi_agent",
                 "status": "SUCCESS",
-                "finding": f"UPI VPA '{upi_r.detected_vpa}' ({flags_str})",
-                "raw_result": f"risk={upi_r.risk_score:.0f}, vpa={upi_r.detected_vpa}, spoofed={upi_r.is_spoofed_merchant}"
+                "finding": f"UPI VPA '{upi_r.detected_vpa}' ({flags_str}){name_str}{match_str}",
+                "raw_result": f"risk={upi_r.risk_score:.0f}, vpa={upi_r.detected_vpa}, spoofed={upi_r.is_spoofed_merchant}, provider={upi_r.provider or 'SANDBOX_MOCK'}",
+                "provider": upi_r.provider or "SANDBOX_MOCK"
             })
 
+            # Bank Identity Agent Tool Result (Avni's Bank Identity & rapidfuzz Name Match)
+            if upi_r.registered_name:
+                evidence.append({
+                    "tool": "bank_identity_agent",
+                    "status": "FLAGGED" if upi_r.name_match_status == "MISMATCH" else "VERIFIED",
+                    "finding": (
+                        f"Bank Identity: VPA registered to '{upi_r.registered_name}'. "
+                        f"Claimed: '{upi_r.claimed_name or 'Unspecified'}'. "
+                        f"Name match: {upi_r.name_match_status} ({upi_r.name_match_score}%)."
+                    ),
+                    "raw_result": {
+                        "vpa": upi_r.detected_vpa,
+                        "registered_name": upi_r.registered_name,
+                        "claimed_name": upi_r.claimed_name,
+                        "name_match_score": upi_r.name_match_score,
+                        "name_match_status": upi_r.name_match_status,
+                        "provider": upi_r.provider or "SANDBOX_MOCK",
+                    },
+                    "provider": upi_r.provider or "SANDBOX_MOCK"
+                })
+
     return evidence
+
 
 
 def generate_recommended_action(

@@ -36,6 +36,56 @@ from shared.models import (
     ScanRequest,
     UpiAgentResult,
 )
+from agents.bank_identity_agent import (
+    verify_bank_identity,
+    compute_fuzzy_name_match,
+)
+
+# ---------------------------------------------------------------------------
+# Canonical Brand Portals for VPA Typosquatting Detection
+# ---------------------------------------------------------------------------
+_CANONICAL_PORTAL_NAMES = [
+    "onlinesbi", "sbibank", "hdfcbank", "icicibank", "axisbank",
+    "kotakbank", "pnbindia", "paytm", "phonepe", "bhimupi",
+    "sbicard", "billdesk", "razorpay"
+]
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+
+def _detect_vpa_typosquatting(local_part: str) -> Optional[Tuple[str, float]]:
+    """
+    Detect if localpart typosquats a major banking or payment portal.
+    e.g. 'onllnesbi' vs 'onlinesbi' or 'sblbank' vs 'sbibank'.
+    Returns (matched_brand, similarity_score) if detected, else None.
+    """
+    clean_lp = re.sub(r"[-._0-9]", "", local_part.lower())
+    if not clean_lp or len(clean_lp) < 4:
+        return None
+    for brand in _CANONICAL_PORTAL_NAMES:
+        if clean_lp != brand:
+            dist = _levenshtein(clean_lp, brand)
+            max_l = max(len(clean_lp), len(brand))
+            ratio = (1.0 - (dist / max_l)) * 100.0
+            if (dist <= 2 and ratio >= 75.0) or compute_fuzzy_name_match(clean_lp, brand) >= 82.0:
+                return brand, max(ratio, 85.0)
+    return None
+
 
 # ---------------------------------------------------------------------------
 # UPI VPA Regex
@@ -538,11 +588,61 @@ def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, value))
 
 
+async def _enrich_with_bank_identity(
+    res: UpiAgentResult,
+    req: ScanRequest,
+    claimed_hint: Optional[str] = None
+) -> UpiAgentResult:
+    """Enrich UpiAgentResult with registered name, name match score, and sandbox provider."""
+    if not res.detected_vpa:
+        return res
+
+    claimed = (
+        (req.metadata.get("claimed_identity") if req.metadata else None)
+        or claimed_hint
+        or res.target_entity
+        or _get_brand_from_localpart(res.detected_vpa.split("@")[0])
+    )
+
+    try:
+        identity_info = await verify_bank_identity(res.detected_vpa, claimed)
+        verif = identity_info["verification"]
+        res.registered_name = verif.registered_name
+        res.claimed_name = claimed
+        res.name_match_score = identity_info["name_match_score"]
+        res.name_match_status = identity_info["name_match_status"]
+        res.provider = identity_info["provider"]
+
+        for f in identity_info["flags"]:
+            if f not in res.flags:
+                res.flags.append(f)
+
+        if identity_info["name_match_status"] == "MISMATCH":
+            res.is_spoofed_merchant = True
+            res.risk_score = _clamp(max(res.risk_score, 75.0))
+            res.details += (
+                f"\n\n[Simulated Verification - {identity_info['provider']}] "
+                f"Bank identity mismatch: Claimed '{claimed or 'Official Entity'}' but registered to "
+                f"'{verif.registered_name}' ({verif.bank_name}). Match score: {identity_info['name_match_score']}%."
+            )
+        elif identity_info["name_match_status"] == "MATCH":
+            res.details += (
+                f"\n\n[Simulated Verification - {identity_info['provider']}] "
+                f"Bank identity verified: Account registered to '{verif.registered_name}' ({verif.bank_name}). "
+                f"Match score: {identity_info['name_match_score']}%."
+            )
+    except Exception:
+        res.provider = "SANDBOX_MOCK"
+
+    return res
+
+
 # ---------------------------------------------------------------------------
 # Main Agent Function
 # ---------------------------------------------------------------------------
 
 async def analyze_upi(req: ScanRequest) -> UpiAgentResult:
+
     """
     UPI VPA Deception Detection Agent entry point.
 
@@ -606,7 +706,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     f" The payment amount shown is ₹{amount}." if amount else ""
                 )
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
-                return UpiAgentResult(
+                raw_res = UpiAgentResult(
                     status=AgentStatusEnum.SUCCESS,
                     risk_score=_clamp(dl_risk),
                     detected_vpa=vpa_from_link,
@@ -627,6 +727,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     ),
                     latency_ms=round(latency_ms, 3),
                 )
+                return await _enrich_with_bank_identity(raw_res, req, institution)
 
         # ── Deep-link Check B: Brand cross-validation (local-part vs PSP) ──
         brand_in_dl_local = _get_brand_from_localpart(dl_local)
@@ -639,7 +740,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 psp_owner = psp_entry_dl.get("entity", dl_psp)
                 amount_note = f" Amount shown: ₹{amount}." if amount else ""
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
-                return UpiAgentResult(
+                raw_res = UpiAgentResult(
                     status=AgentStatusEnum.SUCCESS,
                     risk_score=_clamp(dl_risk),
                     detected_vpa=vpa_from_link,
@@ -657,6 +758,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     ),
                     latency_ms=round(latency_ms, 3),
                 )
+                return await _enrich_with_bank_identity(raw_res, req, brand_in_dl_local)
 
         # ── Deep-link Check C: Scam keywords in local-part ──
         kw_score_dl, kw_flags_dl = _score_localpart_scam_keywords(dl_local)
@@ -666,7 +768,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
             dl_risk += kw_score_dl
             amount_note = f" Amount shown: ₹{amount}." if amount else ""
             latency_ms = (time.perf_counter() - t_start) * 1000.0
-            return UpiAgentResult(
+            raw_res = UpiAgentResult(
                 status=AgentStatusEnum.SUCCESS,
                 risk_score=_clamp(dl_risk),
                 detected_vpa=vpa_from_link,
@@ -684,6 +786,8 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 ),
                 latency_ms=round(latency_ms, 3),
             )
+            return await _enrich_with_bank_identity(raw_res, req, payee_name)
+
 
         # Deep link found but no strong deceptive signal — note it and fall through.
         flags.append("UPI_DEEPLINK_DETECTED")
@@ -738,7 +842,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 # This is a very high-confidence deceptive signal — short-circuit.
                 candidate_score = _clamp(risk_score)
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
-                return UpiAgentResult(
+                raw_res = UpiAgentResult(
                     status=AgentStatusEnum.SUCCESS,
                     risk_score=candidate_score,
                     detected_vpa=vpa_full,
@@ -758,6 +862,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     ),
                     latency_ms=round(latency_ms, 3),
                 )
+                return await _enrich_with_bank_identity(raw_res, req, brand_in_local)
 
         # ── Check 3: Brand cross-validation ─────────────────────────────
         # Does the local-part claim Bank X while the PSP belongs to Bank Y?
@@ -770,7 +875,7 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                 psp_owner = psp_entry.get("entity", psp_handle)
                 candidate_score = _clamp(risk_score)
                 latency_ms = (time.perf_counter() - t_start) * 1000.0
-                return UpiAgentResult(
+                raw_res = UpiAgentResult(
                     status=AgentStatusEnum.SUCCESS,
                     risk_score=candidate_score,
                     detected_vpa=vpa_full,
@@ -791,6 +896,16 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     ),
                     latency_ms=round(latency_ms, 3),
                 )
+                return await _enrich_with_bank_identity(raw_res, req, brand_claimed_in_local)
+
+        # ── Check 3.5: VPA Typosquatting in Local-Part ───────────────────
+        typo_match = _detect_vpa_typosquatting(local_part)
+        if typo_match:
+            typo_brand, typo_sim = typo_match
+            candidate_flags.append("VPA_TYPOSQUATTING_DETECTED")
+            candidate_flags.append("DECEPTIVE_UPI_VPA_DETECTED")
+            risk_score += 45.0
+
 
         # ── Check 4: Scam keyword scoring in local-part ──────────────────
         kw_score, kw_flags = _score_localpart_scam_keywords(local_part)
@@ -886,4 +1001,6 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
 
     latency_ms = (time.perf_counter() - t_start) * 1000.0
     best_result.latency_ms = round(latency_ms, 3)
-    return best_result
+    return await _enrich_with_bank_identity(best_result, req)
+
+

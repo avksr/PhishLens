@@ -16,6 +16,8 @@ class EvidenceItem(BaseModel):
     status: str
     finding: str
     raw_result: Optional[Dict[str, Any]] = None
+    provider: Optional[str] = Field(default=None, description="Source provider or SANDBOX_MOCK for simulated checks")
+
 
 
 class PrdVerdictEnum(str, Enum):
@@ -130,6 +132,9 @@ class SenderAgentResult(BaseModel):
     # Added by Avni — sender_agent.py audit fields (optional, backward-compatible)
     raw_sender: Optional[str] = None
     normalised_sender: Optional[str] = None
+    phone_type: Optional[str] = Field(default=None, description="e.g. MOBILE, PROMOTIONAL_140, SERVICE_160, TOLL_FREE, LANDLINE, INVALID")
+    email_analysis: Optional[Dict[str, Any]] = Field(default=None, description="Detailed email header and pattern checks")
+    provider: Optional[str] = Field(default="TRAI_DLT_REGISTRY", description="Provider attribution or SANDBOX_MOCK")
 
 
 class IntentAgentResult(BaseModel):
@@ -153,6 +158,13 @@ class UpiAgentResult(BaseModel):
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
+    # Added by Avni — Bank Identity & Sandbox verification fields
+    registered_name: Optional[str] = Field(default=None, description="Official bank-registered name for VPA")
+    claimed_name: Optional[str] = Field(default=None, description="Claimed identity in message or payee name")
+    name_match_score: Optional[float] = Field(default=None, ge=0.0, le=100.0, description="Fuzzy name match score (0-100)")
+    name_match_status: Optional[str] = Field(default=None, description="MATCH, MISMATCH, or UNVERIFIED")
+    provider: Optional[str] = Field(default="SANDBOX_MOCK", description="Verification provider tag, e.g. SANDBOX_MOCK")
+
 
 
 # --- Composite Output Models ---
