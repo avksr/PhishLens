@@ -306,6 +306,11 @@ _GOVT_EMERGENCY_ENTITY_CODES: Set[str] = {
     "DISCOM",  # Generic DISCOM (Electricity Distribution Companies)
     "IPPOST",  # India Post
     "BLDART",  # BlueDart Express (registered courier partner)
+    "DELHIV",  # Delhivery Courier
+    "NDRFIN",  # National Disaster Response Force (NDRF)
+    "POLICN",  # National Police DLT (NCRB / MHA)
+    "CYBERC",  # I4C National Cyber Crime Reporting Portal
+    "DOTIND",  # Department of Telecommunications (Sanchar Saathi)
 }
 
 # ---------------------------------------------------------------------------
@@ -478,21 +483,23 @@ def _clamp_score(score: float) -> float:
 # ---------------------------------------------------------------------------
 
 # Pre-compiled patterns for entity extraction from free-form message text.
-# Indian phone number: optional +91/91 country prefix (with optional space/dash),
-# then 10 digits starting with 6–9, allowing optional spaces or dashes between
-# digit groups (e.g. "+91 98765 43210", "987-654-3210", "9876543210").
-# The capture group is deliberately wide; digits are normalised post-match.
+# Indian phone number: optional +91/91 country prefix with optional space/dash,
+# then exactly 10 digits starting with 6–9.  The PRD FR-2 canonical pattern is:
+#   (?:\+?91[\s\-]?)?([6-9]\d{9})\b
+# We allow an optional trailing word-boundary to prevent partial matches.
 _ENTITY_PHONE_RE = re.compile(
-    r"(?:(?:\+91|91)[\s\-]?)?([6-9][0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9][\s\-]?[0-9])(?![0-9])"
+    r"(?:\+?91[\s\-]?)?([6-9]\d{9})\b"
 )
 
 # TRAI DLT header: exactly 2 uppercase letters, a hyphen, 6 uppercase letters.
+# PRD FR-2 canonical pattern: \b([A-Z]{2})-([A-Z]{6})\b
 _ENTITY_TRAI_HEADER_RE = re.compile(r"\b([A-Z]{2}-[A-Z]{6})\b")
 
 # Currency amounts: Rs / INR / ₹ followed by optional space, then a number
 # (supports commas, decimals, e.g. Rs 1,499 / INR 20000 / ₹2.50).
+# PRD FR-2 canonical pattern: (?:Rs\.?\s*|INR\s*|₹\s*)([\d,]+(?:\.\d{1,2})?)
 _ENTITY_CURRENCY_RE = re.compile(
-    r"(?:Rs\.?|INR|\u20b9)\s*([\d,]+(?:\.\d{1,2})?)",
+    r"(?:Rs\.?\s*|INR\s*|\u20b9\s*)([\d,]+(?:\.\d{1,2})?)",
     re.IGNORECASE,
 )
 
@@ -830,6 +837,12 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
         if brand:
             flags.append("COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM")
             flags.append("MISSING_TRAI_OFFICIAL_HEADER")
+            # Mask the phone number for citizen-friendly display: show prefix + XXX
+            masked_number = (
+                "+91-" + normalised[:5] + "XXXXX"
+                if len(normalised) == 10
+                else normalised
+            )
             latency_ms = (time.perf_counter() - t_start) * 1000.0
             return SenderAgentResult(
                 status=AgentStatusEnum.SUCCESS,
@@ -839,12 +852,13 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 is_spoofed_header=False,
                 flags=flags,
                 details=(
-                    f"This message is sent from a personal mobile number ({normalised}) "
-                    f"but claims to be from '{brand}'. "
+                    f"Sender is a personal 10-digit mobile number ({masked_number}) "
+                    f"claiming to represent '{brand}'. "
                     "In India, all banks and government agencies are required by TRAI "
-                    "to send messages using a registered letter-based sender ID (like VM-SBIINB), "
-                    "never from a personal 10-digit phone number. "
-                    "This is a strong indicator of fraud."
+                    "to send messages using a registered alphabetic sender ID (e.g. VM-SBIINB), "
+                    "never from a personal mobile phone number. "
+                    "Receiving such a message from a private number is a strong warning sign of fraud — "
+                    "do not click any links or call back the number."
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,

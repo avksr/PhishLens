@@ -778,16 +778,16 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
                     target_entity=brand_claimed_in_local,
                     flags=candidate_flags,
                     details=(
-                        f"⚠️ इस UPI address में बैंक का नाम गलत तरीके से इस्तेमाल किया गया है! / "
-                        f"Misleading UPI address detected!\n\n"
-                        f"'{vpa_full}' में '{brand_claimed_in_local}' का नाम है, लेकिन "
+                        f"UPI handle '{vpa_full}' impersonates official '{brand_claimed_in_local}' "
+                        f"merchant on '{psp_owner}' payment service. "
+                        f"The address uses '{brand_claimed_in_local}' in the name before '@', "
+                        f"but '@{psp_handle}' actually belongs to '{psp_owner}' — "
+                        f"not to '{brand_claimed_in_local}'. The real '{brand_claimed_in_local}' "
+                        "would always use their own registered UPI handle — never one from a different bank or service. "
+                        "This is a classic impersonation scam.\n\n"
+                        f"[हिंदी] '{vpa_full}' में '{brand_claimed_in_local}' का नाम है, लेकिन "
                         f"'@{psp_handle}' वास्तव में '{psp_owner}' से संबंधित है, "
-                        f"'{brand_claimed_in_local}' से नहीं।\n\n"
-                        f"In plain English: The UPI address '{vpa_full}' uses the name of "
-                        f"'{brand_claimed_in_local}', but the '@{psp_handle}' part actually "
-                        f"belongs to '{psp_owner}'. The real '{brand_claimed_in_local}' would "
-                        f"always use their own registered UPI handle — never one from a "
-                        f"different bank or service. This is a classic impersonation scam."
+                        f"'{brand_claimed_in_local}' से नहीं। यह एक क्लासिक धोखाधड़ी का तरीका है।"
                     ),
                     latency_ms=round(latency_ms, 3),
                 )

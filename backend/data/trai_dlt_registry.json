@@ -2,7 +2,7 @@
   "_meta": {
     "description": "TRAI DLT Certified Sender Header Whitelist for PhishLens / ScamShield AI",
     "format": "principal_entity_code -> { brand_name, category, operator_prefixes }",
-    "last_updated": "2026-10-01",
+    "last_updated": "2026-10-02",
     "source": "TRAI DLT Platform (https://www.trai.gov.in/), public sender-header disclosures",
     "note": "Operator prefixes (VM, AX, AD, VK, JK, TM, BW, TA, AT, CP) are assigned by telecom operators. The 6-letter principal entity code uniquely identifies the registered brand."
   },
@@ -262,9 +262,19 @@
       "category": "Courier / Logistics",
       "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
     },
+    "DELHIV": {
+      "brand_name": "Delhivery Courier",
+      "category": "Courier / Logistics",
+      "operator_prefixes": ["VM", "AX", "AD", "VK", "JK", "TM", "BW", "TA", "AT", "CP"]
+    },
     "NDRFIN": {
       "brand_name": "National Disaster Response Force (NDRF)",
       "category": "Government / Emergency",
+      "operator_prefixes": ["VM", "AX", "AD", "CP", "VK", "JK", "TM", "BW", "TA", "AT"]
+    },
+    "POLICN": {
+      "brand_name": "National Police DLT (NCRB / MHA)",
+      "category": "Government / Law Enforcement",
       "operator_prefixes": ["VM", "AX", "AD", "CP", "VK", "JK", "TM", "BW", "TA", "AT"]
     },
     "CYBERC": {
