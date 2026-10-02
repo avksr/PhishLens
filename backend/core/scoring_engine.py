@@ -18,6 +18,12 @@ from shared.models import (
     SenderAgentResult,
     IntentAgentResult,
     UpiAgentResult,
+    BankVerificationResult,
+    OsintHistoryResult,
+    AiTextAgentResult,
+    VisionAnalysisResult,
+    DocumentFraudResult,
+    ModalityEnum,
     SynthesisBreakdown,
     AuditTrail,
     PrdVerdictEnum,
@@ -25,8 +31,11 @@ from shared.models import (
     ActionRequiredEnum,
     AgentStatusEnum,
     SenderCategoryEnum,
+    ConfidenceLevelEnum,
+    ClaimedVsVerifiedMatrix,
+    IdentityVerificationItem,
+    AgentLatencyBreakdown,
     DetectedIntentEnum,
-    ConfidenceLevelEnum
 )
 from core.verdict_utils import (
     generate_verdict,
@@ -103,8 +112,8 @@ def _compute_dynamic_weights(
         "sender_weight": normalized.get("sender", 0.0),
         "intent_weight": normalized.get("intent", 0.0)
     }
-    if "upi" in normalized:
-        result["upi_weight"] = normalized["upi"]
+    if "upi" in normalized or upi_r is not None:
+        result["upi_weight"] = normalized.get("upi", 0.0)
     return result
 
 
@@ -148,6 +157,286 @@ def _determine_confidence(
         return ConfidenceLevelEnum.MEDIUM
 
     return ConfidenceLevelEnum.HIGH
+
+
+def _build_claimed_vs_verified_matrix(
+    req: ScanRequest,
+    url_r: UrlAgentResult,
+    sender_r: SenderAgentResult,
+    intent_r: IntentAgentResult,
+    upi_r: Optional[UpiAgentResult] = None,
+    bank_verification: Optional[BankVerificationResult] = None,
+) -> ClaimedVsVerifiedMatrix:
+    """
+    Point 8 & Point 7: Claimed vs. Verified Identity Matrix with Cross-Agent Contradiction Detection.
+    Pillars: Organization, Sender, Website, Payment.
+    """
+    # 1. Organization Pillar
+    claimed_org = sender_r.brand_claimed or url_r.target_brand or "Unknown Entity"
+    if claimed_org == "Unknown Entity":
+        content_lower = req.content.lower()
+        if "sbi" in content_lower:
+            claimed_org = "State Bank of India (SBI)"
+        elif "hdfc" in content_lower:
+            claimed_org = "HDFC Bank"
+        elif "icici" in content_lower:
+            claimed_org = "ICICI Bank"
+        elif any(k in content_lower for k in ["bescom", "electricity", "bijli"]):
+            claimed_org = "Electricity Board (DISCOM)"
+        elif "olx" in content_lower:
+            claimed_org = "OLX India"
+        elif "paytm" in content_lower:
+            claimed_org = "Paytm"
+
+    if sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER:
+        org_verified = f"Verified Official TRAI Header ({sender_r.sender_analyzed or 'DLT'})"
+        org_match = True
+        org_status = "VERIFIED"
+    elif claimed_org != "Unknown Entity" and sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM:
+        org_verified = "Not verified — Dispatched from unverified personal mobile"
+        org_match = False
+        org_status = "MISMATCH"
+    else:
+        org_verified = "Not verified against official institutional registry"
+        org_match = False
+        org_status = "UNVERIFIED"
+
+    org_item = IdentityVerificationItem(
+        claimed=claimed_org,
+        verified=org_verified,
+        is_match=org_match,
+        status_label=org_status
+    )
+
+    # 2. Sender Pillar
+    claimed_sender = claimed_org if claimed_org != "Unknown Entity" else "Institutional Service Desk"
+    if sender_r.is_spoofed_header:
+        sender_verified = f"Spoofed / Lookalike Header ({sender_r.sender_analyzed})"
+        sender_match = False
+        sender_status = "SPOOFED"
+    elif sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM:
+        sender_verified = f"Private Personal GSM ({sender_r.raw_sender or sender_r.sender_analyzed or 'Mobile'})"
+        sender_match = False
+        sender_status = "MISMATCH" if claimed_org != "Unknown Entity" else "UNVERIFIED"
+    elif sender_r.sender_category == SenderCategoryEnum.OFFICIAL_TRAI_HEADER:
+        sender_verified = f"Verified TRAI DLT Header ({sender_r.sender_analyzed})"
+        sender_match = True
+        sender_status = "VERIFIED"
+    else:
+        sender_verified = sender_r.sender_analyzed or "Unregistered Sender"
+        sender_match = False
+        sender_status = "UNVERIFIED"
+
+    sender_item = IdentityVerificationItem(
+        claimed=claimed_sender,
+        verified=sender_verified,
+        is_match=sender_match,
+        status_label=sender_status
+    )
+
+    # 3. Website Pillar
+    if url_r.status == AgentStatusEnum.SUCCESS and url_r.url_analyzed:
+        claimed_web = f"Official {claimed_org} Portal" if claimed_org != "Unknown Entity" else "Secure Official Portal"
+        if url_r.is_typosquatting or url_r.risk_score >= 60:
+            web_verified = f"Domain Mismatch / Typosquatting ({url_r.domain or url_r.url_analyzed})"
+            web_match = False
+            web_status = "MISMATCH"
+        elif url_r.risk_score >= 35:
+            web_verified = f"Suspicious / Untrusted TLD ({url_r.domain or url_r.url_analyzed})"
+            web_match = False
+            web_status = "SUSPICIOUS"
+        else:
+            web_verified = f"Legitimate Domain ({url_r.domain})"
+            web_match = True
+            web_status = "VERIFIED"
+    else:
+        claimed_web = "None"
+        web_verified = "No web link present"
+        web_match = True
+        web_status = "NOT_APPLICABLE"
+
+    website_item = IdentityVerificationItem(
+        claimed=claimed_web,
+        verified=web_verified,
+        is_match=web_match,
+        status_label=web_status
+    )
+
+    # 4. Payment Pillar
+    vpa = (bank_verification.vpa if bank_verification and bank_verification.vpa 
+           else (upi_r.detected_vpa if upi_r and upi_r.detected_vpa else None))
+    if vpa:
+        claimed_pay = f"Official {claimed_org} Payment Desk" if claimed_org != "Unknown Entity" else "Official Merchant VPA"
+        if bank_verification and bank_verification.is_name_mismatch:
+            reg_name = bank_verification.registered_bank_name or "Private Individual"
+            pay_verified = f"Individual Account: {reg_name} (Mismatch with claimed institution)"
+            pay_match = False
+            pay_status = "MISMATCH"
+        elif upi_r and upi_r.is_spoofed_merchant:
+            pay_verified = f"Spoofed Handle ({vpa})"
+            pay_match = False
+            pay_status = "SPOOFED"
+        elif upi_r and upi_r.risk_score >= 50:
+            pay_verified = f"Suspicious VPA ({vpa})"
+            pay_match = False
+            pay_status = "SUSPICIOUS"
+        else:
+            pay_verified = f"Verified VPA ({vpa})"
+            pay_match = True
+            pay_status = "VERIFIED"
+    else:
+        claimed_pay = "None"
+        pay_verified = "No UPI handle detected"
+        pay_match = True
+        pay_status = "NOT_APPLICABLE"
+
+    payment_item = IdentityVerificationItem(
+        claimed=claimed_pay,
+        verified=pay_verified,
+        is_match=pay_match,
+        status_label=pay_status
+    )
+
+    # Cross-Agent Contradiction Detection (Point 7)
+    contradictions = []
+    if claimed_org != "Unknown Entity":
+        if sender_item.status_label in ("MISMATCH", "SPOOFED"):
+            contradictions.append(f"Sender is unverified/personal mobile instead of official {claimed_org}")
+        if website_item.status_label in ("MISMATCH", "SPOOFED"):
+            contradictions.append(f"Website domain does not belong to {claimed_org}")
+        if payment_item.status_label in ("MISMATCH", "SPOOFED"):
+            contradictions.append(f"Payment handle is registered to an individual instead of {claimed_org}")
+
+    has_contradiction = len(contradictions) >= 2 or (
+        len(contradictions) >= 1 and (
+            website_item.status_label in ("MISMATCH", "SPOOFED") or
+            payment_item.status_label in ("MISMATCH", "SPOOFED")
+        )
+    )
+    details = "; ".join(contradictions) if contradictions else None
+
+    return ClaimedVsVerifiedMatrix(
+        organization=org_item,
+        sender=sender_item,
+        website=website_item,
+        payment=payment_item,
+        has_identity_contradiction=has_contradiction,
+        contradiction_details=details
+    )
+
+
+def _generate_why_blocked_evidence(
+    url_r: UrlAgentResult,
+    sender_r: SenderAgentResult,
+    intent_r: IntentAgentResult,
+    upi_r: Optional[UpiAgentResult] = None,
+    bank_verification: Optional[BankVerificationResult] = None,
+    osint_history: Optional[OsintHistoryResult] = None,
+    matrix: Optional[ClaimedVsVerifiedMatrix] = None,
+) -> List[str]:
+    """Point 9: Evidence-based Explanation Panel."""
+    evidence = []
+    if sender_r.is_spoofed_header:
+        evidence.append("[!] Sender header mimics an authentic institutional sender but lacks DLT authentication")
+    elif sender_r.sender_category == SenderCategoryEnum.PERSONAL_GSM and (sender_r.brand_claimed or sender_r.risk_score >= 35):
+        evidence.append("[!] Sender identity could not be verified (Personal mobile number used for official alert)")
+
+    if url_r.status == AgentStatusEnum.SUCCESS:
+        if url_r.is_typosquatting:
+            evidence.append(f"[!] URL domain ({url_r.domain}) is a typosquatted lookalike of {url_r.target_brand or 'trusted brand'}")
+        elif url_r.risk_score >= 60:
+            evidence.append(f"[!] URL domain ({url_r.domain}) does not match claimed organization")
+        elif url_r.risk_score >= 35:
+            evidence.append(f"[!] URL uses a suspicious or untrusted top-level domain ({url_r.tld})")
+
+    if intent_r.status == AgentStatusEnum.SUCCESS and intent_r.risk_score >= 30:
+        if intent_r.detected_intent in (DetectedIntentEnum.OTP_HARVEST,):
+            evidence.append("[!] Active OTP harvesting solicitation detected")
+        elif intent_r.detected_intent in (DetectedIntentEnum.KYC_VERIFICATION,):
+            evidence.append("[!] Urgency language detected: Threat of imminent account suspension or KYC expiry")
+        elif intent_r.detected_intent in (DetectedIntentEnum.PANIC_URGENCY,):
+            evidence.append("[!] Psychological urgency / panic manipulation detected")
+        elif intent_r.detected_intent in (DetectedIntentEnum.FINANCIAL_EXTORTION,):
+            evidence.append("[!] Coercive financial extortion / digital arrest intimidation detected")
+
+    if bank_verification and bank_verification.is_name_mismatch:
+        evidence.append(f"[!] Payment identity is suspicious: VPA registered to '{bank_verification.registered_bank_name}' instead of claimed entity")
+    elif upi_r and upi_r.risk_score >= 50:
+        evidence.append(f"[!] Payment identity is suspicious: High-risk or deceptive VPA handle ({upi_r.detected_vpa})")
+
+    if osint_history and osint_history.total_complaints > 0:
+        evidence.append(f"[!] Crowdsourced intelligence: Flagged {osint_history.total_complaints} times in fraud complaints ({osint_history.proof_snippet or 'Community reported'})")
+
+    if matrix and matrix.has_identity_contradiction:
+        evidence.append("[!] Cross-agent contradiction: Claimed institutional identity is inconsistent across sender, link, and payment handles")
+
+    if not evidence:
+        evidence.append("[✓] No critical threat indicators detected across inspection vectors")
+
+    return evidence
+
+
+def _generate_actionable_guidance(risk_tier: RiskTierEnum) -> List[str]:
+    """Point 18: Actionable Guidance Checklist for Hard Block."""
+    if risk_tier in (RiskTierEnum.CRITICAL, RiskTierEnum.HIGH_RISK):
+        return [
+            "1. Do not enter your UPI PIN, OTP, password, or banking credentials under any circumstances.",
+            "2. Do not click, forward, or open any suspicious web links attached to this message.",
+            "3. Verify through the organization's official, published customer care number or physical branch.",
+            "4. Report this incident immediately to the National Cyber Crime Helpline at 1930 or cybercrime.gov.in."
+        ]
+    elif risk_tier == RiskTierEnum.CAUTION:
+        return [
+            "1. Exercise caution — avoid clicking unknown links from personal mobile senders.",
+            "2. Verify the sender's identity before making any payment or sharing personal details.",
+            "3. If prompted for a UPI PIN to 'receive' money, abort immediately (UPI PIN is ONLY for paying).",
+            "4. Call the 1930 cybercrime helpline if you suspect an ongoing fraud attempt."
+        ]
+    else:
+        return [
+            "1. Communication exhibits standard transactional patterns.",
+            "2. Always verify that payment amounts and recipient names match your intent.",
+            "3. Remember that legitimate banks and government bodies NEVER request your UPI PIN or OTP.",
+            "4. Keep your banking apps updated and report any unexpected debits immediately."
+        ]
+
+
+def _calculate_confidence_percentage(
+    url_r: UrlAgentResult,
+    sender_r: SenderAgentResult,
+    intent_r: IntentAgentResult,
+    heuristics: List[str],
+    bank_verification: Optional[BankVerificationResult] = None,
+    osint_history: Optional[OsintHistoryResult] = None,
+    matrix: Optional[ClaimedVsVerifiedMatrix] = None,
+) -> float:
+    """
+    Point 10: Decouple Risk Score (0-100) from Epistemic Confidence (0-100%).
+    Risk answers: 'How dangerous does the evidence appear?'
+    Confidence answers: 'How strongly does the available evidence support our assessment?'
+    """
+    confidence = 80.0
+
+    if any("CRITICAL_ESCALATION" in h or "BENIGN_VERIFICATION" in h for h in heuristics):
+        confidence += 12.0
+
+    if bank_verification and bank_verification.is_name_mismatch:
+        confidence += 5.0
+
+    if osint_history and osint_history.total_complaints > 0:
+        confidence += 5.0
+
+    if matrix and matrix.has_identity_contradiction:
+        confidence += 4.0
+
+    if url_r.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR):
+        confidence -= 5.0
+    if sender_r.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR):
+        confidence -= 5.0
+    if intent_r.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR):
+        confidence -= 10.0
+
+    return round(max(50.0, min(99.0, confidence)), 1)
 
 
 def _build_fail_secure_response(
@@ -215,7 +504,12 @@ def _build_fail_secure_response(
         ),
         action_required=ActionRequiredEnum.WARN_USER,
         audit_trail=audit_trail,
-        processing_time_ms=latency_ms
+        processing_time_ms=latency_ms,
+        confidence_percentage=50.0,
+        claimed_vs_verified=None,
+        why_blocked_evidence=["[!] All automated analysis agents failed to respond within 3.5s SLA"],
+        actionable_guidance=_generate_actionable_guidance(RiskTierEnum.CAUTION),
+        latency_breakdown=AgentLatencyBreakdown(total_ms=latency_ms),
     )
 
 
@@ -224,7 +518,13 @@ def compute_score(
     url_r: UrlAgentResult,
     sender_r: SenderAgentResult,
     intent_r: IntentAgentResult,
-    upi_r: Optional[UpiAgentResult] = None
+    upi_r: Optional[UpiAgentResult] = None,
+    bank_verification: Optional[BankVerificationResult] = None,
+    osint_history: Optional[OsintHistoryResult] = None,
+    ai_text: Optional[AiTextAgentResult] = None,
+    vision_r: Optional[VisionAnalysisResult] = None,
+    doc_r: Optional[DocumentFraudResult] = None,
+    modality: ModalityEnum = ModalityEnum.TEXT,
 ) -> ScanResponse:
     """
     Avika's Core Risk Scoring Engine (Day 2 Enhanced):
@@ -378,6 +678,62 @@ def compute_score(
         final_score = max(final_score, 45.0)
         heuristics.append("CAUTION_ESCALATION: Deceptive payment handle received from unverified personal sender")
 
+    # ── Day 5 / Next-Gen Enhancements: Financial Forensics & Multimodal Routing ──
+    active_badges: List[str] = []
+    proof_attached: Optional[str] = None
+
+    # Badge & Escalation 7: Bank Registered Account Name Mismatch
+    if bank_verification and bank_verification.status == AgentStatusEnum.SUCCESS and bank_verification.is_name_mismatch:
+        active_badges.append("💳 Fake UPI Detected")
+        final_score = max(final_score, 88.0)
+        heuristics.append("CRITICAL_ESCALATION: Registered bank account holder name does not match claimed institutional identity")
+
+    # Badge & Escalation 8: OSINT Past History Scam Records
+    if osint_history and osint_history.status == AgentStatusEnum.SUCCESS and osint_history.total_complaints > 0:
+        active_badges.append(f"⚠️ Flagged {osint_history.total_complaints}x for Scam")
+        proof_attached = osint_history.proof_snippet
+        if osint_history.total_complaints >= 3:
+            final_score = max(final_score, 94.0)
+        else:
+            final_score = max(final_score, 86.0)
+        heuristics.append(
+            f"CRITICAL_ESCALATION: Target identified in prior scam reports ({osint_history.proof_snippet or 'Community flagged'})"
+        )
+
+    # Badge: AI Text Detection
+    if ai_text and ai_text.status == AgentStatusEnum.SUCCESS and ai_text.is_ai_generated:
+        active_badges.append("🤖 AI Text Detected")
+
+    # Badge: Manipulated Image (ELA)
+    if vision_r and vision_r.status == AgentStatusEnum.SUCCESS and vision_r.is_morphed:
+        active_badges.append("📸 Manipulated Image")
+
+    # Badge: Document Forgery / Tampered ID
+    if doc_r and doc_r.status == AgentStatusEnum.SUCCESS and doc_r.is_forged:
+        active_badges.append("❌ Forged ID")
+
+    # Escalation 9: Multimodal Weaponization Multiplier
+    # (AI Text + Morphed Image or Forged Document)
+    is_ai = bool(ai_text and ai_text.is_ai_generated)
+    is_visual_forged = bool((vision_r and vision_r.is_morphed) or (doc_r and doc_r.is_forged))
+    if is_ai and is_visual_forged:
+        final_score = max(final_score, 96.0)
+        heuristics.append("CRITICAL_ESCALATION: Multimodal scam weaponization (AI-generated text combined with visual/document tampering)")
+    elif is_visual_forged:
+        final_score = max(final_score, 85.0)
+        heuristics.append("CRITICAL_ESCALATION: Visual tampering or forged credentials detected")
+
+    # Badge & Escalation 10: Cross-Agent Contradiction Detection (Point 7 & 8)
+    matrix = _build_claimed_vs_verified_matrix(
+        req, url_r, sender_r, intent_r, upi_r, bank_verification
+    )
+    if matrix.has_identity_contradiction:
+        active_badges.append("⚠️ Identity Contradiction")
+        final_score = max(final_score, 92.0)
+        heuristics.append(
+            f"CRITICAL_ESCALATION: IDENTITY_CONTRADICTION_DETECTED ({matrix.contradiction_details or 'Cross-vector inconsistency'})"
+        )
+
     # Clamp score to [0, 100] and round to integer
     rounded_score = int(round(max(0.0, min(100.0, final_score))))
 
@@ -419,13 +775,46 @@ def compute_score(
     evidence = build_evidence_list(url_r, sender_r, intent_r, upi_r)
     recommended_action = generate_recommended_action(verdict_category, risk_tier, url_r, sender_r, intent_r, upi_r)
 
+    # Points 8, 9, 10, 13, 18: Evidence-based explanation, Actionable Guidance, Decoupled Confidence, Latencies
+    why_blocked_evidence = _generate_why_blocked_evidence(
+        url_r, sender_r, intent_r, upi_r, bank_verification, osint_history, matrix
+    )
+    actionable_guidance = _generate_actionable_guidance(risk_tier)
+    confidence_percentage = _calculate_confidence_percentage(
+        url_r, sender_r, intent_r, heuristics, bank_verification, osint_history, matrix
+    )
+
     # Compute execution latency for the scoring engine itself
     latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
     # Sum total pipeline processing latency including upstream agent latencies
     upstream_latencies = [url_r.latency_ms, sender_r.latency_ms, intent_r.latency_ms]
     if upi_r:
         upstream_latencies.append(upi_r.latency_ms)
+    if bank_verification:
+        upstream_latencies.append(bank_verification.latency_ms)
+    if osint_history:
+        upstream_latencies.append(osint_history.latency_ms)
+    if ai_text:
+        upstream_latencies.append(ai_text.latency_ms)
+    if vision_r:
+        upstream_latencies.append(vision_r.latency_ms)
+    if doc_r:
+        upstream_latencies.append(doc_r.latency_ms)
+
     total_processing_ms = round(max(upstream_latencies) + latency_ms, 2)
+
+    latency_breakdown = AgentLatencyBreakdown(
+        url_ms=url_r.latency_ms,
+        sender_ms=sender_r.latency_ms,
+        intent_ms=intent_r.latency_ms,
+        upi_ms=upi_r.latency_ms if upi_r else 0.0,
+        bank_identity_ms=bank_verification.latency_ms if bank_verification else 0.0,
+        osint_ms=osint_history.latency_ms if osint_history else 0.0,
+        ai_text_ms=ai_text.latency_ms if ai_text else 0.0,
+        vision_ms=vision_r.latency_ms if vision_r else 0.0,
+        doc_fraud_ms=doc_r.latency_ms if doc_r else 0.0,
+        total_ms=total_processing_ms,
+    )
 
     synthesis = SynthesisBreakdown(
         weights_applied=weights,
@@ -438,6 +827,11 @@ def compute_score(
         sender_analysis=sender_r,
         intent_analysis=intent_r,
         upi_analysis=upi_r,
+        ai_text_analysis=ai_text,
+        bank_verification=bank_verification,
+        osint_history=osint_history,
+        vision_analysis=vision_r,
+        document_fraud=doc_r,
         synthesis_breakdown=synthesis
     )
 
@@ -447,6 +841,11 @@ def compute_score(
         verdict_category=verdict_category,
         risk_tier=risk_tier,
         confidence=confidence,
+        confidence_percentage=confidence_percentage,
+        claimed_vs_verified=matrix,
+        why_blocked_evidence=why_blocked_evidence,
+        actionable_guidance=actionable_guidance,
+        latency_breakdown=latency_breakdown,
         reasons=reasons,
         evidence=evidence,
         recommended_action=recommended_action,
@@ -456,5 +855,13 @@ def compute_score(
         recommendation_hi=recommendation_hi,
         action_required=action_required,
         audit_trail=audit_trail,
-        processing_time_ms=total_processing_ms
+        processing_time_ms=total_processing_ms,
+        modality=modality,
+        active_badges=active_badges,
+        proof_attached=proof_attached,
+        ai_text_analysis=ai_text,
+        bank_verification=bank_verification,
+        osint_history=osint_history,
+        vision_analysis=vision_r,
+        document_fraud=doc_r,
     )

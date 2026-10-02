@@ -528,3 +528,144 @@ def test_benign_personal_conversation(base_request):
     assert resp.verdict_category == PrdVerdictEnum.SAFE
     assert resp.risk_tier == RiskTierEnum.SAFE
 
+
+# ─── TASK 5.1 & 5.3 SPECIFIC VERIFICATION TESTS ─────────────────────────────
+
+
+def test_dynamic_weights_with_upi_active():
+    """
+    Task 5.1: Verify base with UPI assigns URL 30%, Sender 25%, Intent 25%, UPI 20%.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0, detected_vpa="user@okhdfcbank")
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    assert weights["url_weight"] == 0.30
+    assert weights["sender_weight"] == 0.25
+    assert weights["intent_weight"] == 0.25
+    assert weights["upi_weight"] == 0.20
+    assert round(sum(weights.values()), 4) == 1.0
+
+
+def test_dynamic_weights_without_upi():
+    """
+    Task 5.1: Verify base without UPI assigns URL 40%, Sender 30%, Intent 30%.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r=None)
+    assert weights["url_weight"] == 0.40
+    assert weights["sender_weight"] == 0.30
+    assert weights["intent_weight"] == 0.30
+    assert round(sum(weights.values()), 4) == 1.0
+
+
+def test_dynamic_weights_with_upi_skipped():
+    """
+    Task 5.1: If UPI agent is SKIPPED, weights fall back to base 3-vector (URL 40%, Sender 30%, Intent 30%).
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    assert weights["url_weight"] == 0.40
+    assert weights["sender_weight"] == 0.30
+    assert weights["intent_weight"] == 0.30
+    assert weights["upi_weight"] == 0.0
+    assert round(weights["url_weight"] + weights["sender_weight"] + weights["intent_weight"], 4) == 1.0
+
+
+def test_dynamic_weights_with_upi_and_url_skipped():
+    """
+    Task 5.1: If URL is SKIPPED while UPI is active, the remaining 0.70 total is normalized proportionally.
+    Sender: 0.25 / 0.70 = 0.3571
+    Intent: 0.25 / 0.70 = 0.3571
+    UPI:    0.20 / 0.70 = 0.2857
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0, detected_vpa="test@upi")
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    assert weights["url_weight"] == 0.0
+    assert weights["sender_weight"] == 0.3571
+    assert weights["intent_weight"] == 0.3571
+    assert weights["upi_weight"] == 0.2857
+    assert round(sum(weights.values()), 2) == 1.0
+
+
+def test_scoring_sla_strictly_under_10ms(base_request):
+    """
+    Task 5.1: Confirm the scoring engine SLA remains strictly under 10ms across 500 executions.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=60.0, latency_ms=0.5)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=70.0, latency_ms=0.5)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=80.0, latency_ms=0.5)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=75.0, latency_ms=0.5, detected_vpa="pay@okhdfc")
+
+    durations = []
+    for _ in range(500):
+        t0 = time.perf_counter()
+        resp = compute_score(base_request, url_r, sender_r, intent_r, upi_r)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        durations.append(elapsed_ms)
+
+    max_latency = max(durations)
+    median_latency = sorted(durations)[len(durations) // 2]
+    assert max_latency < 10.0, f"Max latency exceeded 10ms SLA: {max_latency:.2f}ms"
+    assert median_latency < 2.0, f"Median latency too high: {median_latency:.2f}ms"
+
+
+def test_hindi_verdict_and_recommendation_polish(base_request):
+    """
+    Task 5.3: Verify verdict_hi and recommendation_hi generate grammatically sound,
+    natural Hindi advisories for elderly citizens, including personal GSM warnings.
+    """
+    # 1. Personal GSM Caution case
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=35.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        sender_analyzed="+919876543210"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=35.0,
+        detected_intent=DetectedIntentEnum.SUSPICIOUS
+    )
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+
+    # Check caution headline contains natural advisory
+    assert "सतर्कता आवश्यक" in resp.verdict_hi
+    assert "व्यक्तिगत नंबर" in resp.verdict_hi
+    assert "1930" in resp.recommendation_hi
+    assert any('\u0900' <= c <= '\u097f' for c in resp.verdict_hi)
+    assert any('\u0900' <= c <= '\u097f' for c in resp.recommendation_hi)
+
+    # 2. Critical Scam case with Bank Impersonation on Personal GSM
+    sender_crit = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=85.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        brand_claimed="State Bank of India",
+        flags=["COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM"]
+    )
+    intent_crit = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=85.0,
+        detected_intent=DetectedIntentEnum.KYC_VERIFICATION
+    )
+    resp_crit = compute_score(base_request, url_r, sender_crit, intent_crit)
+    assert "सावधान" in resp_crit.verdict_hi or "धोखाधड़ी" in resp_crit.verdict_hi
+    assert "व्यक्तिगत" in resp_crit.verdict_hi or "फर्जी" in resp_crit.verdict_hi
+    assert "1930" in resp_crit.recommendation_hi
+
+

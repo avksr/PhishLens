@@ -33,11 +33,16 @@ def generate_verdict(
 ) -> str:
     """Generates an executive headline summarizing the exact fraud vector detected."""
     brand = sender_r.brand_claimed or url_r.target_brand or (upi_r.target_entity if upi_r else None) or "Organization"
+    is_personal_gsm = (
+        sender_r.sender_category == "PERSONAL_GSM"
+        or getattr(sender_r.sender_category, "value", None) == "PERSONAL_GSM"
+        or str(sender_r.sender_category) == "PERSONAL_GSM"
+    )
 
     if risk_tier == RiskTierEnum.CRITICAL:
         if upi_r and upi_r.risk_score >= 80 and upi_r.detected_vpa:
             return f"Fraudulent Payment Interception — Spoofed UPI Handle Claiming {brand}"
-        if sender_r.sender_category == "PERSONAL_GSM" and (sender_r.brand_claimed or url_r.target_brand):
+        if is_personal_gsm and (sender_r.brand_claimed or url_r.target_brand):
             return f"Confirmed {brand} Impersonation — Urgent Credential / KYC Harvesting Scam"
         if url_r.is_typosquatting:
             return f"High-Confidence Phishing Attack — Typosquatted Domain Mimicking {brand}"
@@ -54,13 +59,17 @@ def generate_verdict(
             return "Suspicious Payment Request from Unverified Virtual Address"
         if url_r.tld_reputation == "HIGH_RISK":
             return "Suspicious Message with High-Risk Untrusted Web Link"
+        if is_personal_gsm:
+            return f"High Risk: Suspicious Coercion or Transaction Alert from Personal Mobile ({sender_r.sender_analyzed or 'GSM'})"
         return "High Risk Interaction Detected — Extreme Caution Advised"
 
     elif risk_tier == RiskTierEnum.CAUTION:
+        if is_personal_gsm:
+            return f"Caution Advised: Unverified message originated from personal mobile number ({sender_r.sender_analyzed or 'GSM'}), not official institution"
         return "Unverified Digital Interaction — Moderate Risk Signals Present"
 
     else:
-        if sender_r.sender_category == "OFFICIAL_TRAI_HEADER":
+        if sender_r.sender_category in ("OFFICIAL_TRAI_HEADER", getattr(sender_r.sender_category, "value", None)):
             return f"Verified Authentic Transactional Message from {brand or 'Registered Entity'}"
         return "No Malicious Threat Indicators Detected (Benign Interaction)"
 
@@ -78,11 +87,16 @@ def generate_verdict_hi(
     Ensures rural and elderly citizens clearly comprehend the threat without technical jargon.
     """
     brand = sender_r.brand_claimed or url_r.target_brand or (upi_r.target_entity if upi_r else None) or "बैंक/संस्थान"
+    is_personal_gsm = (
+        sender_r.sender_category == "PERSONAL_GSM"
+        or getattr(sender_r.sender_category, "value", None) == "PERSONAL_GSM"
+        or str(sender_r.sender_category) == "PERSONAL_GSM"
+    )
 
     if risk_tier == RiskTierEnum.CRITICAL:
         if upi_r and upi_r.risk_score >= 80 and upi_r.detected_vpa:
             return f"धोखाधड़ी — {brand} के नाम पर फर्जी UPI आईडी से अवैध भुगतान का प्रयास।"
-        if sender_r.sender_category == "PERSONAL_GSM" and (sender_r.brand_claimed or url_r.target_brand):
+        if is_personal_gsm and (sender_r.brand_claimed or url_r.target_brand):
             return (
                 f"सावधान — 10-अंकीय व्यक्तिगत नंबर से भेजा गया फर्जी {brand} संदेश "
                 f"(KYC / पासवर्ड चोरी का प्रयास)।"
@@ -99,17 +113,28 @@ def generate_verdict_hi(
         if intent_r.detected_intent == "LOTTERY_REWARD":
             return "फर्जी लॉटरी / पार्ट-टाइम जॉब का प्रलोभन — अग्रिम शुल्क धोखाधड़ी का खतरा।"
         if upi_r and upi_r.risk_score >= 60:
-            return "संदिग्ध भुगतान अनुरोध — अपुष्ट यूपीआई पते पर पैसे भेजने से बचें।"
+            return f"संदिग्ध भुगतान अनुरोध — अपुष्ट UPI पते ({upi_r.detected_vpa or 'अनजान आईडी'}) पर पैसे भेजने से बचें।"
         if url_r.tld_reputation == "HIGH_RISK":
             return "संदिग्ध संदेश — असुरक्षित एवं उच्च जोखिम वाले वेब लिंक से सावधान रहें।"
+        if is_personal_gsm:
+            return f"सतर्कता आवश्यक: यह संदेश किसी व्यक्तिगत नंबर ({sender_r.sender_analyzed or 'मोबाइल'}) से आया है जिसमें संदिग्ध निर्देश दिए गए हैं।"
         return "उच्च जोखिम वाली गतिविधि — अत्यधिक सावधानी और सतर्कता बरतें।"
 
     elif risk_tier == RiskTierEnum.CAUTION:
-        return "अपुष्ट डिजिटल संदेश — मध्यम स्तर के जोखिम संकेत मिले हैं। किसी भी कदम से पहले पुष्टि करें।"
+        if is_personal_gsm:
+            return (
+                f"सतर्कता आवश्यक: यह संदेश किसी व्यक्तिगत नंबर ({sender_r.sender_analyzed or 'मोबाइल नंबर'}) से आया है, "
+                f"किसी आधिकारिक बैंक या संस्था से नहीं।"
+            )
+        if url_r.status == "SUCCESS" and (url_r.risk_score >= 35 or url_r.tld_reputation == "HIGH_RISK"):
+            return "सतर्कता आवश्यक: संदेश में दिया गया वेब लिंक अपुष्ट है। किसी भी अज्ञात लिंक पर अपनी जानकारी न भरें।"
+        return "सतर्कता आवश्यक: अपुष्ट डिजिटल संदेश — मध्यम स्तर के जोखिम संकेत मिले हैं। किसी भी कदम से पहले आधिकारिक स्रोत से पुष्टि करें।"
 
     else:
-        if sender_r.sender_category == "OFFICIAL_TRAI_HEADER":
+        if sender_r.sender_category in ("OFFICIAL_TRAI_HEADER", getattr(sender_r.sender_category, "value", None)):
             return f"{brand} से प्राप्त प्रमाणित एवं आधिकारिक बैंकिंग संदेश।"
+        if is_personal_gsm:
+            return "सामान्य व्यक्तिगत संदेश — कोई सुरक्षा जोखिम या धोखाधड़ी के संकेत नहीं मिले।"
         return "कोई सुरक्षा जोखिम नहीं मिला — यह एक सुरक्षित और सामान्य संदेश प्रतीत होता है।"
 
 
@@ -122,11 +147,17 @@ def generate_recommendation(
     upi_r: Optional[UpiAgentResult] = None
 ) -> str:
     """Generates a concrete, user-facing recommendation before transaction or link click."""
+    is_personal_gsm = (
+        sender_r.sender_category == "PERSONAL_GSM"
+        or getattr(sender_r.sender_category, "value", None) == "PERSONAL_GSM"
+        or str(sender_r.sender_category) == "PERSONAL_GSM"
+    )
+
     if action == ActionRequiredEnum.BLOCK_TRANSACTION:
         recs = ["DO NOT proceed with payment or click links."]
         if upi_r and upi_r.risk_score >= 70:
             recs.append("Do NOT authorize UPI collect requests or enter UPI PIN for receiving funds.")
-        if sender_r.sender_category == "PERSONAL_GSM" and sender_r.brand_claimed:
+        if is_personal_gsm and sender_r.brand_claimed:
             recs.append("Legitimate banks NEVER send account alerts from personal 10-digit mobile numbers.")
         if url_r.is_typosquatting or url_r.tld_reputation == "HIGH_RISK":
             recs.append("The attached link directs to an unauthorized external domain.")
@@ -136,10 +167,16 @@ def generate_recommendation(
         return " ".join(recs)
 
     elif action == ActionRequiredEnum.WARN_USER:
-        return (
+        recs = [
             "Exercise caution. Confirm the sender's identity through official banking apps before "
             "sharing sensitive details or making payments."
-        )
+        ]
+        if is_personal_gsm:
+            recs.append("Never trust urgency alerts or bank notices originating from personal mobile numbers.")
+        if upi_r and upi_r.status == "SUCCESS" and upi_r.detected_vpa:
+            recs.append("Remember: UPI PIN is only required to SEND money, never to receive it.")
+        recs.append("If in doubt, call the 1930 helpline.")
+        return " ".join(recs)
 
     else:
         return (
@@ -157,11 +194,17 @@ def generate_recommendation_hi(
     upi_r: Optional[UpiAgentResult] = None
 ) -> str:
     """Generates clear, actionable guidance in Hindi for citizens and law enforcement."""
+    is_personal_gsm = (
+        sender_r.sender_category == "PERSONAL_GSM"
+        or getattr(sender_r.sender_category, "value", None) == "PERSONAL_GSM"
+        or str(sender_r.sender_category) == "PERSONAL_GSM"
+    )
+
     if action == ActionRequiredEnum.BLOCK_TRANSACTION:
         recs = ["लेन-देन आगे न बढ़ाएं और लिंक पर कभी क्लिक न करें।"]
         if upi_r and upi_r.risk_score >= 70:
             recs.append("पैसे प्राप्त करने के लिए कभी भी UPI पिन दर्ज न करें और न ही कलेक्ट रिक्वेस्ट स्वीकार करें।")
-        if sender_r.sender_category == "PERSONAL_GSM" and sender_r.brand_claimed:
+        if is_personal_gsm and sender_r.brand_claimed:
             recs.append("वैध बैंक कभी भी व्यक्तिगत 10-अंकीय नंबर से अलर्ट नहीं भेजते।")
         if url_r.is_typosquatting or url_r.tld_reputation == "HIGH_RISK":
             recs.append("संदेश में दिया गया लिंक किसी अनधिकृत बाहरी वेबसाइट पर ले जाता है।")
@@ -173,10 +216,16 @@ def generate_recommendation_hi(
         return " ".join(recs)
 
     elif action == ActionRequiredEnum.WARN_USER:
-        return (
+        recs = [
             "सावधानी बरतें। कोई भी विवरण साझा करने अथवा भुगतान करने से पहले आधिकारिक ऐप या "
             "बैंक शाखा से प्रेषक की पहचान अवश्य सत्यापित करें।"
-        )
+        ]
+        if is_personal_gsm:
+            recs.append("व्यक्तिगत 10-अंकीय मोबाइल नंबर से आए संदेशों पर तुरंत विश्वास न करें।")
+        if upi_r and upi_r.status == "SUCCESS" and upi_r.detected_vpa:
+            recs.append("याद रखें: पैसे प्राप्त करने के लिए UPI पिन की आवश्यकता नहीं होती; पिन केवल भुगतान करने के लिए होता है।")
+        recs.append("किसी भी संदेह की स्थिति में राष्ट्रीय साइबर हेल्पलाइन 1930 पर संपर्क करें।")
+        return " ".join(recs)
 
     else:
         return (
