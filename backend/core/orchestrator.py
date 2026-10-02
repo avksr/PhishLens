@@ -225,6 +225,7 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
 
     # Step 3: Synthesis Delegation
     response: ScanResponse = compute_score(req, url_r, sender_r, intent_r, upi_r)
+    response.detected_input_type = detected_type
 
     # Step 4: Asynchronous Audit Logging (non-blocking)
     try:

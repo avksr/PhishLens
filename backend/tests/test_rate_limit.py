@@ -56,3 +56,33 @@ def test_configurable_rate_limit_env():
     # Clean up
     del os.environ["RATE_LIMIT_PER_MINUTE"]
 
+
+@pytest.mark.asyncio
+async def test_rate_limiting_custom_env_setting_5():
+    """Verify Task 4: Setting RATE_LIMIT_PER_MINUTE=5 and firing 6 rapid requests -> HTTP 429 on the 6th request."""
+    import os
+    from main import app
+    from core.limiter import limiter
+
+    limiter.reset()
+    os.environ["RATE_LIMIT_PER_MINUTE"] = "5"
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8000") as client:
+            payload = {
+                "content": "Test rate limit 5 req/min",
+                "sender": "+919876543210",
+                "channel": "sms"
+            }
+            statuses = []
+            for _ in range(6):
+                res = await client.post("/api/v1/scan", json=payload)
+                statuses.append(res.status_code)
+
+            assert 429 in statuses, f"Expected HTTP 429 in responses: {statuses}"
+            assert statuses[5] == 429, f"Expected 6th request to be HTTP 429, got {statuses}"
+    finally:
+        del os.environ["RATE_LIMIT_PER_MINUTE"]
+        limiter.reset()
+
+

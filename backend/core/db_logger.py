@@ -44,8 +44,11 @@ CARD_16_RE = re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b')
 def is_production_mode() -> bool:
     """
     Check if the service is running in production mode.
-    Reads ENVIRONMENT, APP_ENV, PHISHLENS_ENV, ENV, or PRODUCTION.
+    Reads PRODUCTION_MODE=true, as well as ENVIRONMENT/APP_ENV/PHISHLENS_ENV/ENV=production.
     """
+    prod_mode = os.getenv("PRODUCTION_MODE", "").strip().lower()
+    if prod_mode in ("true", "1", "yes"):
+        return True
     env = (
         os.getenv("ENVIRONMENT")
         or os.getenv("APP_ENV")
@@ -161,6 +164,7 @@ async def log_scan_audit(resp: ScanResponse, req: ScanRequest):
     """
     Asynchronously write PII-sanitized scan audit record to SQLite database.
     Computes SHA-256 input_hash and enforces zero raw text storage in production mode (FR-10 & §9).
+    If PRODUCTION_MODE=true env var -> sets content_masked to empty string.
     """
     try:
         # Audit Privacy Hardening (FR-10 & §9): Compute SHA-256 hash of content
@@ -168,9 +172,9 @@ async def log_scan_audit(resp: ScanResponse, req: ScanRequest):
 
         sender_masked = mask_phone_number(req.sender) if req.sender else "UNKNOWN"
 
-        # Verify no raw text is stored when in production mode
+        # If PRODUCTION_MODE=true env var -> set content_masked to empty string
         if is_production_mode():
-            content_masked = None
+            content_masked = ""
         else:
             content_masked = mask_pii(req.content)
 
@@ -216,7 +220,7 @@ async def log_scan_audit(resp: ScanResponse, req: ScanRequest):
 
 async def get_recent_scans(limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Retrieve recent PII-sanitized audit records for evaluator inspection.
+    Retrieve recent PII-sanitized audit records for evaluator inspection, including input_hash.
     """
     limit = max(1, min(limit, 50))
     query = """
@@ -249,9 +253,9 @@ async def get_recent_scans(limit: int = 10) -> List[Dict[str, Any]]:
         return []
 
 
-async def get_scan_audit(scan_id: str) -> Optional[Dict[str, Any]]:
+async def get_scan_by_id(scan_id: str) -> Optional[Dict[str, Any]]:
     """
-    Retrieves full execution status and audit record for a given scan_id from SQLite (US-5).
+    Retrieves full audit record for a given scan_id from SQLite (US-5).
     Yields briefly if the record was just dispatched to SQLite to prevent race conditions.
     """
     query = """
@@ -294,6 +298,10 @@ async def get_scan_audit(scan_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+# Backward compatibility alias
+get_scan_audit = get_scan_by_id
+
+
 def verify_audit_privacy(record: Optional[Dict[str, Any]], raw_content: str) -> bool:
     """
     Verifies that raw content is not stored in the audit record when in production mode (FR-10 & §9).
@@ -301,7 +309,7 @@ def verify_audit_privacy(record: Optional[Dict[str, Any]], raw_content: str) -> 
     if not record:
         return True
     content_stored = record.get("content_masked")
-    if content_stored is None:
+    if content_stored is None or content_stored == "":
         return True
     if raw_content and raw_content in content_stored:
         return False

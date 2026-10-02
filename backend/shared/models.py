@@ -182,13 +182,16 @@ class ScanResponse(BaseModel):
     risk_tier: Optional[RiskTierEnum] = None
     confidence: ConfidenceLevelEnum = ConfidenceLevelEnum.HIGH
     reasons: List[str] = Field(default_factory=list, description="Plain-language, max 5, ordered by weight")
-    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(default_factory=list, description="tool name, finding, raw result summary, status")
+    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(
+        default_factory=list, description="tool name, finding, raw result summary, status"
+    )
     recommended_action: Optional[str] = None
     verdict: Optional[str] = None
     verdict_hi: Optional[str] = None
     recommendation: Optional[str] = None
     recommendation_hi: Optional[str] = None
     action_required: Optional[ActionRequiredEnum] = None
+    detected_input_type: Optional[str] = None
     audit_trail: Optional[AuditTrail] = None
     processing_time_ms: float = 0.0
 
@@ -236,7 +239,9 @@ class ScanResponse(BaseModel):
         elif not self.recommendation and self.recommended_action:
             self.recommendation = self.recommended_action
         elif not self.recommended_action and not self.recommendation:
-            self.recommended_action = "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            self.recommended_action = (
+                "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            )
             self.recommendation = self.recommended_action
 
         # Synchronize verdict

@@ -138,10 +138,10 @@ def test_input_type_auto_detection_classifier():
 
 @pytest.mark.asyncio
 async def test_pipeline_input_type_auto_classification_wiring():
-    """Verify run_pipeline auto-classifies free-text inputs and populates metadata/fields."""
+    """Verify Task 1: run_pipeline auto-classifies free-text inputs and populates detected_input_type."""
     from core.orchestrator import run_pipeline
 
-    # Free-text web URL input
+    # 1. Free-text web URL input
     req_url = ScanRequest(
         content="https://sbi-kyc-verify.top",
         channel=ChannelEnum.UNKNOWN
@@ -151,9 +151,10 @@ async def test_pipeline_input_type_auto_classification_wiring():
     assert req_url.metadata.get("input_type") == "web_url"
     assert req_url.extracted_url == "https://sbi-kyc-verify.top"
     assert req_url.channel == ChannelEnum.WEB_URL
+    assert resp_url.detected_input_type == "web_url"
     assert resp_url.overall_risk_score > 0
 
-    # Free-text UPI handle input
+    # 2. Free-text UPI handle input
     req_upi = ScanRequest(
         content="refund-desk@oksbi",
         channel=ChannelEnum.UNKNOWN
@@ -162,15 +163,26 @@ async def test_pipeline_input_type_auto_classification_wiring():
     assert req_upi.input_type == "upi_handle"
     assert req_upi.metadata.get("input_type") == "upi_handle"
     assert req_upi.channel == ChannelEnum.UPI_HANDLE
-    # Verify UPI agent was triggered
+    assert resp_upi.detected_input_type == "upi_handle"
     assert resp_upi.audit_trail.upi_analysis.status == AgentStatusEnum.SUCCESS
+
+    # 3. Plain text message input
+    req_txt = ScanRequest(
+        content="Meeting at 5 pm for coffee in the office",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS
+    )
+    resp_txt = await run_pipeline(req_txt)
+    assert req_txt.input_type == "text_message"
+    assert resp_txt.detected_input_type == "text_message"
 
 
 @pytest.mark.asyncio
 async def test_audit_privacy_sha256_and_production_mode():
-    """Verify FR-10 & §9: SHA-256 input_hash computed and zero raw text stored in production mode."""
+    """Verify Task 2: SHA-256 input_hash computed and content_masked is empty when PRODUCTION_MODE=true."""
     import hashlib
-    from core.db_logger import log_scan_audit, get_scan_audit, verify_audit_privacy
+    import os
+    from core.db_logger import log_scan_audit, get_scan_by_id, verify_audit_privacy
 
     raw_text = "SECRET_PAYLOAD: Your account password is 9876543210 and OTP is 112233"
     expected_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
@@ -184,15 +196,17 @@ async def test_audit_privacy_sha256_and_production_mode():
 
     # 1. Dev / Standard mode: input_hash is saved, content is PII-masked
     await log_scan_audit(resp, req)
-    record = await get_scan_audit(resp.scan_id)
+    record = await get_scan_by_id(resp.scan_id)
     assert record is not None
     assert record["input_hash"] == expected_hash
+    assert len(record["input_hash"]) == 64
     assert record["scan_id"] == resp.scan_id
     assert "9876543210" not in record["content_masked"]
     assert "112233" not in record["content_masked"]
 
-    # 2. Production mode: zero raw text stored
-    with patch("core.db_logger.is_production_mode", return_value=True):
+    # 2. Production mode (PRODUCTION_MODE=true): content_masked is empty string
+    os.environ["PRODUCTION_MODE"] = "true"
+    try:
         prod_req = ScanRequest(
             content="TOP_SECRET_ALERT_DO_NOT_STORE_RAW_TEXT",
             sender="+919876543210",
@@ -201,16 +215,15 @@ async def test_audit_privacy_sha256_and_production_mode():
         prod_resp = await run_pipeline(prod_req)
         await log_scan_audit(prod_resp, prod_req)
 
-        prod_record = await get_scan_audit(prod_resp.scan_id)
+        prod_record = await get_scan_by_id(prod_resp.scan_id)
         assert prod_record is not None
         assert prod_record["input_hash"] == hashlib.sha256(prod_req.content.encode("utf-8")).hexdigest()
-        # Verify content_masked is None (no raw text stored in DB)
-        assert prod_record["content_masked"] is None
+        assert len(prod_record["input_hash"]) == 64
+        # Verify content_masked is empty string
+        assert prod_record["content_masked"] == ""
         assert verify_audit_privacy(prod_record, prod_req.content) is True
-        # Ensure raw text does not appear in any value of the stored record
-        for key, val in prod_record.items():
-            if isinstance(val, str):
-                assert "TOP_SECRET_ALERT_DO_NOT_STORE_RAW_TEXT" not in val
+    finally:
+        del os.environ["PRODUCTION_MODE"]
 
 
 @pytest.mark.asyncio

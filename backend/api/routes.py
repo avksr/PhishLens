@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Request
 from shared.models import ScanRequest, ScanResponse
 from core.orchestrator import run_pipeline
 from core.limiter import limiter, get_rate_limit
-from core.db_logger import get_scan_audit, get_recent_scans
+from core.db_logger import get_scan_by_id, get_recent_scans
 
 router = APIRouter(prefix="/api/v1", tags=["Scan & Interception"])
 
@@ -38,9 +38,10 @@ async def get_recent_audits(limit: int = 10):
 async def get_audit(scan_id: str):
     """
     Audit Log Inspection Endpoint (US-5):
-    Returns the full execution audit record and status for a given scan_id for judges/evaluators.
+    Returns full audit record for a given scan_id for judges/evaluators.
+    Returns 404 if scan_id not found.
     """
-    record = await get_scan_audit(scan_id)
+    record = await get_scan_by_id(scan_id)
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
