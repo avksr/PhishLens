@@ -31,6 +31,8 @@ class ChannelEnum(str, Enum):
     EMAIL = "email"
     QR_PAYMENT = "qr_payment"
     WEB_URL = "web_url"
+    UPI_HANDLE = "upi_handle"
+    TEXT_MESSAGE = "text_message"
     UNKNOWN = "unknown"
 
 
@@ -85,6 +87,9 @@ class ScanRequest(BaseModel):
     )
     extracted_url: Optional[str] = Field(None, description="Pre-extracted or user-provided URL to inspect")
     channel: ChannelEnum = Field(default=ChannelEnum.SMS, description="Ingestion channel")
+    input_type: Optional[str] = Field(
+        None, description="Auto-classified input type: web_url, upi_handle, or text_message"
+    )
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
 
 
@@ -179,13 +184,16 @@ class ScanResponse(BaseModel):
     risk_tier: Optional[RiskTierEnum] = None
     confidence: ConfidenceLevelEnum = ConfidenceLevelEnum.HIGH
     reasons: List[str] = Field(default_factory=list, description="Plain-language, max 5, ordered by weight")
-    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(default_factory=list, description="tool name, finding, raw result summary, status")
+    evidence: List[Union[EvidenceItem, Dict[str, Any]]] = Field(
+        default_factory=list, description="tool name, finding, raw result summary, status"
+    )
     recommended_action: Optional[str] = None
     verdict: Optional[str] = None
     verdict_hi: Optional[str] = None
     recommendation: Optional[str] = None
     recommendation_hi: Optional[str] = None
     action_required: Optional[ActionRequiredEnum] = None
+    detected_input_type: Optional[str] = None
     audit_trail: Optional[AuditTrail] = None
     processing_time_ms: float = 0.0
     detected_input_type: Optional[str] = Field(
@@ -236,7 +244,9 @@ class ScanResponse(BaseModel):
         elif not self.recommendation and self.recommended_action:
             self.recommendation = self.recommended_action
         elif not self.recommended_action and not self.recommendation:
-            self.recommended_action = "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            self.recommended_action = (
+                "No action required." if score <= 30 else "Exercise caution and do not share OTP or sensitive data."
+            )
             self.recommendation = self.recommended_action
 
         # Synchronize verdict

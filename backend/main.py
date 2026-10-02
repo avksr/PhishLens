@@ -7,14 +7,16 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from core.limiter import limiter
+from core.limiter import limiter, get_rate_limit
 from api.routes import router as api_router
 
 logger = logging.getLogger("phishlens.api")
 
-
-
 FRONTEND_HTML = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html"))
+
+# Configurable Rate Limiting (PRD §8 & §9)
+# Read slowapi rate limits from environment variable RATE_LIMIT_PER_MINUTE (defaulting to 30/minute)
+RATE_LIMIT_PER_MINUTE = get_rate_limit()
 
 app = FastAPI(
     title="PhishLens API (ScamShield AI)",
@@ -31,7 +33,8 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={
-            "error": "Internal Server Error",
+            "error": "Internal server error",
+            "code": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected error occurred during request processing. Please try again later.",
             "path": request.url.path
         }
@@ -40,7 +43,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 # Register slowapi state, handler, and middleware
 app.state.limiter = limiter
-
+app.state.rate_limit = RATE_LIMIT_PER_MINUTE
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
