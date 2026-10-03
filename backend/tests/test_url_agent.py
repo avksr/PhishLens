@@ -51,8 +51,11 @@ try:
         _domain_cache,
         _DomainCacheEntry,
         _whois_fallback,
+        _run_offline_domain_heuristics,
         _RISK_WHOIS_TIMEOUT_PENALTY,
         _RISK_SAFE_BROWSING,
+        _RISK_NEW_DOMAIN,
+        _NEW_DOMAIN_THRESHOLD_DAYS,
         check_google_safe_browsing,
     )
 except ImportError:
@@ -72,8 +75,11 @@ except ImportError:
         _domain_cache,
         _DomainCacheEntry,
         _whois_fallback,
+        _run_offline_domain_heuristics,
         _RISK_WHOIS_TIMEOUT_PENALTY,
         _RISK_SAFE_BROWSING,
+        _RISK_NEW_DOMAIN,
+        _NEW_DOMAIN_THRESHOLD_DAYS,
         check_google_safe_browsing,
     )
 
@@ -105,12 +111,18 @@ def _make_request(
     return ScanRequest(content=content, extracted_url=extracted_url)
 
 
-def _patch_whois_and_safebrowsing(whois_return, sb_return=(None, 0.0, [])):
+def _patch_whois_and_safebrowsing(
+    whois_return,
+    sb_return=None,
+):
     """
     Helper to patch both _check_whois_age and check_google_safe_browsing
     for tests that need to isolate from network calls.
     """
     import contextlib
+
+    if sb_return is None:
+        sb_return = {"is_unsafe": False, "checked": False, "threat_type": None}
 
     @contextlib.contextmanager
     def _ctx():
@@ -824,25 +836,25 @@ class TestGoogleSafeBrowsing:
     async def test_skips_when_api_key_missing(self):
         """
         When GOOGLE_SAFE_BROWSING_API_KEY is empty, the check must
-        silently return no threat and zero score delta.
+        silently return {is_unsafe: False, checked: False}.
         """
         with patch(
             f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
             "",
         ):
-            threat, delta, flags = await check_google_safe_browsing(
+            result = await check_google_safe_browsing(
                 "https://malicious.example.com"
             )
 
-        assert threat is None
-        assert delta == 0.0
-        assert flags == []
+        assert result["is_unsafe"] is False
+        assert result["checked"] is False
+        assert result["threat_type"] is None
 
     @pytest.mark.asyncio
     async def test_returns_threat_on_match(self):
         """
         When Safe Browsing API returns a match, check_google_safe_browsing
-        must return the threat type with the correct risk delta.
+        must return is_unsafe=True with the threat type.
         """
         mock_response_data = {
             "matches": [
@@ -875,19 +887,19 @@ class TestGoogleSafeBrowsing:
 
             MockSession.return_value = mock_session_ctx
 
-            threat, delta, flags = await check_google_safe_browsing(
+            result = await check_google_safe_browsing(
                 "https://evil.example.com"
             )
 
-        assert threat == "SOCIAL_ENGINEERING"
-        assert delta == _RISK_SAFE_BROWSING
-        assert "GOOGLE_SAFE_BROWSING_FLAGGED" in flags
+        assert result["is_unsafe"] is True
+        assert result["checked"] is True
+        assert result["threat_type"] == "SOCIAL_ENGINEERING"
 
     @pytest.mark.asyncio
     async def test_returns_no_threat_on_clean_url(self):
         """
         When Safe Browsing API returns no matches, the function must
-        return None threat with zero delta.
+        return is_unsafe=False with checked=True.
         """
         with patch(
             f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
@@ -910,19 +922,19 @@ class TestGoogleSafeBrowsing:
 
             MockSession.return_value = mock_session_ctx
 
-            threat, delta, flags = await check_google_safe_browsing(
+            result = await check_google_safe_browsing(
                 "https://safe.example.com"
             )
 
-        assert threat is None
-        assert delta == 0.0
-        assert flags == []
+        assert result["is_unsafe"] is False
+        assert result["checked"] is True
+        assert result["threat_type"] is None
 
     @pytest.mark.asyncio
     async def test_graceful_fallback_on_network_failure(self):
         """
         When the HTTP request fails, check_google_safe_browsing must
-        silently return no threat — never raise.
+        silently return {is_unsafe: False, checked: False} — never raise.
         """
         with patch(
             f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
@@ -937,13 +949,13 @@ class TestGoogleSafeBrowsing:
 
             MockSession.return_value = mock_session_ctx
 
-            threat, delta, flags = await check_google_safe_browsing(
+            result = await check_google_safe_browsing(
                 "https://unreachable.example.com"
             )
 
-        assert threat is None
-        assert delta == 0.0
-        assert flags == []
+        assert result["is_unsafe"] is False
+        assert result["checked"] is False
+        assert result["threat_type"] is None
 
     @pytest.mark.asyncio
     async def test_timeout_is_1_second(self):
@@ -966,11 +978,11 @@ class TestGoogleSafeBrowsing:
             return_value=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (5 days old)"]),
         ), patch(
             f"{analyze_url.__module__}.check_google_safe_browsing",
-            return_value=(
-                "SOCIAL_ENGINEERING",
-                _RISK_SAFE_BROWSING,
-                ["GOOGLE_SAFE_BROWSING_FLAGGED"],
-            ),
+            return_value={
+                "is_unsafe": True,
+                "checked": True,
+                "threat_type": "SOCIAL_ENGINEERING",
+            },
         ):
             result = await analyze_url(req)
 
@@ -1222,3 +1234,95 @@ class TestExpandedBrandWatchlist:
 
         # gpay keyword matches but pay.google.com is official
         assert result.is_typosquatting is False
+
+
+# ──────────────────────────────────────────────
+# FR-5: Offline Domain Heuristics tests
+# ──────────────────────────────────────────────
+
+class TestOfflineDomainHeuristics:
+    """Tests for _run_offline_domain_heuristics() (FR-5)."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+
+    def test_high_risk_tld_flags_new_domain(self):
+        """
+        When WHOIS is offline and the TLD is high-risk, the function
+        must flag with 'NEW_DOMAIN (<30 days)' and apply _RISK_NEW_DOMAIN.
+        """
+        age, registrar, delta, flags = _run_offline_domain_heuristics(
+            "evil-bank.top", "top"
+        )
+        assert age is None
+        assert registrar is None
+        assert delta == _RISK_NEW_DOMAIN
+        assert any(
+            "NEW_DOMAIN" in f and f"<{_NEW_DOMAIN_THRESHOLD_DAYS} days" in f
+            for f in flags
+        ), f"Expected 'NEW_DOMAIN (<30 days)' flag, got: {flags}"
+        assert any("WHOIS_OFFLINE_FALLBACK" in f for f in flags)
+
+    def test_benign_tld_no_penalty(self):
+        """
+        When WHOIS is offline and the TLD is benign (e.g. .com),
+        no penalty should be applied.
+        """
+        age, registrar, delta, flags = _run_offline_domain_heuristics(
+            "example.com", "com"
+        )
+        assert age is None
+        assert registrar is None
+        assert delta == 0.0
+        assert any("WHOIS_OFFLINE_FALLBACK" in f for f in flags)
+        assert any("benign" in f.lower() for f in flags)
+        assert not any("NEW_DOMAIN" in f for f in flags)
+
+    def test_xyz_tld_flags_new_domain(self):
+        """High-risk .xyz TLD should also be flagged offline."""
+        age, registrar, delta, flags = _run_offline_domain_heuristics(
+            "suspicious.xyz", "xyz"
+        )
+        assert delta == _RISK_NEW_DOMAIN
+        assert any("NEW_DOMAIN" in f for f in flags)
+
+    @pytest.mark.asyncio
+    async def test_offline_fallback_in_full_pipeline(self):
+        """
+        End-to-end: when WHOIS is completely offline (returns None) for
+        a high-risk TLD domain, the pipeline should still flag it with
+        NEW_DOMAIN via offline heuristics.
+        """
+        req = _make_request(extracted_url="https://sbi-kyc-verify.top/login")
+
+        # Simulate WHOIS returning what _run_offline_domain_heuristics produces
+        with _patch_whois_and_safebrowsing(
+            whois_return=(
+                None,
+                None,
+                _RISK_NEW_DOMAIN,
+                [f"NEW_DOMAIN (<{_NEW_DOMAIN_THRESHOLD_DAYS} days)",
+                 "WHOIS_OFFLINE_FALLBACK (high-risk TLD .top)"],
+            ),
+        ):
+            result = await analyze_url(req)
+
+        assert result.status == AgentStatusEnum.SUCCESS
+        assert result.risk_score > 0
+        assert any("NEW_DOMAIN" in f for f in result.flags)
+        assert any("WHOIS_OFFLINE_FALLBACK" in f for f in result.flags)
+
+    @pytest.mark.asyncio
+    async def test_parivahan_phishing_detected(self):
+        """Fake Parivahan domain should be detected as typosquatting."""
+        req = _make_request(
+            extracted_url="https://parivahan-licence-renewal.top/apply"
+        )
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.is_typosquatting is True
+        assert "Parivahan" in (result.target_brand or "")

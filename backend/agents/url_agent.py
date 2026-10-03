@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import tldextract
 
@@ -710,24 +710,21 @@ async def _check_whois_age(
     except asyncio.TimeoutError:
         logger.warning(
             "WHOIS/RDAP timeout for '%s' (>%.1fs) — falling back to "
-            "local TLD reputation",
+            "offline domain heuristics",
             registered_domain, _WHOIS_TIMEOUT,
         )
-        age, delta, flags = _whois_fallback(registered_domain, suffix)
-        return age, None, delta, flags
+        return _run_offline_domain_heuristics(registered_domain, suffix)
     except Exception as exc:
         logger.warning(
-            "WHOIS/RDAP error for '%s': %s — falling back to local TLD "
-            "reputation",
+            "WHOIS/RDAP error for '%s': %s — falling back to offline "
+            "domain heuristics",
             registered_domain, exc,
         )
-        age, delta, flags = _whois_fallback(registered_domain, suffix)
-        return age, None, delta, flags
+        return _run_offline_domain_heuristics(registered_domain, suffix)
 
     # _lookup_domain_age returns None on complete failure, or (age, registrar)
     if whois_result is None:
-        age, delta, flags = _whois_fallback(registered_domain, suffix)
-        return age, None, delta, flags
+        return _run_offline_domain_heuristics(registered_domain, suffix)
 
     age_days, registrar = whois_result
 
@@ -767,28 +764,94 @@ def _whois_fallback(
     return None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]
 
 
+def _run_offline_domain_heuristics(
+    registered_domain: str,
+    suffix: str,
+) -> Tuple[Optional[int], Optional[str], float, List[str]]:
+    """
+    Offline-capable domain heuristics that run without any network access.
+
+    When WHOIS/RDAP is completely unreachable (timeout, socket error, or
+    full offline mode), this function applies local-only signals to estimate
+    domain age risk:
+
+      * **High-risk TLD** — domains on suspicious TLDs (e.g. ``.top``,
+        ``.xyz``) are presumed newly registered and flagged with
+        ``NEW_DOMAIN (<30 days)`` plus the full ``_RISK_NEW_DOMAIN``
+        penalty.  This ensures that even when the agent is completely
+        disconnected, obviously suspicious domains are still flagged.
+      * **Benign TLD** — no penalty is applied to avoid false positives.
+
+    Parameters
+    ----------
+    registered_domain : str
+        The full registered domain (e.g. ``sbi-kyc-verify.top``).
+    suffix : str
+        The TLD suffix (e.g. ``top``).
+
+    Returns
+    -------
+    tuple
+        ``(domain_age_days | None, registrar | None, score_delta, flags)``.
+    """
+    tlds = _load_high_risk_tlds()
+    suffix_lower = suffix.lower().lstrip(".")
+
+    if suffix_lower in tlds:
+        logger.info(
+            "Offline heuristics: '%s' has high-risk TLD '.%s' — "
+            "presuming new domain, applying %.0f-point penalty",
+            registered_domain, suffix_lower, _RISK_NEW_DOMAIN,
+        )
+        return (
+            None,
+            None,
+            _RISK_NEW_DOMAIN,
+            [f"NEW_DOMAIN (<{_NEW_DOMAIN_THRESHOLD_DAYS} days)",
+             f"WHOIS_OFFLINE_FALLBACK (high-risk TLD .{suffix_lower})"],
+        )
+    return (
+        None,
+        None,
+        0.0,
+        ["WHOIS_OFFLINE_FALLBACK (TLD benign — no penalty)"],
+    )
+
+
 # ──────────────────────────────────────────────
 # Google Safe Browsing API v4 (FR-4)
 # ──────────────────────────────────────────────
 
 async def check_google_safe_browsing(
     url: str,
-) -> Tuple[Optional[str], float, List[str]]:
+) -> Dict[str, Any]:
     """
     Query the Google Safe Browsing Lookup API v4 for *url*.
 
-    Returns ``(threat_type | None, score_delta, new_flags)``.
+    Returns a dict with the following keys:
+
+    * ``is_unsafe`` — ``True`` if Safe Browsing flagged the URL.
+    * ``checked``  — ``True`` if the API was actually queried
+      (``False`` when the key is missing or the request failed).
+    * ``threat_type`` — the threat category string (e.g.
+      ``"SOCIAL_ENGINEERING"``) or ``None``.
 
     **Graceful pass-through fallback**:
       - If ``GOOGLE_SAFE_BROWSING_API_KEY`` is empty or unset, the
-        check is silently skipped (returns no threat).
+        check is silently skipped.
       - If the network request fails or times out (>1.0 s), the
         check is silently skipped — no exception is raised.
     """
+    _PASS_THROUGH: Dict[str, Any] = {
+        "is_unsafe": False,
+        "checked": False,
+        "threat_type": None,
+    }
+
     api_key = _GOOGLE_SAFE_BROWSING_API_KEY
     if not api_key:
         logger.debug("Google Safe Browsing API key not configured — skipping")
-        return None, 0.0, []
+        return _PASS_THROUGH
 
     payload = {
         "client": {
@@ -812,7 +875,7 @@ async def check_google_safe_browsing(
         import aiohttp  # type: ignore[import-untyped]
     except ImportError:
         logger.warning("aiohttp not installed — skipping Safe Browsing check")
-        return None, 0.0, []
+        return _PASS_THROUGH
 
     try:
         async with aiohttp.ClientSession(
@@ -830,19 +893,19 @@ async def check_google_safe_browsing(
             "Google Safe Browsing request failed for '%s': %s — skipping",
             url, exc,
         )
-        return None, 0.0, []
+        return _PASS_THROUGH
 
     matches = data.get("matches")
     if not matches:
-        return None, 0.0, []
+        return {"is_unsafe": False, "checked": True, "threat_type": None}
 
     # Take the first (most severe) match
     threat_type = matches[0].get("threatType", "UNKNOWN")
-    return (
-        threat_type,
-        _RISK_SAFE_BROWSING,
-        ["GOOGLE_SAFE_BROWSING_FLAGGED"],
-    )
+    return {
+        "is_unsafe": True,
+        "checked": True,
+        "threat_type": threat_type,
+    }
 
 
 # ──────────────────────────────────────────────
@@ -935,9 +998,11 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
         flags.extend(age_flags)
 
         # ── Step 6: Google Safe Browsing (FR-4) ──
-        sb_threat, sb_delta, sb_flags = await check_google_safe_browsing(url)
-        risk_score += sb_delta
-        flags.extend(sb_flags)
+        sb_result = await check_google_safe_browsing(url)
+        sb_threat = sb_result.get("threat_type")
+        if sb_result.get("is_unsafe"):
+            risk_score += _RISK_SAFE_BROWSING
+            flags.append("GOOGLE_SAFE_BROWSING_FLAGGED")
 
         # ── Step 7: Normalise score ──
         risk_score = max(0.0, min(100.0, risk_score))

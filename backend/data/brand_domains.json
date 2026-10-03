@@ -422,5 +422,19 @@
       "zomato.com",
       "zomato.in"
     ]
+  },
+  "PARIVAHAN": {
+    "brand_name": "Parivahan / Transport",
+    "keywords": [
+      "parivahan",
+      "vahan",
+      "sarathi",
+      "drivinglicence"
+    ],
+    "official_domains": [
+      "parivahan.gov.in",
+      "vahan.parivahan.gov.in",
+      "sarathi.parivahan.gov.in"
+    ]
   }
 }
