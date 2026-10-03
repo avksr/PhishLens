@@ -1414,3 +1414,33 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
             details=str(exc),
             latency_ms=round(elapsed, 2),
         )
+
+
+# ---------------------------------------------------------------------------
+# Re-exports for Production-Grade Multi-Signal URL Inspection Pipeline
+# ---------------------------------------------------------------------------
+try:
+    from phishlens.agents.url_agent import (
+        DOMAnalysisResult,
+        DOMInspector,
+        HomographEngine,
+        HomographResult,
+        RedirectHop,
+        RedirectTraceResult,
+        RedirectTracer,
+        RiskSignal,
+        SSLAnalysisResult,
+        SSLAnalyzer,
+        URLAgent,
+        URLAgentInput,
+        URLAgentOutput,
+        analyze_homograph_and_brands,
+        analyze_ssl_infrastructure,
+        confusable_skeleton,
+        inspect_dom_and_favicons,
+        murmur3_favicon_hash,
+        run_url_agent,
+        trace_redirects_and_cloaking,
+    )
+except ImportError:
+    pass
