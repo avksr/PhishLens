@@ -12,7 +12,9 @@ from .core.redirect_tracer import (
 from .core.homograph_engine import (
     HomographEngine,
     HomographResult,
+    TUNNELER_DOMAINS,
     analyze_homograph_and_brands,
+    calculate_shannon_entropy,
     confusable_skeleton,
 )
 from .core.ssl_analyzer import (
@@ -39,11 +41,13 @@ __all__ = [
     "RiskSignal",
     "SSLAnalysisResult",
     "SSLAnalyzer",
+    "TUNNELER_DOMAINS",
     "URLAgent",
     "URLAgentInput",
     "URLAgentOutput",
     "analyze_homograph_and_brands",
     "analyze_ssl_infrastructure",
+    "calculate_shannon_entropy",
     "confusable_skeleton",
     "inspect_dom_and_favicons",
     "murmur3_favicon_hash",

@@ -71,6 +71,16 @@ _PAYMENT_INPUT_REGEX = re.compile(
     re.IGNORECASE,
 )
 
+# Phishing kit exfiltration endpoints (Telegram Bots & Discord Webhooks)
+_TELEGRAM_BOT_EXFIL_REGEX = re.compile(
+    r"https?://(?:api\.)?telegram\.org/bot\d+:[A-Za-z0-9_-]+/(?:sendMessage|sendDocument|sendPhoto)?",
+    re.IGNORECASE,
+)
+_DISCORD_WEBHOOK_EXFIL_REGEX = re.compile(
+    r"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]+",
+    re.IGNORECASE,
+)
+
 
 def compute_murmur3_hash(data: bytes) -> int:
     """Compute Murmur3 32-bit integer hash on data (with pure-Python fallback)."""
@@ -177,6 +187,8 @@ class DOMInspectionResult:
     has_password_input: bool
     has_payment_input: bool
     cross_domain_form_actions: List[str]
+    has_exfiltration_webhook: bool = False
+    exfiltration_endpoints: List[str] = field(default_factory=list)
     signals: List[RiskSignal] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -331,6 +343,24 @@ class DOMInspector:
                         )
                     )
 
+        # ── 5. Evaluate Phishing Kit Webhook Exfiltration (Telegram / Discord) ──
+        telegram_matches = _TELEGRAM_BOT_EXFIL_REGEX.findall(html_body) if html_body else []
+        discord_matches = _DISCORD_WEBHOOK_EXFIL_REGEX.findall(html_body) if html_body else []
+        exfil_endpoints = list(dict.fromkeys(telegram_matches + discord_matches))
+        has_exfil = bool(exfil_endpoints)
+
+        if has_exfil:
+            signals.append(
+                RiskSignal(
+                    category="DOM",
+                    severity="CRITICAL",
+                    description=(
+                        f"PHISHING_KIT_EXFILTRATION: Direct credential exfiltration channel to "
+                        f"Telegram Bot or Discord Webhook detected in page DOM/scripts: {exfil_endpoints[0][:48]}..."
+                    ),
+                )
+            )
+
         return DOMInspectionResult(
             favicon_hash=favicon_hash,
             matched_brand=matched_brand,
@@ -338,6 +368,8 @@ class DOMInspector:
             has_password_input=parser.has_password_input,
             has_payment_input=parser.has_payment_input,
             cross_domain_form_actions=cross_domain_actions,
+            has_exfiltration_webhook=has_exfil,
+            exfiltration_endpoints=exfil_endpoints,
             signals=signals,
             metadata={
                 "has_password": parser.has_password_input,
@@ -345,6 +377,8 @@ class DOMInspector:
                 "form_count": len(parser.form_actions),
                 "favicon_hash": favicon_hash,
                 "matched_brand": matched_brand,
+                "has_exfiltration_webhook": has_exfil,
+                "exfiltration_endpoints": exfil_endpoints,
             },
         )
 
