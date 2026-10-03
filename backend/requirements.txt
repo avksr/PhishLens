@@ -12,3 +12,5 @@ pytest>=9.0.3
 pytest-asyncio>=0.23.7
 flake8>=7.1.0
 slowapi>=0.1.9
+phonenumbers>=8.13.0
+pypdf>=4.0.0

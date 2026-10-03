@@ -57,6 +57,15 @@ try:
         _RISK_NEW_DOMAIN,
         _NEW_DOMAIN_THRESHOLD_DAYS,
         check_google_safe_browsing,
+        check_threat_intel,
+        _threat_feed_cache,
+        _vt_rate_limiter,
+        check_alienvault_otx,
+        check_virustotal,
+        _RISK_OPENPHISH,
+        _RISK_URLHAUS,
+        _RISK_OTX,
+        _RISK_VIRUSTOTAL,
     )
 except ImportError:
     from backend.agents.url_agent import (  # noqa: E402
@@ -81,6 +90,15 @@ except ImportError:
         _RISK_NEW_DOMAIN,
         _NEW_DOMAIN_THRESHOLD_DAYS,
         check_google_safe_browsing,
+        check_threat_intel,
+        _threat_feed_cache,
+        _vt_rate_limiter,
+        check_alienvault_otx,
+        check_virustotal,
+        _RISK_OPENPHISH,
+        _RISK_URLHAUS,
+        _RISK_OTX,
+        _RISK_VIRUSTOTAL,
     )
 
 try:
@@ -1326,3 +1344,98 @@ class TestOfflineDomainHeuristics:
 
         assert result.is_typosquatting is True
         assert "Parivahan" in (result.target_brand or "")
+
+
+# ──────────────────────────────────────────────
+# Tiered Threat Intelligence Tests
+# ──────────────────────────────────────────────
+
+class TestTieredThreatIntel:
+    """Tests for the 4-tier Threat Intelligence subsystem."""
+
+    def setup_method(self):
+        domain_cache_clear()
+        whois_cache_clear()
+        _threat_feed_cache.clear()
+        _vt_rate_limiter.reset()
+
+    @pytest.mark.asyncio
+    async def test_tier1_openphish_feed_match(self):
+        """URLs present in OpenPhish feed must trigger THREAT_INTEL_OPENPHISH_FLAGGED (+35)."""
+        _threat_feed_cache.openphish_urls.add("https://known-openphish.com/login")
+        intel = await check_threat_intel("https://known-openphish.com/login")
+
+        assert intel["is_unsafe"] is True
+        assert "THREAT_INTEL_OPENPHISH_FLAGGED" in intel["flags"]
+        assert intel["risk_delta"] >= _RISK_OPENPHISH
+
+    @pytest.mark.asyncio
+    async def test_tier1_urlhaus_domain_match(self):
+        """Domains in URLhaus feed must trigger THREAT_INTEL_URLHAUS_FLAGGED (+35)."""
+        _threat_feed_cache.urlhaus_domains.add("malware-payload.xyz")
+        intel = await check_threat_intel(
+            "http://malware-payload.xyz/download.exe",
+            domain="malware-payload.xyz",
+        )
+
+        assert intel["is_unsafe"] is True
+        assert "THREAT_INTEL_URLHAUS_FLAGGED" in intel["flags"]
+        assert intel["risk_delta"] >= _RISK_URLHAUS
+
+    @pytest.mark.asyncio
+    async def test_tier3_otx_pulse_match(self):
+        """AlienVault OTX indicators with pulse_count > 0 must trigger OTX_PULSE_FLAGGED (+25)."""
+        with patch(
+            f"{analyze_url.__module__}.check_alienvault_otx",
+            return_value={"is_unsafe": True, "checked": True, "pulse_count": 4},
+        ):
+            intel = await check_threat_intel("https://suspicious-threat.org")
+
+        assert intel["is_unsafe"] is True
+        assert "OTX_PULSE_FLAGGED" in intel["flags"]
+        assert intel["risk_delta"] >= _RISK_OTX
+
+    @pytest.mark.asyncio
+    async def test_tier3_otx_missing_key_graceful_pass(self):
+        """When OTX API key is empty, check_alienvault_otx silently passes through."""
+        with patch(f"{analyze_url.__module__}._OTX_API_KEY", ""):
+            res = await check_alienvault_otx("https://clean-site.com")
+            assert res["is_unsafe"] is False
+            assert res["checked"] is False
+
+    def test_tier4_virustotal_rate_limiter_enforcement(self):
+        """VT rate limiter allows exactly 4 requests per 60s window before blocking."""
+        _vt_rate_limiter.reset()
+        for _ in range(4):
+            assert _vt_rate_limiter.allow_request() is True
+        # 5th request within the minute must be denied
+        assert _vt_rate_limiter.allow_request() is False
+
+    @pytest.mark.asyncio
+    async def test_tier4_virustotal_malicious_detection(self):
+        """VirusTotal detections > 0 must trigger VIRUSTOTAL_MALICIOUS_FLAGGED (+30)."""
+        with patch(
+            f"{analyze_url.__module__}.check_virustotal",
+            return_value={"is_unsafe": True, "checked": True, "positives": 5},
+        ):
+            intel = await check_threat_intel("https://infected-sample.com")
+
+        assert intel["is_unsafe"] is True
+        assert "VIRUSTOTAL_MALICIOUS_FLAGGED" in intel["flags"]
+        assert intel["risk_delta"] >= _RISK_VIRUSTOTAL
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_with_tiered_threat_intel(self):
+        """End-to-end: UrlAgentResult includes threat_intel dict and proper flags."""
+        _threat_feed_cache.openphish_urls.add("https://flagged-feed-domain.com/scam")
+        req = _make_request(extracted_url="https://flagged-feed-domain.com/scam")
+
+        with _patch_whois_and_safebrowsing(
+            whois_return=(None, None, 0.0, []),
+        ):
+            result = await analyze_url(req)
+
+        assert result.status == AgentStatusEnum.SUCCESS
+        assert result.threat_intel is not None
+        assert "THREAT_INTEL_OPENPHISH_FLAGGED" in result.flags
+        assert result.risk_score >= _RISK_OPENPHISH

@@ -107,6 +107,7 @@ class UrlAgentResult(BaseModel):
     target_brand: Optional[str] = None
     tld_reputation: TldReputationEnum = TldReputationEnum.NEUTRAL
     safe_browsing_threat: Optional[str] = None
+    threat_intel: Optional[Dict[str, Any]] = None
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
@@ -150,6 +151,18 @@ class UpiAgentResult(BaseModel):
     latency_ms: float = 0.0
 
 
+class DocumentAgentResult(BaseModel):
+    status: AgentStatusEnum = AgentStatusEnum.SUCCESS
+    risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    flags: List[str] = Field(default_factory=list)
+    aadhaar_numbers: List[Dict[str, Any]] = Field(default_factory=list)
+    pan_numbers: List[Dict[str, Any]] = Field(default_factory=list)
+    extracted_urls: List[str] = Field(default_factory=list)
+    pdf_analysis: Optional[Dict[str, Any]] = None
+    details: str = ""
+    latency_ms: float = 0.0
+
+
 # --- Composite Output Models ---
 class SynthesisBreakdown(BaseModel):
     weights_applied: Dict[str, float] = Field(default_factory=lambda: {
@@ -166,6 +179,7 @@ class AuditTrail(BaseModel):
     sender_analysis: SenderAgentResult
     intent_analysis: IntentAgentResult
     upi_analysis: Optional[UpiAgentResult] = None
+    document_analysis: Optional[DocumentAgentResult] = None
     synthesis_breakdown: SynthesisBreakdown
 
 
