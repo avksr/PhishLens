@@ -179,7 +179,7 @@ async def test_url_agent_typosquatting_phishing_url():
     req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
     with _patch_whois_and_safebrowsing(
-        whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
+        whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (5 days old)"]),
     ):
         result = await analyze_url(req)
 
@@ -248,7 +248,7 @@ async def test_risk_score_clamped_to_100():
 
     # Force WHOIS to also add +40 → total = 35 + 50 + 40 = 125 → clamp to 100
     with _patch_whois_and_safebrowsing(
-        whois_return=(2, "GoDaddy", 40.0, ["NEW_DOMAIN (<30 days)"]),
+        whois_return=(2, "GoDaddy", 40.0, ["NEW_DOMAIN (2 days old)"]),
     ):
         result = await analyze_url(req)
 
@@ -549,7 +549,7 @@ async def test_airtel_phishing_url():
     req = _make_request(extracted_url="https://airtel-recharge-offer.top/claim")
 
     with _patch_whois_and_safebrowsing(
-        whois_return=(3, "Shady Registrar LLC", 40.0, ["NEW_DOMAIN (<30 days)"]),
+        whois_return=(3, "Shady Registrar LLC", 40.0, ["NEW_DOMAIN (3 days old)"]),
     ):
         result = await analyze_url(req)
 
@@ -604,7 +604,7 @@ class TestDomainResultCache:
         req = _make_request(extracted_url="https://sbi-kyc-verify.top")
 
         with _patch_whois_and_safebrowsing(
-            whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
+            whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (5 days old)"]),
         ):
             result1 = await analyze_url(req)
             result2 = await analyze_url(req)
@@ -857,15 +857,23 @@ class TestGoogleSafeBrowsing:
         with patch(
             f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
             "fake-api-key",
-        ), patch("httpx.AsyncClient") as MockClient:
+        ), patch("aiohttp.ClientSession") as MockSession:
             mock_resp = MagicMock()
-            mock_resp.json.return_value = mock_response_data
-            mock_resp.raise_for_status.return_value = None
+            mock_resp.json = AsyncMock(return_value=mock_response_data)
+            mock_resp.raise_for_status = MagicMock(return_value=None)
 
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__.return_value = AsyncMock()
-            mock_ctx.__aenter__.return_value.post.return_value = mock_resp
-            MockClient.return_value = mock_ctx
+            mock_post_ctx = MagicMock()
+            mock_post_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_post_ctx.__aexit__ = AsyncMock(return_value=False)
+
+            mock_session = MagicMock()
+            mock_session.post.return_value = mock_post_ctx
+
+            mock_session_ctx = MagicMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+            MockSession.return_value = mock_session_ctx
 
             threat, delta, flags = await check_google_safe_browsing(
                 "https://evil.example.com"
@@ -873,8 +881,7 @@ class TestGoogleSafeBrowsing:
 
         assert threat == "SOCIAL_ENGINEERING"
         assert delta == _RISK_SAFE_BROWSING
-        assert any("GOOGLE_SAFE_BROWSING_THREAT" in f for f in flags)
-        assert any("SOCIAL_ENGINEERING" in f for f in flags)
+        assert "GOOGLE_SAFE_BROWSING_FLAGGED" in flags
 
     @pytest.mark.asyncio
     async def test_returns_no_threat_on_clean_url(self):
@@ -885,15 +892,23 @@ class TestGoogleSafeBrowsing:
         with patch(
             f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
             "fake-api-key",
-        ), patch("httpx.AsyncClient") as MockClient:
+        ), patch("aiohttp.ClientSession") as MockSession:
             mock_resp = MagicMock()
-            mock_resp.json.return_value = {}  # no matches
-            mock_resp.raise_for_status.return_value = None
+            mock_resp.json = AsyncMock(return_value={})  # no matches
+            mock_resp.raise_for_status = MagicMock(return_value=None)
 
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__.return_value = AsyncMock()
-            mock_ctx.__aenter__.return_value.post.return_value = mock_resp
-            MockClient.return_value = mock_ctx
+            mock_post_ctx = MagicMock()
+            mock_post_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_post_ctx.__aexit__ = AsyncMock(return_value=False)
+
+            mock_session = MagicMock()
+            mock_session.post.return_value = mock_post_ctx
+
+            mock_session_ctx = MagicMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+            MockSession.return_value = mock_session_ctx
 
             threat, delta, flags = await check_google_safe_browsing(
                 "https://safe.example.com"
@@ -912,13 +927,15 @@ class TestGoogleSafeBrowsing:
         with patch(
             f"{check_google_safe_browsing.__module__}._GOOGLE_SAFE_BROWSING_API_KEY",
             "fake-api-key",
-        ), patch("httpx.AsyncClient") as MockClient:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__.return_value = AsyncMock()
-            mock_ctx.__aenter__.return_value.post.side_effect = ConnectionError(
-                "network down"
-            )
-            MockClient.return_value = mock_ctx
+        ), patch("aiohttp.ClientSession") as MockSession:
+            mock_session = MagicMock()
+            mock_session.post.side_effect = ConnectionError("network down")
+
+            mock_session_ctx = MagicMock()
+            mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+            MockSession.return_value = mock_session_ctx
 
             threat, delta, flags = await check_google_safe_browsing(
                 "https://unreachable.example.com"
@@ -946,21 +963,21 @@ class TestGoogleSafeBrowsing:
 
         with patch(
             f"{analyze_url.__module__}._check_whois_age",
-            return_value=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
+            return_value=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (5 days old)"]),
         ), patch(
             f"{analyze_url.__module__}.check_google_safe_browsing",
             return_value=(
                 "SOCIAL_ENGINEERING",
                 _RISK_SAFE_BROWSING,
-                ["GOOGLE_SAFE_BROWSING_THREAT (SOCIAL_ENGINEERING)"],
+                ["GOOGLE_SAFE_BROWSING_FLAGGED"],
             ),
         ):
             result = await analyze_url(req)
 
         assert result.status == AgentStatusEnum.SUCCESS
         assert result.safe_browsing_threat == "SOCIAL_ENGINEERING"
-        assert any("GOOGLE_SAFE_BROWSING_THREAT" in f for f in result.flags)
-        # Score should be clamped to 100 (TLD 35 + typo 50 + WHOIS 40 + SB 50 = 175)
+        assert "GOOGLE_SAFE_BROWSING_FLAGGED" in result.flags
+        # Score should be clamped to 100 (TLD 35 + typo 50 + WHOIS 40 + SB 30 = 155)
         assert result.risk_score == 100.0
 
 
@@ -983,13 +1000,13 @@ class TestDomainAgeFlagging:
         req = _make_request(extracted_url="https://brand-new-phish.top/login")
 
         with _patch_whois_and_safebrowsing(
-            whois_return=(10, "Shady Registrar LLC", 40.0, ["NEW_DOMAIN (<30 days)"]),
+            whois_return=(10, "Shady Registrar LLC", 40.0, ["NEW_DOMAIN (10 days old)"]),
         ):
             result = await analyze_url(req)
 
         assert result.domain_age_days == 10
-        assert any("NEW_DOMAIN" in f and "<30 days" in f for f in result.flags), (
-            f"Expected 'NEW_DOMAIN (<30 days)' flag, got: {result.flags}"
+        assert any("NEW_DOMAIN" in f and "days old" in f for f in result.flags), (
+            f"Expected 'NEW_DOMAIN (X days old)' flag, got: {result.flags}"
         )
 
     @pytest.mark.asyncio
@@ -1001,7 +1018,7 @@ class TestDomainAgeFlagging:
         req = _make_request(extracted_url="https://evil-phish.top/login")
 
         with _patch_whois_and_safebrowsing(
-            whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (<30 days)"]),
+            whois_return=(5, "NameCheap, Inc.", 40.0, ["NEW_DOMAIN (5 days old)"]),
         ):
             result = await analyze_url(req)
 

@@ -73,7 +73,7 @@ _RISK_HIGH_RISK_TLD = 35.0
 _RISK_TYPOSQUATTING = 50.0
 _RISK_NEW_DOMAIN = 40.0
 _RISK_HOMOGLYPH = 45.0
-_RISK_SAFE_BROWSING = 50.0
+_RISK_SAFE_BROWSING = 30.0
 _RISK_WHOIS_TIMEOUT_PENALTY = 15.0  # penalty when WHOIS fails but TLD is high-risk
 
 # WHOIS timeout (seconds)
@@ -736,7 +736,7 @@ async def _check_whois_age(
             age_days,
             registrar,
             _RISK_NEW_DOMAIN,
-            [f"NEW_DOMAIN (<{_NEW_DOMAIN_THRESHOLD_DAYS} days)"],
+            [f"NEW_DOMAIN ({age_days} days old)"],
         )
     return age_days, registrar, 0.0, []
 
@@ -809,22 +809,22 @@ async def check_google_safe_browsing(
     }
 
     try:
-        import httpx  # type: ignore[import-untyped]
+        import aiohttp  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning("httpx not installed — skipping Safe Browsing check")
+        logger.warning("aiohttp not installed — skipping Safe Browsing check")
         return None, 0.0, []
 
     try:
-        async with httpx.AsyncClient(timeout=_SAFE_BROWSING_TIMEOUT) as client:
-            resp = await client.post(
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=_SAFE_BROWSING_TIMEOUT),
+        ) as session:
+            async with session.post(
                 _SAFE_BROWSING_ENDPOINT,
                 params={"key": api_key},
                 json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if asyncio.iscoroutine(data):
-                data = await data
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
     except Exception as exc:
         logger.warning(
             "Google Safe Browsing request failed for '%s': %s — skipping",
@@ -841,7 +841,7 @@ async def check_google_safe_browsing(
     return (
         threat_type,
         _RISK_SAFE_BROWSING,
-        [f"GOOGLE_SAFE_BROWSING_THREAT ({threat_type})"],
+        ["GOOGLE_SAFE_BROWSING_FLAGGED"],
     )
 
 
