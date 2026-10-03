@@ -152,6 +152,10 @@ class URLAgent:
                 "brand_similarity": homograph_res.brand_similarity,
                 "is_combosquatting": homograph_res.is_combosquatting,
                 "is_subdomain_spoof": homograph_res.is_subdomain_spoof,
+                "entropy": getattr(homograph_res, "entropy", 0.0),
+                "is_high_entropy": getattr(homograph_res, "is_high_entropy", False),
+                "is_tunneler_host": getattr(homograph_res, "is_tunneler_host", False),
+                "tunneler_provider": getattr(homograph_res, "tunneler_provider", None),
             }
         except Exception as exc:
             logger.warning("Homograph analysis encountered error for %s: %s", url, exc)
@@ -226,6 +230,8 @@ class URLAgent:
                 "has_password_input": dom_res.has_password_input,
                 "has_payment_input": dom_res.has_payment_input,
                 "external_form_actions": dom_res.external_form_actions,
+                "has_exfiltration_webhook": getattr(dom_res, "has_exfiltration_webhook", False),
+                "exfiltration_endpoints": getattr(dom_res, "exfiltration_endpoints", []),
             }
         except Exception as exc:
             logger.warning("DOM inspection encountered error for %s: %s", final_destination_url, exc)
@@ -340,6 +346,29 @@ class URLAgent:
         if ssl_res and ssl_res.is_non_standard_port:
             raw_score += 15
             applied_rules.append(f"Web service running on non-standard port ({ssl_res.port}) (+15)")
+
+        # Phishing Kit Exfiltration Check (Telegram / Discord Webhook)
+        if dom_res and getattr(dom_res, "has_exfiltration_webhook", False):
+            raw_score += 50
+            applied_rules.append(
+                "Active Phishing Kit Exfiltration: Telegram Bot or Discord Webhook endpoint detected in page DOM (+50)"
+            )
+
+        # Ephemeral Tunneler / Reverse Proxy infrastructure check
+        if homograph_res and getattr(homograph_res, "is_tunneler_host", False):
+            raw_score += 25
+            applied_rules.append(
+                f"Ephemeral reverse-proxy tunnel detected ({homograph_res.tunneler_provider}): "
+                "Disposable phishing infrastructure (+25)"
+            )
+
+        # High Shannon Entropy check
+        if homograph_res and getattr(homograph_res, "is_high_entropy", False):
+            raw_score += 15
+            applied_rules.append(
+                f"High character Shannon entropy ({homograph_res.entropy:.2f}): "
+                "Likely algorithmic/DGA generation (+15)"
+            )
 
         # Clamp risk score to [0, 100]
         final_risk_score = max(0, min(100, int(raw_score)))

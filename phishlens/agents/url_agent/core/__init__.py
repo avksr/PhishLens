@@ -11,7 +11,9 @@ from .dom_inspector import (
 from .homograph_engine import (
     HomographEngine,
     HomographResult,
+    TUNNELER_DOMAINS,
     analyze_homograph_and_brands,
+    calculate_shannon_entropy,
     confusable_skeleton,
 )
 from .redirect_tracer import (
@@ -36,8 +38,10 @@ __all__ = [
     "RedirectTracer",
     "SSLAnalysisResult",
     "SSLAnalyzer",
+    "TUNNELER_DOMAINS",
     "analyze_homograph_and_brands",
     "analyze_ssl_infrastructure",
+    "calculate_shannon_entropy",
     "confusable_skeleton",
     "inspect_dom_and_favicons",
     "murmur3_favicon_hash",

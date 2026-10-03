@@ -11,10 +11,12 @@ Features:
 
 from __future__ import annotations
 
-import logging
-import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
+import logging
+import math
 from typing import Any, Dict, List, Optional, Tuple
+import unicodedata
 from urllib.parse import urlparse
 
 import idna
@@ -94,6 +96,40 @@ _COMBOSQUAT_KEYWORDS: frozenset[str] = frozenset({
     "wallet", "claim", "kyc", "alert", "service", "help",
 })
 
+# Ephemeral reverse-proxy / developer tunnel services commonly abused in phishing campaigns
+TUNNELER_DOMAINS: Dict[str, str] = {
+    "ngrok.io": "Ngrok",
+    "ngrok.app": "Ngrok",
+    "ngrok-free.app": "Ngrok",
+    "loca.lt": "Localtunnel",
+    "localhost.run": "Localhost.run",
+    "serveo.net": "Serveo",
+    "pagekite.me": "Pagekite",
+    "telebit.io": "Telebit",
+    "pinggy.link": "Pinggy",
+    "portmap.host": "Portmap",
+    "trycloudflare.com": "Cloudflare Quick Tunnels",
+    "pages.dev": "Cloudflare Pages",
+    "workers.dev": "Cloudflare Workers",
+}
+
+
+def calculate_shannon_entropy(text: str) -> float:
+    """
+    Calculate the Shannon entropy of a character sequence.
+    Values >= 3.65 for domain labels typically indicate algorithmically generated
+    random domains (DGA) or disposable phishing campaign tokens.
+    """
+    if not text:
+        return 0.0
+    length = len(text)
+    counts = Counter(text)
+    entropy = 0.0
+    for count in counts.values():
+        p = count / length
+        entropy -= p * math.log2(p)
+    return round(entropy, 2)
+
 
 @dataclass
 class HomographAnalysisResult:
@@ -109,6 +145,10 @@ class HomographAnalysisResult:
     is_subdomain_spoof: bool
     target_brand: Optional[str]
     similarity_score: float
+    entropy: float = 0.0
+    is_high_entropy: bool = False
+    is_tunneler_host: bool = False
+    tunneler_provider: Optional[str] = None
     signals: List[RiskSignal] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -321,6 +361,57 @@ class HomographEngine:
             if target_brand_identified and (is_subdomain_spoof or is_combosquatting):
                 break
 
+        # ── 4. Tunneler / Ephemeral Reverse-Proxy Detection ──
+        is_tunneler = False
+        tunneler_provider: Optional[str] = None
+        for tun_domain, provider in TUNNELER_DOMAINS.items():
+            if registered_domain == tun_domain or hostname.endswith(f".{tun_domain}"):
+                is_tunneler = True
+                tunneler_provider = provider
+                signals.append(
+                    RiskSignal(
+                        category="INFRASTRUCTURE",
+                        severity="HIGH",
+                        description=(
+                            f"EPHEMERAL_TUNNEL_SERVICE: Host utilizes '{provider}' ({tun_domain}), "
+                            f"a reverse proxy commonly abused to host short-lived disposable phishing endpoints"
+                        ),
+                    )
+                )
+                break
+
+        # ── 5. Shannon Character Entropy (DGA / Randomized Tokens) ──
+        domain_entropy = calculate_shannon_entropy(domain_label)
+        sub_entropy = calculate_shannon_entropy(subdomain) if subdomain else 0.0
+        is_high_entropy = False
+
+        if len(domain_label) >= 8 and domain_entropy >= 3.40:
+            is_high_entropy = True
+            signals.append(
+                RiskSignal(
+                    category="HOMOGRAPH",
+                    severity="MEDIUM",
+                    description=(
+                        f"HIGH_SHANNON_ENTROPY: Domain label '{domain_label}' has high character randomness "
+                        f"({domain_entropy:.2f}), indicative of algorithmic (DGA) or disposable domain generation"
+                    ),
+                )
+            )
+        elif subdomain and len(subdomain) >= 10 and sub_entropy >= 3.40:
+            is_high_entropy = True
+            signals.append(
+                RiskSignal(
+                    category="HOMOGRAPH",
+                    severity="MEDIUM",
+                    description=(
+                        f"HIGH_SHANNON_ENTROPY: Subdomain prefix '{subdomain}' exhibits randomized token pattern "
+                        f"(entropy {sub_entropy:.2f})"
+                    ),
+                )
+            )
+
+        effective_entropy = max(domain_entropy, sub_entropy)
+
         return HomographAnalysisResult(
             domain=hostname,
             is_idn=is_idn,
@@ -333,6 +424,10 @@ class HomographEngine:
             is_subdomain_spoof=is_subdomain_spoof,
             target_brand=target_brand_identified,
             similarity_score=best_similarity,
+            entropy=effective_entropy,
+            is_high_entropy=is_high_entropy,
+            is_tunneler_host=is_tunneler,
+            tunneler_provider=tunneler_provider,
             signals=signals,
             metadata={
                 "domain_label": domain_label,
@@ -340,6 +435,9 @@ class HomographEngine:
                 "suffix": suffix,
                 "skeleton": skeleton,
                 "similarity": best_similarity,
+                "entropy": effective_entropy,
+                "is_tunneler": is_tunneler,
+                "tunneler_provider": tunneler_provider,
             },
         )
 
