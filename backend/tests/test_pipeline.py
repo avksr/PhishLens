@@ -224,6 +224,7 @@ async def test_audit_privacy_sha256_and_production_mode():
         assert verify_audit_privacy(prod_record, prod_req.content) is True
     finally:
         del os.environ["PRODUCTION_MODE"]
+        await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio
