@@ -168,6 +168,10 @@ class ScanRequest(BaseModel):
     input_type: Optional[str] = Field(
         None, description="Auto-classified input type: web_url, upi_handle, or text_message"
     )
+    modality: ModalityEnum = Field(default=ModalityEnum.TEXT, description="Input modality: text, image, or document")
+    file_bytes: Optional[bytes] = Field(default=None, description="Raw binary file bytes for PDF or Image upload")
+    image_base64: Optional[str] = Field(default=None, description="Base64 encoded image string")
+    file_name: Optional[str] = Field(default=None, description="Original filename if uploaded")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
 
 
