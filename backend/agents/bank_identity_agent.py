@@ -81,8 +81,8 @@ def compute_fuzzy_name_match(claimed: str, registered: str) -> float:
         return 0.0
 
     if _HAS_RAPIDFUZZ:
-        # Use rapidfuzz token_sort_ratio
-        return float(fuzz.token_sort_ratio(c, r))
+        # Use rapidfuzz token_sort_ratio and token_set_ratio
+        return float(max(fuzz.token_sort_ratio(c, r), fuzz.token_set_ratio(c, r)))
     else:
         return _token_sort_ratio_fallback(c, r)
 
