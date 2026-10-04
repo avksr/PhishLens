@@ -1,7 +1,7 @@
 # ============================================================
 # OWNER: VIKAS
 # FILE: backend/tests/test_intent_agent.py
-# PURPOSE: Unit Tests for Intent & Psycholinguistic Fraud Agent (Day 1, Day 2 & Day 3)
+# PURPOSE: Unit Tests for Intent & Psycholinguistic Fraud Agent (Day 1, 2, 3 & Day 4)
 # ============================================================
 
 from __future__ import annotations
@@ -19,7 +19,11 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from agents.intent_agent import analyze_intent  # noqa: E402
+from agents.intent_agent import (  # noqa: E402
+    analyze_intent,
+    load_scam_taxonomy,
+    match_scam_taxonomy,
+)
 from shared.models import (  # noqa: E402
     AgentStatusEnum,
     ChannelEnum,
@@ -128,8 +132,9 @@ async def test_intent_agent_offline_heuristic_fallback(monkeypatch: pytest.Monke
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
     assert res.status == AgentStatusEnum.SUCCESS
-    assert res.confidence == 0.85
-    assert res.details == "Analyzed via local resilient heuristic engine"
+    assert res.confidence == 0.5
+    assert "RULES_ONLY_FALLBACK" in res.flags
+    assert "Analyzed via local resilient heuristic engine" in res.details
     assert elapsed_ms < 50.0, f"Heuristic fallback exceeded 50ms SLA: {elapsed_ms}ms"
     assert res.risk_score > 0.0
 
@@ -353,8 +358,9 @@ async def test_intent_agent_llm_timeout_triggers_fallback(monkeypatch: pytest.Mo
 
         assert res.status == AgentStatusEnum.SUCCESS
         assert res.risk_score >= 40.0
-        assert res.details == "Analyzed via local resilient heuristic engine"
-        assert res.confidence == 0.85
+        assert "Analyzed via local resilient heuristic engine" in res.details
+        assert res.confidence == 0.5
+        assert "RULES_ONLY_FALLBACK" in res.flags
 
 
 @pytest.mark.asyncio
@@ -372,8 +378,9 @@ async def test_intent_agent_invalid_llm_response_triggers_fallback(monkeypatch: 
 
         assert res.status == AgentStatusEnum.SUCCESS
         assert res.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
-        assert res.details == "Analyzed via local resilient heuristic engine"
-        assert res.confidence == 0.85
+        assert "Analyzed via local resilient heuristic engine" in res.details
+        assert res.confidence == 0.5
+        assert "RULES_ONLY_FALLBACK" in res.flags
 
 
 @pytest.mark.asyncio
@@ -711,3 +718,247 @@ async def test_intent_agent_day3_extended_performance_benchmark(monkeypatch: pyt
 
         assert res.status == AgentStatusEnum.SUCCESS
         assert elapsed_ms < 50.0, f"Payload exceeded SLA: {elapsed_ms:.2f}ms for '{msg}'"
+
+
+# ─────────────────────────────────────────────────────────────
+# Day 4 Tests: Multi-LLM Pipeline (FR-11), Scam Taxonomy (FR-6),
+# Video Call Digital Arrest & Telecom Threats
+# ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_intent_agent_multi_llm_primary_gemini_priority(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    FR-11 Multi-LLM Fallback:
+    Verify Primary is Google Gemini Flash (gemini-1.5-flash).
+    When Gemini succeeds, Groq is NOT called, and result has high confidence without RULES_ONLY_FALLBACK.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyMockKeyGeminiRealFormat1234567890")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_valid_mock_key_1234567890abcdef")
+
+    gemini_mock = {
+        "risk_score": 95.0,
+        "detected_intent": "FINANCIAL_EXTORTION",
+        "manipulation_tactics": ["Digital Arrest Extortion"],
+        "confidence": 0.98,
+        "flags": ["AUTHORITY_COERCION_FLAG"],
+        "reasoning": "Gemini analyzed digital arrest.",
+        "details": "Primary LLM analysis via gemini-1.5-flash",
+    }
+
+    with patch("agents.intent_agent._analyze_with_gemini", new_callable=AsyncMock) as mock_gemini, \
+         patch("agents.intent_agent._analyze_with_groq", new_callable=AsyncMock) as mock_groq:
+        mock_gemini.return_value = gemini_mock
+
+        req = ScanRequest(content="video call arrest warrant issued by CBI / Cyber Cell")
+        res = await analyze_intent(req)
+
+        assert mock_gemini.called, "Primary LLM (Gemini) should be invoked first"
+        assert not mock_groq.called, "Secondary LLM (Groq) must NOT be invoked when Gemini succeeds"
+        assert res.status == AgentStatusEnum.SUCCESS
+        assert res.risk_score == 95.0
+        assert res.confidence == 0.98
+        assert "RULES_ONLY_FALLBACK" not in res.flags
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_multi_llm_secondary_groq_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    FR-11 Multi-LLM Fallback:
+    When Primary (Gemini) fails or times out, Secondary (Groq LLaMA-3) is invoked as fallback.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyMockKeyGeminiRealFormat1234567890")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_valid_mock_key_1234567890abcdef")
+
+    groq_mock = {
+        "risk_score": 88.0,
+        "detected_intent": "PANIC_URGENCY",
+        "manipulation_tactics": ["Telecom Disconnection Threat"],
+        "confidence": 0.92,
+        "flags": ["PSYCHOLOGICAL_URGENCY_TRIGGER"],
+        "reasoning": "Groq analyzed TRAI disconnection threat.",
+        "details": "Secondary LLM analysis via llama-3.1-8b-instant",
+    }
+
+    with patch("agents.intent_agent._analyze_with_gemini", side_effect=asyncio.TimeoutError("Gemini timed out")), \
+         patch("agents.intent_agent._analyze_with_groq", new_callable=AsyncMock) as mock_groq:
+        mock_groq.return_value = groq_mock
+
+        req = ScanRequest(content="TRAI will disconnect your mobile number within 2 hours")
+        res = await analyze_intent(req)
+
+        assert mock_groq.called, "Secondary LLM (Groq) should be called when Gemini times out"
+        assert res.status == AgentStatusEnum.SUCCESS
+        assert res.risk_score == 88.0
+        assert res.confidence == 0.92
+        assert "RULES_ONLY_FALLBACK" not in res.flags
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_multi_llm_rules_only_fallback_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    FR-11 Multi-LLM Fallback:
+    When both Gemini and Groq fail, the result MUST be explicitly flagged as
+    RULES_ONLY_FALLBACK with confidence set to LOW / 0.5.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyMockKeyGeminiRealFormat1234567890")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_valid_mock_key_1234567890abcdef")
+
+    with patch("agents.intent_agent._analyze_with_gemini", side_effect=RuntimeError("Gemini error")), \
+         patch("agents.intent_agent._analyze_with_groq", side_effect=RuntimeError("Groq error")):
+
+        req = ScanRequest(content="video call arrest warrant issued by CBI / Cyber Cell")
+        res = await analyze_intent(req)
+
+        assert res.status == AgentStatusEnum.SUCCESS
+        assert res.confidence == 0.5, f"Expected confidence 0.5 for rules-only fallback, got {res.confidence}"
+        assert "RULES_ONLY_FALLBACK" in res.flags
+        assert "RULES_ONLY_FALLBACK" in res.details
+        assert res.risk_score >= 45.0
+
+
+def test_scam_taxonomy_load_public_advisories() -> None:
+    """
+    FR-6 Scam Taxonomy:
+    Verifies that backend/data/scam_taxonomy.json contains public CERT-In and RBI advisories.
+    """
+    taxonomy = load_scam_taxonomy()
+    assert isinstance(taxonomy, list)
+    assert len(taxonomy) >= 5
+
+    category_ids = {c["id"] for c in taxonomy}
+    expected_categories = {
+        "electricity_bill_disconnection",
+        "digital_arrest_cbi_extortion",
+        "telecom_sim_deactivation",
+        "irctc_refund_phishing",
+        "part_time_telegram_job_scam",
+        "kyc_expiry_deactivation",
+    }
+    assert expected_categories.issubset(category_ids), f"Missing categories: {expected_categories - category_ids}"
+
+    for entry in taxonomy:
+        assert "id" in entry
+        assert "name" in entry
+        assert "advisory_source" in entry
+        assert "keywords" in entry and len(entry["keywords"]) > 0
+
+
+@pytest.mark.parametrize("message,expected_category", [
+    (
+        "Aapka bijli bill update nahi hua, connection kat diya jayega.",
+        "electricity_bill_disconnection",
+    ),
+    (
+        "video call arrest warrant issued by CBI / Cyber Cell",
+        "digital_arrest_cbi_extortion",
+    ),
+    (
+        "TRAI will disconnect your mobile number within 2 hours",
+        "telecom_sim_deactivation",
+    ),
+    (
+        "Your IRCTC ticket cancellation refund of Rs 1,450 is pending. Download rail connect apk.",
+        "irctc_refund_phishing",
+    ),
+    (
+        "YouTube video like karo aur Telegram pe screenshot bhejo, daily earning hogi.",
+        "part_time_telegram_job_scam",
+    ),
+    (
+        "Sir aapka KYC expire ho gaya hai, abhi update karo warna account block.",
+        "kyc_expiry_deactivation",
+    ),
+])
+def test_scam_taxonomy_similarity_matcher(message: str, expected_category: str) -> None:
+    """
+    FR-6 Scam Taxonomy:
+    Verifies that match_scam_taxonomy accurately returns the closest CERT-In/RBI category
+    and a high match score.
+    """
+    match = match_scam_taxonomy(message)
+    assert match["category_id"] == expected_category, f"Expected {expected_category}, got {match['category_id']}"
+    assert match["match_score"] >= 0.50, f"Match score too low: {match['match_score']}"
+    assert match["advisory_source"] is not None
+
+
+def test_scam_taxonomy_similarity_benign_text() -> None:
+    """
+    FR-6 Scam Taxonomy:
+    Benign text with no scam signals must not trigger a high taxonomy match.
+    """
+    benign_text = "The Supreme Court judgment was discussed in the news."
+    match = match_scam_taxonomy(benign_text)
+    assert match["category_id"] is None or match["match_score"] < 0.25
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_video_call_digital_arrest_threat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 4 Threat Pattern: Video Call Digital Arrest Extortion.
+    Payload: "video call arrest warrant issued by CBI / Cyber Cell"
+    Expected: FINANCIAL_EXTORTION, risk_score >= 45.0, RULES_ONLY_FALLBACK, confidence == 0.5.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="video call arrest warrant issued by CBI / Cyber Cell",
+        sender="+919988776655",
+        channel=ChannelEnum.WHATSAPP,
+    )
+    res = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 45.0
+    assert res.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
+    assert "Coercive Authority Threat" in res.manipulation_tactics
+    assert "RULES_ONLY_FALLBACK" in res.flags
+    assert res.confidence == 0.5
+    assert res.scam_category is not None
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_trai_telecom_disconnection_threat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 4 Threat Pattern: Telecom SIM Deactivation Threat.
+    Payload: "TRAI will disconnect your mobile number within 2 hours"
+    Expected: PANIC_URGENCY, risk_score >= 40.0, RULES_ONLY_FALLBACK, confidence == 0.5.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="TRAI will disconnect your mobile number within 2 hours",
+        sender="+919876543210",
+        channel=ChannelEnum.SMS,
+    )
+    res = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 40.0
+    assert res.detected_intent in (DetectedIntentEnum.PANIC_URGENCY, DetectedIntentEnum.FINANCIAL_EXTORTION)
+    assert "RULES_ONLY_FALLBACK" in res.flags
+    assert res.confidence == 0.5
+    assert res.scam_category is not None
+
+
+@pytest.mark.asyncio
+async def test_intent_agent_false_positive_trai_and_video_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Day 4 False Positive Prevention:
+    Legitimate discussion of TRAI guidelines and video calls must remain BENIGN.
+    """
+    monkeypatch.setenv("GROQ_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+
+    req = ScanRequest(
+        content="I attended a video call with our team to discuss TRAI guidelines.",
+        sender="Manager",
+        channel=ChannelEnum.SMS,
+    )
+    res = await analyze_intent(req)
+
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score <= 15.0
+    assert res.detected_intent == DetectedIntentEnum.BENIGN
+    assert len(res.manipulation_tactics) == 0

@@ -1,10 +1,11 @@
 # ============================================================
 # OWNER: VIKAS
 # FILE: backend/agents/intent_agent.py
-# PURPOSE: LLM Psycholinguistic Intent Analysis Agent (Day 1, Day 2 & Day 3)
+# PURPOSE: LLM Psycholinguistic Intent Analysis Agent (Day 1, 2, 3 & Day 4)
 #   - Detects psychological manipulation (urgency, fear, coercion)
 #   - Calibrated for Indian Hinglish, utility extortion, digital arrest & Telegram tasks
-#   - Uses Groq (llama-3.1-8b-instant) or Gemini Flash API with 2.5s SLA timeout
+#   - Multi-LLM Fallback Pipeline: Primary Gemini Flash -> Secondary Groq LLaMA-3 -> Local Regex
+#   - Curated CERT-In / RBI Scam Taxonomy & Keyword/Cosine Similarity Matcher (FR-6)
 #   - Deterministic, high-speed local regex heuristic fallback (< 15ms)
 #   - Safe text normalization for capitalization, spacing, and punctuation
 #   - Context-aware discrimination to prevent false positives on benign mentions
@@ -16,9 +17,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -34,9 +37,12 @@ logger = logging.getLogger("phishlens.intent_agent")
 # Strict per-agent LLM SLA timeout (seconds)
 LLM_TIMEOUT_SECONDS: float = 2.5
 
-# Prompts directory and system prompt path
-_PROMPTS_DIR: Path = Path(__file__).resolve().parent.parent / "prompts"
+# Prompts and data directories
+_BACKEND_DIR: Path = Path(__file__).resolve().parent.parent
+_PROMPTS_DIR: Path = _BACKEND_DIR / "prompts"
 _INTENT_PROMPT_PATH: Path = _PROMPTS_DIR / "intent_prompt.txt"
+_DATA_DIR: Path = _BACKEND_DIR / "data"
+_TAXONOMY_PATH: Path = _DATA_DIR / "scam_taxonomy.json"
 
 _DEFAULT_SYSTEM_PROMPT: str = (
     "You are a Tier-1 Cybersecurity Threat Intelligence & Psycholinguistic Fraud Analyst "
@@ -68,6 +74,124 @@ def _normalize_text(text: str) -> str:
     normalized = re.sub(r"[!?,;*#~`|]+", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
+
+
+# ─────────────────────────────────────────────────────────────
+# Curated CERT-In / RBI Scam Taxonomy & Similarity Matcher (FR-6)
+# ─────────────────────────────────────────────────────────────
+
+_SCAM_TAXONOMY: Optional[List[Dict[str, Any]]] = None
+
+
+def load_scam_taxonomy() -> List[Dict[str, Any]]:
+    """Loads curated public scam taxonomy based on CERT-In and RBI advisories (FR-6)."""
+    global _SCAM_TAXONOMY
+    if _SCAM_TAXONOMY is None:
+        if _TAXONOMY_PATH.is_file():
+            try:
+                _SCAM_TAXONOMY = json.loads(_TAXONOMY_PATH.read_text(encoding="utf-8"))
+            except Exception as err:
+                logger.warning(f"Failed to load scam taxonomy: {err}")
+                _SCAM_TAXONOMY = []
+        else:
+            _SCAM_TAXONOMY = []
+    return _SCAM_TAXONOMY
+
+
+def match_scam_taxonomy(text: str) -> Dict[str, Any]:
+    """
+    Performs keyword and cosine similarity matching of input text against
+    curated CERT-In and RBI scam taxonomy categories (FR-6).
+
+    Returns:
+    {
+        "category_id": Optional[str],
+        "category_name": Optional[str],
+        "match_score": float,  # Normalized 0.0 to 1.0
+        "advisory_source": Optional[str],
+        "matched_keywords": List[str]
+    }
+    """
+    taxonomy = load_scam_taxonomy()
+    if not taxonomy or not text:
+        return {
+            "category_id": None,
+            "category_name": None,
+            "match_score": 0.0,
+            "advisory_source": None,
+            "matched_keywords": [],
+        }
+
+    norm_text = _normalize_text(text)
+    query_tokens = re.findall(r"\b[a-z0-9]+\b", norm_text)
+    if not query_tokens:
+        return {
+            "category_id": None,
+            "category_name": None,
+            "match_score": 0.0,
+            "advisory_source": None,
+            "matched_keywords": [],
+        }
+
+    query_counts = Counter(query_tokens)
+    norm_q = math.sqrt(sum(c * c for c in query_counts.values()))
+
+    best_match: Optional[Dict[str, Any]] = None
+    best_score = 0.0
+    best_matched_keywords: List[str] = []
+
+    for entry in taxonomy:
+        matched_kw: List[str] = []
+        for kw in entry.get("keywords", []):
+            kw_norm = _normalize_text(kw)
+            if kw_norm and re.search(r"\b" + re.escape(kw_norm) + r"\b", norm_text):
+                matched_kw.append(kw)
+
+        cat_corpus = " ".join(
+            entry.get("keywords", [])
+            + [entry.get("description", "")]
+            + entry.get("typical_phrases", [])
+            + [entry.get("name", "")]
+        )
+        cat_tokens = re.findall(r"\b[a-z0-9]+\b", _normalize_text(cat_corpus))
+        cat_counts = Counter(cat_tokens)
+        norm_c = math.sqrt(sum(c * c for c in cat_counts.values()))
+
+        if norm_q > 0 and norm_c > 0:
+            dot = sum(query_counts[t] * cat_counts[t] for t in query_counts if t in cat_counts)
+            cosine = dot / (norm_q * norm_c)
+        else:
+            cosine = 0.0
+
+        if matched_kw:
+            kw_boost = min(0.35, len(matched_kw) * 0.12)
+            combined_score = min(1.0, max(0.55 + kw_boost, cosine + 0.40))
+        else:
+            combined_score = cosine * 0.75
+
+        combined_score = round(max(0.0, min(1.0, combined_score)), 4)
+
+        if combined_score > best_score:
+            best_score = combined_score
+            best_match = entry
+            best_matched_keywords = matched_kw
+
+    if best_match and (best_score >= 0.25 or best_matched_keywords):
+        return {
+            "category_id": best_match.get("id"),
+            "category_name": best_match.get("name"),
+            "match_score": best_score,
+            "advisory_source": best_match.get("advisory_source"),
+            "matched_keywords": best_matched_keywords,
+        }
+
+    return {
+        "category_id": None,
+        "category_name": None,
+        "match_score": 0.0,
+        "advisory_source": None,
+        "matched_keywords": [],
+    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -115,6 +239,18 @@ _PANIC_URGENCY_PATTERNS = [
     re.compile(r"\b(?:electricity|connection)\s+(?:aaj\s+raat\s+tak|tonight)\s+(?:cut|disconnected)\b", re.IGNORECASE),
     re.compile(r"\bbill\s+(?:is\s+)?overdue.*(?:pay\s+(?:immediately|now)|disconnect|cut\s*off)\b", re.IGNORECASE),
     re.compile(r"\bpower\s+cut\s+(?:threat|warning|notice)\b", re.IGNORECASE),
+    # Day 4: Telecom SIM & Mobile number deactivation urgency
+    re.compile(
+        r"\b(?:disconnect|block|suspend|deactivate)\s+(?:your\s+)?(?:mobile\s+number|sim|phone)\s+"
+        r"within\s+\d+\s*(?:hours?|hrs?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:mobile\s+number|sim)\s+(?:will\s+be\s+)?(?:disconnected|suspended|blocked)\b", re.IGNORECASE),
+    re.compile(
+        r"\baapka\s+(?:mobile\s+number|sim)\s+(?:2\s*ghante|aaj\s*raat)\s*(?:ke\s*andar|mein|tak)?\s*"
+        r"(?:band|block)\s*ho\s*jayega\b",
+        re.IGNORECASE,
+    ),
 ]
 
 # Coercive Authority & Legal Threats: +45.0 risk
@@ -143,6 +279,20 @@ _COERCIVE_AUTHORITY_PATTERNS = [
     re.compile(r"\bgiraftari\b", re.IGNORECASE),
     re.compile(r"\barrest\s+kar\s+(?:liya\s+)?jayega\b", re.IGNORECASE),
     re.compile(r"\bgiraftar\s+kar\s+(?:liya\s+)?jayega\b", re.IGNORECASE),
+    # Day 4: Video Call Digital Arrest & Telecom Authority Threats
+    re.compile(r"\bvideo\s+call\s+(?:arrest\s+)?warrant\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:video\s+call\s+)?arrest\s+warrant\s+issued\s+by\s+(?:cbi|cyber\s*(?:crime\s*)?(?:cell|police))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bvideo\s+call\s+par\s+(?:statement|arrest|investigation)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:trai|dot)\s+(?:will\s+)?(?:disconnect|block|suspend|deactivate)\s+(?:your\s+)?"
+        r"(?:mobile\s+number|sim|phone|number)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:trai|dot)\s+(?:mobile\s+number\s+)?disconnection\s+notice\b", re.IGNORECASE),
+    re.compile(r"\b(?:trai|dot)\s+verification\s+notice\b", re.IGNORECASE),
 ]
 
 # Credential & PII Harvesting: +45.0 risk
@@ -163,6 +313,10 @@ _CREDENTIAL_HARVEST_PATTERNS = [
     re.compile(r"\baadhaar\s*(?:bhejo|jama\s*karo|link\s*karo|update\s*karo)\b", re.IGNORECASE),
     re.compile(r"\bpan\s*card\s*(?:bhejo|jama\s*karo|link\s*karo|update\s*karo)\b", re.IGNORECASE),
     re.compile(r"\bunblock\s*karne\s*ke\s*liye\b", re.IGNORECASE),
+    # Day 4: IRCTC Refund Phishing
+    re.compile(r"\birctc\s+(?:ticket\s+)?(?:cancellation\s+)?refund\b", re.IGNORECASE),
+    re.compile(r"\brail\s*connect\s*(?:app|apk)\b", re.IGNORECASE),
+    re.compile(r"\bupdate\s+bank\s+details\s+for\s+(?:irctc\s+)?refund\b", re.IGNORECASE),
 ]
 
 # Lottery / Part-Time Job Advance Scams: +35.0 risk
@@ -209,6 +363,9 @@ _BENIGN_PATTERNS = [
     re.compile(r"\bthrough\s+(?:the\s+)?official\s+app\b", re.IGNORECASE),
     re.compile(r"\bdiscussed\s+in\s+(?:the\s+)?news\b", re.IGNORECASE),
     re.compile(r"\bwatched\s+a\s+(?:youtube\s+)?video\b", re.IGNORECASE),
+    re.compile(r"\bdiscussed\s+trai\s+guidelines\b", re.IGNORECASE),
+    re.compile(r"\bvideo\s+call\s+with\s+(?:our\s+)?(?:team|family|friends?)\b", re.IGNORECASE),
+    re.compile(r"\birctc\s+ticket\s+confirmed\b", re.IGNORECASE),
 ]
 
 
@@ -444,13 +601,15 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
     """
     Analyzes psycholinguistic manipulation vectors in incoming message text.
 
-    Execution Flow:
+    Execution Flow (FR-11 Multi-LLM Priority & FR-6 Scam Taxonomy):
     1. Validates input request and handles empty/blank payloads gracefully.
-    2. Attempts primary LLM analysis via Groq (llama-3.1-8b-instant) or Gemini (gemini-1.5-flash).
-    3. Enforces 2.5s SLA timeout on all LLM calls.
-    4. Falls back seamlessly to local regex heuristic engine on timeout, error, malformed JSON, or missing keys.
-    5. Clamps risk score to [0.0, 100.0] and records latency_ms.
-    6. Fail-Safe: Guarantees zero unhandled exceptions.
+    2. Runs CERT-In/RBI scam taxonomy keyword & cosine similarity matcher.
+    3. Primary LLM: Google Gemini Flash (gemini-1.5-flash) with 2.5s SLA timeout.
+    4. Secondary LLM: Groq LLaMA-3 (llama-3.1-8b-instant) with 2.5s SLA timeout.
+    5. Offline Fallback: Local Resilient Heuristic Regex Engine (< 15ms SLA).
+       When both LLMs fail: explicitly flags RULES_ONLY_FALLBACK with confidence set to LOW / 0.5.
+    6. Clamps risk score to [0.0, 100.0] and records latency_ms.
+    7. Fail-Safe: Guarantees zero unhandled exceptions.
     """
     start_time = time.perf_counter()
 
@@ -472,43 +631,68 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
 
         content = req.content.strip()
         system_prompt = _load_system_prompt()
+        taxonomy_match = match_scam_taxonomy(content)
 
-        groq_key = os.getenv("GROQ_API_KEY", "").strip()
         gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
 
         llm_data: Optional[Dict[str, Any]] = None
 
-        if _is_usable_key(groq_key):
-            try:
-                llm_data = await _analyze_with_groq(content, system_prompt, groq_key)
-            except Exception as e:
-                logger.warning(f"Groq intent analysis failed or timed out: {type(e).__name__}")
-
-        if not llm_data and _is_usable_key(gemini_key):
+        # 1. Primary: Google Gemini Flash (gemini-1.5-flash)
+        if _is_usable_key(gemini_key):
             try:
                 llm_data = await _analyze_with_gemini(content, system_prompt, gemini_key)
             except Exception as e:
-                logger.warning(f"Gemini intent analysis failed or timed out: {type(e).__name__}")
+                logger.warning(f"Primary LLM (Gemini) failed or timed out: {type(e).__name__}")
 
-        # If LLM succeeded, parse and return
+        # 2. Secondary: Groq LLaMA-3 (llama-3.1-8b-instant)
+        if not llm_data and _is_usable_key(groq_key):
+            try:
+                llm_data = await _analyze_with_groq(content, system_prompt, groq_key)
+            except Exception as e:
+                logger.warning(f"Secondary LLM (Groq) failed or timed out: {type(e).__name__}")
+
+        # If an LLM succeeded, parse and return
         if llm_data:
             result = _parse_llm_json_result(llm_data)
             result.latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            if taxonomy_match.get("category_name"):
+                result.scam_category = taxonomy_match["category_name"]
+                result.taxonomy_match_score = taxonomy_match["match_score"]
+                result.flags.append(f"TAXONOMY:{taxonomy_match['category_id'].upper()}")
+                result.details += (
+                    f" | Taxonomy: {taxonomy_match['category_name']} "
+                    f"({taxonomy_match['match_score']:.2f})"
+                )
             return result
 
-        # Fallback to local resilient heuristic engine
+        # 3. Offline: Local Heuristic Regex Engine (< 15ms)
+        # When both LLMs fail: explicitly flag RULES_ONLY_FALLBACK with confidence set to LOW / 0.5
         score, intent, tactics, flags, reasoning = _run_heuristic_fallback(content)
+        flags.append("RULES_ONLY_FALLBACK")
+        confidence = 0.5
+
         elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        details = "Analyzed via local resilient heuristic engine (RULES_ONLY_FALLBACK)"
+        if taxonomy_match.get("category_name"):
+            flags.append(f"TAXONOMY:{taxonomy_match['category_id'].upper()}")
+            details += (
+                f" | Taxonomy: {taxonomy_match['category_name']} "
+                f"({taxonomy_match['match_score']:.2f})"
+            )
+
         return IntentAgentResult(
             status=AgentStatusEnum.SUCCESS,
             risk_score=score,
             detected_intent=intent,
             manipulation_tactics=tactics,
-            confidence=0.85,
+            confidence=confidence,
             flags=flags,
             reasoning=reasoning,
-            details="Analyzed via local resilient heuristic engine",
+            details=details,
             latency_ms=elapsed_ms,
+            scam_category=taxonomy_match.get("category_name"),
+            taxonomy_match_score=taxonomy_match.get("match_score"),
         )
 
     except Exception as exc:
@@ -516,16 +700,20 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
         elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
         try:
             score, intent, tactics, flags, reasoning = _run_heuristic_fallback(req.content if req else "")
+            flags.append("RULES_ONLY_FALLBACK")
+            taxonomy_match = match_scam_taxonomy(req.content if req else "")
             return IntentAgentResult(
                 status=AgentStatusEnum.SUCCESS,
                 risk_score=score,
                 detected_intent=intent,
                 manipulation_tactics=tactics,
-                confidence=0.85,
+                confidence=0.5,
                 flags=flags,
                 reasoning=reasoning,
-                details="Analyzed via local resilient heuristic engine",
+                details="Analyzed via local resilient heuristic engine (RULES_ONLY_FALLBACK)",
                 latency_ms=elapsed_ms,
+                scam_category=taxonomy_match.get("category_name"),
+                taxonomy_match_score=taxonomy_match.get("match_score"),
             )
         except Exception:
             return IntentAgentResult(
@@ -534,7 +722,7 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
                 detected_intent=DetectedIntentEnum.BENIGN,
                 manipulation_tactics=[],
                 confidence=0.0,
-                flags=["INTENT_AGENT_FAILED"],
+                flags=["INTENT_AGENT_FAILED", "RULES_ONLY_FALLBACK"],
                 reasoning=f"Agent exception: {type(exc).__name__}",
                 details=f"ERROR: {type(exc).__name__}",
                 latency_ms=elapsed_ms,
