@@ -29,7 +29,8 @@ from shared.models import (
     ScanRequest,
     IntentAgentResult,
     AgentStatusEnum,
-    DetectedIntentEnum
+    DetectedIntentEnum,
+    SpearPhishingCategoryEnum,
 )
 
 logger = logging.getLogger("phishlens.intent_agent")
@@ -57,15 +58,42 @@ def _normalize_text(text: str) -> str:
     """
     Normalizes text for robust psycholinguistic intent analysis:
     - Lowercases text
-    - Replaces dots between individual acronym letters (e.g. 'u.r.g.e.n.t' -> 'urgent', 'k.y.c' -> 'kyc')
+    - Strips adversarial zero-width characters
+    - Normalizes leetspeak obfuscation (e.g. 'b3 bl0cked' -> 'be blocked', 'acc0unt' -> 'account')
+    - Replaces dots/spaces between acronym letters (e.g. 's.b.i' -> 'sbi', 'k y c' -> 'kyc')
     - Inserts spacing between stuck digits and words (e.g. '2ghante' -> '2 ghante')
     - Collapses multiple whitespace and decorative punctuation marks into clean single spaces
     """
     if not text:
         return ""
     normalized = text.lower()
+    for zw in ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u00ad']:
+        normalized = normalized.replace(zw, '')
+
+    # Common leetspeak phishing word replacements
+    leet_words = {
+        r'\bb3\b': 'be',
+        r'\bbl0cked\b': 'blocked',
+        r'\bbl0ck\b': 'block',
+        r'\bacc0unt\b': 'account',
+        r'\bacct\b': 'account',
+        r'\bp4ssw0rd\b': 'password',
+        r'\bv3rify\b': 'verify',
+        r'\bupd4t3\b': 'update',
+        r'\bcl1ck\b': 'click',
+        r'\bb1jli\b': 'bijli',
+        r'\bel3ctr1c1ty\b': 'electricity',
+    }
+    for pat, rep in leet_words.items():
+        normalized = re.sub(pat, rep, normalized)
+
     # Normalize acronyms with dots like 'u.r.g.e.n.t' or 'o.t.p'
     normalized = re.sub(r"(?<=\b[a-z])\.(?=[a-z]\b)", "", normalized)
+    # Normalize spaced acronyms like 's b i' or 'k y c' or 'o t p'
+    normalized = re.sub(r"\bs\s+b\s+i\b", "sbi", normalized)
+    normalized = re.sub(r"\bk\s+y\s+c\b", "kyc", normalized)
+    normalized = re.sub(r"\bo\s+t\s+p\b", "otp", normalized)
+
     # Separate stuck digits and letters, e.g. '2ghante' -> '2 ghante'
     normalized = re.sub(r"(\d+)([a-zA-Z]+)", r"\1 \2", normalized)
     normalized = re.sub(r"([a-zA-Z]+)(\d+)", r"\1 \2", normalized)

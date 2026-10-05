@@ -108,7 +108,7 @@ def mask_pii(text: Optional[str]) -> str:
 # ─────────────────────────────────────────────────────────────
 
 def _ensure_sqlite_schema(conn: sqlite3.Connection):
-    """Create scan_audit and reports tables with unique constraints."""
+    """Create scan_audit and reports tables with unique constraints and migration checks."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS scan_audit (
             scan_id TEXT PRIMARY KEY,
@@ -135,7 +135,15 @@ def _ensure_sqlite_schema(conn: sqlite3.Connection):
             UNIQUE(reporter_hash, target)
         )
     """)
+    cursor = conn.execute("PRAGMA table_info(scan_audit)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "input_hash" not in columns:
+        conn.execute("ALTER TABLE scan_audit ADD COLUMN input_hash TEXT")
     conn.commit()
+
+
+# Backward compatibility alias
+_ensure_schema = _ensure_sqlite_schema
 
 
 def _ensure_postgres_schema(pg_conn):
@@ -431,33 +439,49 @@ async def get_recent_scans(limit: int = 10) -> List[Dict[str, Any]]:
         return []
 
 
+# Backward compatibility alias
+get_scan_audit = get_scan_by_id
+
+
 # ─────────────────────────────────────────────────────────────
 # Crowdsourced Reports Table Methods (One report per reporter per target)
 # ─────────────────────────────────────────────────────────────
 
 async def add_crowdsourced_report(
-    reporter_hash: str,
-    target: str,
-    report_type: str,
-    details: Optional[str] = None
-) -> Tuple[bool, str, Dict[str, Any]]:
+    reporter_hash: Optional[str] = None,
+    target: Optional[str] = None,
+    report_type: Optional[str] = None,
+    details: Optional[str] = None,
+    *,
+    target_handle: Optional[str] = None,
+    target_type: Optional[str] = None,
+    scam_category: Optional[str] = None,
+    claimed_name: Optional[str] = None,
+    reported_by: Optional[str] = None,
+) -> Any:
     """
     Add a new scam report to the reports table.
     Enforces UNIQUE(reporter_hash, target): exactly one report per reporter per target.
-    Returns:
-        (is_created, status_code_string, report_dict)
+    Supports both standard API call and legacy keyword signature.
     """
-    clean_target = target.strip().lower()
+    is_legacy = target_handle is not None and target is None
+    clean_target = (target or target_handle or "").strip().lower()
+    clean_type = (report_type or target_type or scam_category or "scam").strip().lower()
+    eff_reporter = reporter_hash or reported_by or "COMMUNITY_USER"
     report_id = f"rep_{uuid.uuid4().hex[:12]}"
     now_ts = datetime.now(timezone.utc).isoformat()
 
+    full_details = details or ""
+    if claimed_name:
+        full_details = f"[Claimed: {claimed_name}] {full_details}".strip()
+
     record = {
         "id": report_id,
-        "reporter_hash": reporter_hash,
+        "reporter_hash": eff_reporter,
         "target": clean_target,
-        "type": report_type.lower().strip(),
+        "type": clean_type,
         "timestamp": now_ts,
-        "details": details or "",
+        "details": full_details,
         "status": "ACTIVE"
     }
 
@@ -485,6 +509,8 @@ async def add_crowdsourced_report(
                             return False, "ALREADY_REPORTED"
 
             is_created, msg = await loop.run_in_executor(None, _pg_add)
+            if is_legacy:
+                return is_created
             return is_created, msg, record
         except Exception as e:
             logger.debug(f"Postgres report insert fallback: {e}")
@@ -501,11 +527,17 @@ async def add_crowdsourced_report(
                     record["type"], record["timestamp"], record["details"], record["status"]
                 ))
                 await db.commit()
+                if is_legacy:
+                    return True
                 return True, "REPORT_CREATED", record
         except sqlite3.IntegrityError:
+            if is_legacy:
+                return False
             return False, "ALREADY_REPORTED", record
         except Exception as e:
             logger.error(f"Failed to insert report into SQLite: {e}")
+            if is_legacy:
+                return False
             return False, "DATABASE_ERROR", record
     else:
         loop = asyncio.get_running_loop()
@@ -528,6 +560,8 @@ async def add_crowdsourced_report(
                 return False, "DATABASE_ERROR"
 
         is_created, msg = await loop.run_in_executor(None, _sync_add)
+        if is_legacy:
+            return is_created
         return is_created, msg, record
 
 
@@ -572,6 +606,10 @@ async def get_reports_by_target(target: str) -> List[Dict[str, Any]]:
                 return [dict(r) for r in cur.fetchall()]
 
         return await loop.run_in_executor(None, _fetch)
+
+
+# Backward compatibility alias
+get_crowdsourced_reports = get_reports_by_target
 
 
 async def get_recent_reports(limit: int = 20) -> List[Dict[str, Any]]:

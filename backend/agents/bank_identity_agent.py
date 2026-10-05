@@ -21,10 +21,10 @@ Module  : PhishLens v1.0
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agents.upi_verifier import UpiVerificationResult, UpiVerifier, get_upi_verifier
-from shared.models import EvidenceItem
+from shared.models import AgentStatusEnum, BankVerificationResult, EvidenceItem, ScanRequest
 
 # ---------------------------------------------------------------------------
 # rapidfuzz Import with Pure-Python Resilient Fallback
@@ -34,6 +34,29 @@ try:
     _HAS_RAPIDFUZZ = True
 except ImportError:
     _HAS_RAPIDFUZZ = False
+
+
+INDIAN_HONORIFICS = {
+    "mr", "mrs", "ms", "miss", "dr", "shri", "smt", "er", "prof",
+    "late", "shree", "kumari", "kumar", "master"
+}
+
+
+def _clean_name_for_matching(name: str) -> str:
+    """Normalize Indian names: strip honorifics, normalize variations, remove punctuation."""
+    if not name:
+        return ""
+    cleaned = re.sub(r"[^\w\s]", " ", name.lower())
+    tokens = cleaned.split()
+    filtered_tokens = []
+    for token in tokens:
+        if token in INDIAN_HONORIFICS:
+            continue
+        if token in ("mohammad", "mohammed", "muhammad", "mohd", "md"):
+            filtered_tokens.append("mohammed")
+        else:
+            filtered_tokens.append(token)
+    return " ".join(filtered_tokens) if filtered_tokens else cleaned
 
 
 def _token_sort_ratio_fallback(s1: str, s2: str) -> float:
@@ -73,19 +96,25 @@ def _token_sort_ratio_fallback(s1: str, s2: str) -> float:
 def compute_fuzzy_name_match(claimed: str, registered: str) -> float:
     """
     Calculate fuzzy match score (0.0 to 100.0) between claimed and registered names.
-    Uses rapidfuzz.fuzz.token_sort_ratio if available, otherwise resilient fallback.
+    Uses token_sort_ratio and token_set_ratio with Indian honorific normalization.
     """
     c = claimed.strip()
     r = registered.strip()
     if not c or not r:
         return 0.0
 
+    c_clean = _clean_name_for_matching(c)
+    r_clean = _clean_name_for_matching(r)
+
     if _HAS_RAPIDFUZZ:
-        # Use maximum of token_sort_ratio and token_set_ratio to handle
-        # bank account descriptors (e.g., 'STATE BANK OF INDIA - COLLECT').
-        return float(max(fuzz.token_sort_ratio(c, r), fuzz.token_set_ratio(c, r)))
+        # Use maximum of token_sort_ratio and token_set_ratio on cleaned and raw names
+        # to handle honorifics and bank account descriptors (e.g., 'STATE BANK OF INDIA - COLLECT').
+        sort_score = float(fuzz.token_sort_ratio(c_clean, r_clean))
+        set_score = float(fuzz.token_set_ratio(c_clean, r_clean))
+        raw_score = float(max(fuzz.token_sort_ratio(c, r), fuzz.token_set_ratio(c, r)))
+        return max(sort_score, set_score, raw_score)
     else:
-        return _token_sort_ratio_fallback(c, r)
+        return max(_token_sort_ratio_fallback(c_clean, r_clean), _token_sort_ratio_fallback(c, r))
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +132,7 @@ BANK_EXPANSIONS: Dict[str, List[str]] = {
     "paytm": ["PAYTM PAYMENTS BANK", "ONE97 COMMUNICATIONS", "PAYTM"],
     "phonepe": ["PHONEPE", "PHONEPE PRIVATE LIMITED"],
     "gpay": ["GOOGLE PAY", "GOOGLE INDIA"],
+    "olx": ["OLX", "OLX INDIA", "OLX CLASSIFIEDS", "OLX GLOBAL"],
     "electricity": ["ELECTRICITY DISCOM", "POWER DISTRIBUTION", "MSEDCL", "BESCOM", "UPPCL", "TNEB"],
     "uidai": ["UNIQUE IDENTIFICATION AUTHORITY OF INDIA", "AADHAAR", "UIDAI"],
     "incometax": ["INCOME TAX DEPARTMENT", "NSDL", "CBDT"],
@@ -146,7 +176,7 @@ def match_claimed_vs_registered(
     # Check if claimed is an institution but registered looks like an individual
     is_claimed_institution = any(
         kw in claimed_identity.lower()
-        for kw in ["bank", "sbi", "hdfc", "icici", "axis", "support", "refund", "department", "govt", "police", "tax", "bill"]
+        for kw in ["bank", "sbi", "hdfc", "icici", "axis", "support", "refund", "department", "govt", "police", "tax", "bill", "olx"]
     )
     is_registered_individual = not any(
         kw in registered_clean.lower()
@@ -158,6 +188,7 @@ def match_claimed_vs_registered(
     if is_claimed_institution and is_registered_individual and best_score < 70.0:
         flags.append("UPI_BENEFICIARY_IS_INDIVIDUAL_FOR_INSTITUTION")
         flags.append("CRITICAL_BANK_IMPERSONATION_MULE")
+        flags.append("NAME_MISMATCH_DETECTED")
         verdict = "MISMATCH"
         # Heavily penalize score when institution is routed to an individual
         effective_score = min(best_score, 15.0)
@@ -168,6 +199,7 @@ def match_claimed_vs_registered(
     elif best_score < 40.0:
         flags.append("UPI_BENEFICIARY_NAME_MISMATCH")
         flags.append("SUSPECTED_UNAUTHORIZED_RECIPIENT")
+        flags.append("NAME_MISMATCH_DETECTED")
         verdict = "MISMATCH"
         effective_score = best_score
     else:
@@ -183,39 +215,75 @@ def match_claimed_vs_registered(
 # ---------------------------------------------------------------------------
 
 async def verify_bank_identity(
-    vpa: str,
+    vpa: Optional[Union[str, ScanRequest]] = None,
     claimed_identity: Optional[str] = None,
     verifier: Optional[UpiVerifier] = None,
-) -> Dict[str, Any]:
+    *,
+    target: Optional[Union[str, ScanRequest]] = None,
+) -> BankVerificationResult:
     """
-    Perform end-to-end bank identity verification for a given VPA.
-    Returns structured evidence containing:
-    - verification_result: UpiVerificationResult
-    - name_match_score: float
-    - name_match_status: str
-    - flags: List[str]
-    - evidence_item: EvidenceItem (with provider="SANDBOX_MOCK")
+    Perform end-to-end bank identity verification for a given VPA or ScanRequest.
+    Returns BankVerificationResult which also supports dict indexing for backward-compatibility.
     """
     if verifier is None:
         verifier = get_upi_verifier()
 
-    verif_res: UpiVerificationResult = await verifier.verify_vpa(vpa)
+    input_target = vpa if vpa is not None else target
+
+    if isinstance(input_target, ScanRequest):
+        content = input_target.content or ""
+        vpa_match = re.search(r"[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}", content)
+        target_vpa = vpa_match.group(0) if vpa_match else ""
+        if not claimed_identity and input_target.metadata:
+            claimed_identity = input_target.metadata.get("claimed_identity")
+        if not claimed_identity and content:
+            inst_keywords = [
+                "olx", "sbi", "hdfc", "icici", "axis", "pnb", "bob", "kotak",
+                "paytm", "phonepe", "gpay", "electricity", "discom", "police",
+                "income tax", "kyc", "refund", "support", "airtel", "jio"
+            ]
+            content_lower = content.lower()
+            for kw in inst_keywords:
+                if re.search(r"\b" + re.escape(kw) + r"\b", content_lower):
+                    claimed_identity = kw.upper()
+                    break
+    elif input_target is not None:
+        target_vpa = str(input_target)
+    else:
+        target_vpa = ""
+
+    if not target_vpa:
+        return BankVerificationResult(
+            status=AgentStatusEnum.SUCCESS,
+            vpa=None,
+            claimed_name=claimed_identity,
+            registered_bank_name=None,
+            is_name_mismatch=False,
+            details="No VPA detected in scan target.",
+            provider_used="SANDBOX_MOCK",
+            provider="SANDBOX_MOCK",
+        )
+
+    verif_res: UpiVerificationResult = await verifier.verify_vpa(target_vpa)
     score, status, flags = match_claimed_vs_registered(
         claimed_identity,
         verif_res.registered_name
     )
+    is_mismatch = (status == "MISMATCH")
+    if is_mismatch and "NAME_MISMATCH_DETECTED" not in flags:
+        flags.append("NAME_MISMATCH_DETECTED")
 
     finding_msg = (
-        f"UPI '{vpa}' registered to '{verif_res.registered_name or 'Unknown'}' "
+        f"UPI '{target_vpa}' registered to '{verif_res.registered_name or 'Unknown'}' "
         f"via {verif_res.bank_name or 'Bank'}. Name match: {status} ({score}%)."
     )
 
     evidence_item = EvidenceItem(
         tool="bank_identity_agent",
-        status="FLAGGED" if status == "MISMATCH" else "VERIFIED",
+        status="FLAGGED" if is_mismatch else "VERIFIED",
         finding=finding_msg,
         raw_result={
-            "vpa": vpa,
+            "vpa": target_vpa,
             "registered_name": verif_res.registered_name,
             "claimed_identity": claimed_identity,
             "bank_name": verif_res.bank_name,
@@ -229,11 +297,20 @@ async def verify_bank_identity(
         provider=verif_res.provider,
     )
 
-    return {
-        "verification": verif_res,
-        "name_match_score": score,
-        "name_match_status": status,
-        "flags": flags,
-        "evidence_item": evidence_item,
-        "provider": verif_res.provider,
-    }
+    return BankVerificationResult(
+        status=AgentStatusEnum.SUCCESS,
+        vpa=target_vpa,
+        claimed_name=claimed_identity,
+        registered_bank_name=verif_res.registered_name,
+        is_name_mismatch=is_mismatch,
+        bank_name=verif_res.bank_name,
+        account_exists=verif_res.account_exists,
+        provider_used=verif_res.provider,
+        flags=flags,
+        details=finding_msg,
+        name_match_score=score,
+        name_match_status=status,
+        verification=verif_res,
+        evidence_item=evidence_item,
+        provider=verif_res.provider,
+    )

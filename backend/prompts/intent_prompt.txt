@@ -62,12 +62,41 @@ Output:
   "details": "Prevalent advance-fee task scam operating via Telegram channels."
 }
 
-Example 5 (Legitimate Notification):
+Example 5 (CEO Fraud / Executive Impersonation):
+Input: "Confidential request from CEO: I am in a board meeting and need you to urgently wire $25,000 for client contract closure. Do not call, confirm via email once transferred."
+Output:
+{
+  "risk_score": 92.0,
+  "detected_intent": "FINANCIAL_EXTORTION",
+  "spear_phishing_category": "CEO_FRAUD_EXECUTIVE",
+  "manipulation_tactics": ["Executive Impersonation", "Artificial Secrecy/Confidentiality", "Urgent Wire Transfer Solicitation"],
+  "confidence": 0.96,
+  "flags": ["CEO_IMPERSONATION_FLAG", "URGENT_WIRE_REQUEST"],
+  "reasoning": "Classic business email compromise (BEC) impersonating the CEO demanding immediate wire transfer with confidentiality directives.",
+  "details": "High-urgency executive authority impersonation bypasses standard invoice approval controls."
+}
+
+Example 6 (Vendor Invoice Compromise / Wire Fraud):
+Input: "Dear Accounts, Please find attached revised invoice #9821. Kindly note our bank account details have been updated. Remit payment to the new account today."
+Output:
+{
+  "risk_score": 88.0,
+  "detected_intent": "FINANCIAL_EXTORTION",
+  "spear_phishing_category": "INVOICE_VENDOR_FRAUD",
+  "manipulation_tactics": ["Vendor Impersonation", "Bank Account Modification", "Payment Redirection"],
+  "confidence": 0.94,
+  "flags": ["INVOICE_FRAUD_FLAG", "REVISED_BANK_ACCOUNT"],
+  "reasoning": "Deceptive invoice modification requesting remittance redirection to an unauthorized bank account.",
+  "details": "Vendor payment redirection attack characteristic of supply chain fraud."
+}
+
+Example 7 (Legitimate Notification):
 Input: "Dear Customer, your electricity bill of Rs 1,420 for account 998822 is generated. Due date 15 Oct. Pay via official DISCOM app."
 Output:
 {
   "risk_score": 5.0,
   "detected_intent": "BENIGN",
+  "spear_phishing_category": "BENIGN_TRANSACTIONAL",
   "manipulation_tactics": [],
   "confidence": 0.98,
   "flags": ["STANDARD_TRANSACTIONAL_DISCLOSURE"],
@@ -105,6 +134,7 @@ You MUST return a JSON object with this EXACT structure (no markdown fences, pur
 {
   "risk_score": <number between 0.0 and 100.0>,
   "detected_intent": "<PANIC_URGENCY | FINANCIAL_EXTORTION | LOTTERY_REWARD | KYC_VERIFICATION | OTP_HARVEST | BENIGN | SUSPICIOUS>",
+  "spear_phishing_category": "<CEO_FRAUD_EXECUTIVE | INVOICE_VENDOR_FRAUD | CREDENTIAL_HARVESTING | UTILITY_EXTORTION | DIGITAL_ARREST_COERCION | PART_TIME_JOB_SCAM | LOTTERY_ADVANCE_FEE | BENIGN_TRANSACTIONAL | UNKNOWN_SUSPICIOUS>",
   "manipulation_tactics": ["<tactic 1>", "<tactic 2>"],
   "confidence": <number between 0.0 and 1.0>,
   "flags": ["<FLAG_NAME_1>", "<FLAG_NAME_2>"],
