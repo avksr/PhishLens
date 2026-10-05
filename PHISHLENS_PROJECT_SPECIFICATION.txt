@@ -1,0 +1,313 @@
+================================================================================
+PHISHLENS (SCAMSHIELD AI) — COMPLETE MASTER PROJECT SPECIFICATION
+================================================================================
+Repository: https://github.com/avksr/PhishLens
+Tagline: Real-Time Explainable Multi-Vector Scam Interception Engine
+Target SLA: Sub-1000ms Median Execution (<3.5s per-agent hard timeout, <5.0s end-to-end)
+Compliance: GIGW 3.0 Cybersecurity Standards, Zero-Trust Privacy, PII Scrubbing
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY & PROBLEM STATEMENT
+--------------------------------------------------------------------------------
+India loses over ₹1,750 Crore annually to digital financial fraud: fake KYC
+updates, electricity disconnection threats, digital arrest extortion, and UPI
+refund traps. Existing government countermeasures (such as Chakshu and the 1930
+National Cyber Crime Reporting Portal) operate as post-incident reporting
+registries—victims can only lodge complaints AFTER money has already been stolen.
+
+PhishLens is an active, PRE-TRANSACTION INTERCEPTION LAYER. Before a citizen
+enters an OTP, submits net banking credentials, or inputs a UPI PIN, PhishLens
+scans the communication across 3 parallel AI vectors + 1 specialized financial
+vector:
+  1. Domain & URL Intelligence (Atharv)
+  2. Sender Identity & TRAI DLT Verification (Avni)
+  3. UPI Virtual Payment Address (VPA) Deception Detection (Avni)
+  4. Psycholinguistic Intent & Coercion Analysis (Vikas)
+
+Signals are synthesized via a dynamic weighted scoring engine with non-linear
+heuristic escalation overrides (Avika), rendering an Explainable AI (XAI)
+verdict with bilingual (English + Hindi) citizen advisories and a 4-tier
+intervention action (ALLOW, WARN_USER, BLOCK_TRANSACTION). The entire flow
+is coordinated by an async FastAPI orchestrator and SQLite audit logger (Vansh)
+and visualized on a React 18 cyber-defense dashboard (Yuvraj).
+
+
+--------------------------------------------------------------------------------
+2. TEAM MATRIX & RESPONSIBILITIES
+--------------------------------------------------------------------------------
+The project was constructed across 6 specialized roles on isolated git branches:
+
+1. VANSH — Backend Orchestrator & Audit Database
+   - Branch: feature/vansh-orchestrator
+   - Files: backend/core/orchestrator.py, backend/core/db_logger.py,
+            backend/api/routes.py, backend/core/limiter.py, backend/main.py
+   - Responsibilities:
+     * Parallel agent dispatch with asyncio.gather() and 3.5s timeout supervisor.
+     * Input type auto-classification (web_url, upi_handle, text_message).
+     * SQLite async audit logging with PII masking (987****210, OTPs masked).
+     * GIGW 3.0 rate limiting (30 requests/minute via slowapi).
+
+2. ATHARV — URL & Domain Intelligence Agent
+   - Branch: feature/atharv-url-agent
+   - Files: backend/agents/url_agent.py, backend/data/brand_domains.json,
+            backend/data/high_risk_tlds.txt, backend/tests/test_url_agent.py
+   - Responsibilities:
+     * WHOIS/RDAP domain age extraction (< 30 days flagged as new/ephemeral).
+     * Levenshtein distance typosquatting against top 50 Indian banking domains.
+     * High-risk TLD reputation penalties (.top, .xyz, .club, .work, .icu, .cfd).
+     * In-memory LRU cache (2048 entries) pre-warmed for sub-millisecond lookup.
+
+3. AVNI — Sender Identity, TRAI DLT & UPI VPA Intelligence Agent
+   - Branch: feature/avni-sender-agent
+   - Files: backend/agents/sender_agent.py, backend/agents/upi_agent.py,
+            backend/data/trai_dlt_registry.json,
+            backend/data/trai_circle_prefix_registry.json,
+            backend/tests/test_sender_agent.py, backend/tests/test_upi_agent.py
+   - Responsibilities:
+     * TRAI DLT alphabetic header regex: ^[A-Z]{2}-[A-Z]{6}$ (e.g. VM-SBIINB).
+     * Telecom circle & operator prefix validation (e.g. VM = Vodafone Mumbai).
+     * Curated TRAI DLT Registry verification (40+ banks, DISCOMs, couriers).
+     * Homoglyph & digit-substitution spoof detection (e.g. SB1INB -> SBIINB).
+     * Personal GSM bank impersonation rule (10-digit mobile claiming bank identity).
+     * UPI VPA deep-link parsing (upi://pay?pa=...&pn=...&am=...).
+     * Consumer-only handle vs. institutional name fraud detection (@ybl, @axl).
+     * Cross-brand VPA mismatch (sbi-refund@paytm).
+     * Bilingual citizen explanations and entity extraction (extract_entities).
+
+4. VIKAS — LLM Psycholinguistic Intent Agent
+   - Branch: feature/vikas-intent-agent
+   - Files: backend/agents/intent_agent.py, backend/prompts/intent_prompt.txt,
+            backend/tests/test_intent_agent.py
+   - Responsibilities:
+     * Groq LLaMA-3.1-8B-Instant and Google Gemini Flash with temperature=0.0.
+     * Psycholinguistic taxonomy: Panic Urgency, Financial Extortion,
+       Fake KYC, OTP Harvesting, Digital Arrest (CBI/Police/Court coercion).
+     * Hinglish colloquial phrasing support.
+     * Resilient offline regex keyword heuristic engine (<15ms fallback).
+
+5. AVIKA — Risk Scoring Engine & Explainable Verdict Synthesis
+   - Branch: feature/avika-scoring-engine
+   - Files: backend/core/scoring_engine.py, backend/core/verdict_utils.py,
+            backend/tests/test_scoring.py, backend/scripts/evaluate_test_set.py
+   - Responsibilities:
+     * Dynamic weight re-normalization (URL 40%, Sender 30%, Intent 30%).
+     * Non-linear heuristic escalation overrides (Double Whammy, GSM Bank Spoof,
+       Active OTP Harvesting, Digital Arrest, TRAI Whitelist Exemption).
+     * Fail-secure default: returns CAUTION (score 35) on total agent failure.
+     * Bilingual English + Hindi executive verdicts and citizen action steps.
+     * Automated 1930 / cybercrime.gov.in complaint draft generator.
+
+6. YUVRAJ — Frontend Dashboard & Pre-Transaction Interception UI
+   - Branch: feature/yuvraj-frontend-ui
+   - Files: frontend/src/App.tsx, frontend/src/components/*, frontend/src/lib/*
+   - Responsibilities:
+     * React 18 + Vite cyber-defense themed dashboard (Dark Slate #0B0F19).
+     * Animated 0–100 speedometer gauge with tier badge visualization.
+     * Pre-transaction hard-block interception modal for BLOCK_TRANSACTION.
+     * Collapsible audit trail inspection drawer with latency breakdown.
+     * One-click demo presets and English/Hindi language toggle.
+
+
+--------------------------------------------------------------------------------
+3. END-TO-END SYSTEM ARCHITECTURE
+--------------------------------------------------------------------------------
+1. Client Input: User or payment app submits message, link, or UPI prompt.
+2. Ingestion: POST /api/v1/scan to FastAPI orchestrator (main.py).
+3. Pre-Processing:
+   - Extract URL using regex if not explicitly provided.
+   - Detect input type: web_url, upi_handle, or text_message.
+   - Check if UPI handle/deep-link signal exists in content or sender.
+4. Parallel Agent Dispatch:
+   - asyncio.gather(safe_url(), safe_sender(), safe_intent(), [safe_upi()])
+   - Enforced 3.5-second supervisor timeout per agent via asyncio.wait_for().
+   - Fail-safe shielding: agents return status="ERROR" with score=0.0 on crash.
+5. Dynamic Synthesis (Scoring Engine):
+   - Compute dynamic weights based on active/skipped/errored agents.
+   - Evaluate non-linear heuristic escalation overrides.
+   - Generate bilingual verdicts, top reasons, and structured evidence.
+6. Async Audit Logging:
+   - Non-blocking background task logs scan to SQLite.
+   - Redacts 10-digit mobile numbers and OTPs.
+   - Records SHA-256 payload hash and processing latency.
+7. Frontend Render:
+   - Frictionless allow for SAFE.
+   - Warning banner for CAUTION.
+   - Explicit confirmation for HIGH_RISK.
+   - Full-Screen Hard Block Interception Modal for CRITICAL.
+
+
+--------------------------------------------------------------------------------
+4. THE 4-TIER DECISION MATRIX
+--------------------------------------------------------------------------------
+Score Range  | Risk Tier  | Verdict Category | Action Required   | UI Behavior
+-------------+------------+------------------+-------------------+-----------------------------------
+ 0 – 24      | SAFE       | SAFE             | ALLOW             | Green confirmation banner
+25 – 49      | CAUTION    | SUSPICIOUS       | WARN_USER         | Amber advisory, verify sender
+50 – 77      | HIGH_RISK  | LIKELY_SCAM      | BLOCK_TRANSACTION | Orange persistent alert card
+78 – 100     | CRITICAL   | LIKELY_SCAM      | BLOCK_TRANSACTION | Full-screen hard-block modal
+
+
+--------------------------------------------------------------------------------
+5. CRITICAL HEURISTIC ESCALATION OVERRIDES (NON-LINEAR)
+--------------------------------------------------------------------------------
+1. Double Whammy Escalation:
+   - Condition: URL Risk >= 80 AND Sender Risk >= 80
+   - Action: Composite Score <- max(Score, 92.0) -> CRITICAL / BLOCK_TRANSACTION
+
+2. Personal GSM Bank Impersonation:
+   - Condition: 10-digit GSM sender claiming bank/utility with urgency/KYC
+   - Action: Composite Score <- max(Score, 88.0) -> CRITICAL / BLOCK_TRANSACTION
+
+3. Active OTP / Credential Harvesting:
+   - Condition: Demands OTP, UPI PIN, or NetBanking password under urgency
+   - Action: Composite Score <- max(Score, 90.0) -> CRITICAL / BLOCK_TRANSACTION
+
+4. Digital Arrest & Coercive Psychological Extortion:
+   - Condition: Threatens police arrest, CBI inquiry, or court summons
+   - Action: Composite Score <- max(Score, 82.0) -> HIGH_RISK / BLOCK_TRANSACTION
+
+5. TRAI Certified Header Exemption (Safe Override):
+   - Condition: Verified official TRAI DLT header with clean URL and no coercion
+   - Action: Composite Score <- min(Score, 12.0) -> SAFE / ALLOW
+
+
+--------------------------------------------------------------------------------
+6. DATA CONTRACTS & SCHEMAS (backend/shared/models.py)
+--------------------------------------------------------------------------------
+Request Schema (ScanRequest):
+{
+  "content": "string (1-8000 chars, required)",
+  "sender": "string (optional: +9198..., VM-SBIINB, or VPA)",
+  "extracted_url": "string (optional)",
+  "channel": "sms | whatsapp | email | qr_payment | web_url",
+  "metadata": {}
+}
+
+Response Schema (ScanResponse):
+{
+  "scan_id": "UUID v4",
+  "audit_id": "UUID v4",
+  "timestamp": "ISO 8601 UTC",
+  "overall_risk_score": 0-100 (int),
+  "risk_score": 0-100 (int alias),
+  "risk_tier": "SAFE | CAUTION | HIGH_RISK | CRITICAL",
+  "verdict_category": "SAFE | SUSPICIOUS | LIKELY_SCAM",
+  "confidence": "HIGH | MEDIUM | LOW",
+  "verdict": "English executive summary headline",
+  "verdict_hi": "Hindi executive summary headline",
+  "recommendation": "English actionable safety guidance",
+  "recommendation_hi": "Hindi actionable safety guidance",
+  "action_required": "ALLOW | WARN_USER | BLOCK_TRANSACTION",
+  "reasons": ["List of plain-language prioritized explanation strings"],
+  "evidence": [
+    {"tool": "url_agent", "status": "FLAGGED", "finding": "Typosquatting detected"}
+  ],
+  "audit_trail": {
+    "url_analysis": { ... },
+    "sender_analysis": { ... },
+    "intent_analysis": { ... },
+    "upi_analysis": { ... },
+    "synthesis_breakdown": {
+      "weights_applied": {"url_weight": 0.4, "sender_weight": 0.3, "intent_weight": 0.3},
+      "heuristics_triggered": ["DOUBLE_WHAMMY_ESCALATION"],
+      "summary_explanation": "..."
+    }
+  },
+  "processing_time_ms": 12.45,
+  "detected_input_type": "web_url | upi_handle | text_message"
+}
+
+
+--------------------------------------------------------------------------------
+7. COMPLETE REPOSITORY FILE TREE
+--------------------------------------------------------------------------------
+PhishLens/
+├── backend/
+│   ├── main.py                     # FastAPI entrypoint & slowapi rate limiter
+│   ├── requirements.txt            # Python dependencies
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── routes.py               # REST API endpoints (/scan, /health, /audit)
+│   ├── shared/
+│   │   ├── __init__.py
+│   │   └── models.py               # Central Pydantic v2 data models
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── url_agent.py            # Atharv: WHOIS, typosquatting, TLDs
+│   │   ├── sender_agent.py         # Avni: TRAI DLT, GSM spoofing, homoglyphs
+│   │   ├── upi_agent.py            # Avni: UPI VPA & deep-link fraud
+│   │   └── intent_agent.py         # Vikas: Groq LLaMA-3 + offline regex
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py         # Vansh: Async parallel agent supervisor
+│   │   ├── scoring_engine.py       # Avika: Dynamic weights & escalations
+│   │   ├── verdict_utils.py        # Avika: Bilingual translation & synthesis
+│   │   ├── db_logger.py            # Vansh: SQLite async logger with PII masking
+│   │   └── limiter.py              # Vansh: Rate limiter config
+│   ├── data/
+│   │   ├── brand_domains.json      # Official Indian banking/gov domains
+│   │   ├── high_risk_tlds.txt      # List of malicious/suspicious TLDs
+│   │   ├── trai_dlt_registry.json  # Whitelisted TRAI commercial entity codes
+│   │   └── trai_circle_prefix_registry.json # Circle & operator prefix map
+│   ├── prompts/
+│   │   └── intent_prompt.txt       # Psycholinguistic prompt for LLM inference
+│   ├── scripts/
+│   │   └── evaluate_test_set.py    # Benchmark runner across 60 curated payloads
+│   └── tests/
+│       ├── test_sender_agent.py    # 34 tests for Avni's sender agent
+│       ├── test_upi_agent.py       # Unit tests for Avni's UPI agent
+│       ├── test_url_agent.py       # Tests for Atharv's URL agent
+│       ├── test_intent_agent.py    # Tests for Vikas's intent agent
+│       ├── test_scoring.py         # Tests for Avika's scoring engine
+│       ├── test_pipeline.py        # End-to-end integration tests
+│       └── test_rate_limit.py      # Security & rate limiting tests
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.tsx                 # Root dashboard with bilingual toggle
+│       ├── index.css               # TailwindCSS & cyber theme styles
+│       ├── components/
+│       │   ├── ScannerInput.tsx    # Message input box with demo presets
+│       │   ├── RiskGauge.tsx       # 0-100 visual risk meter
+│       │   ├── InterceptionModal.tsx # Pre-transaction hard-block modal
+│       │   └── AuditTrailDrawer.tsx# Multi-agent breakdown inspector
+│       └── lib/
+│           ├── api.ts              # Backend API client
+│           └── types.ts            # TypeScript interfaces
+├── datasets/
+│   ├── benchmark_60.json           # 35 scam + 25 benign curated test payloads
+│   ├── payloads_high_risk.json     # High-risk attack scenarios
+│   ├── payloads_safe.json          # Benign transactional messages
+│   └── payloads_edge_cases.json    # Ambiguous and borderline payloads
+└── docs/
+    ├── PROJECT_SYNOPSIS.md         # Comprehensive project synopsis
+    └── TEAM_IMPLEMENTATION_PLAN.md # Execution strategy, PRD & SLA constraints
+
+
+--------------------------------------------------------------------------------
+8. HOW TO RUN & TEST
+--------------------------------------------------------------------------------
+Backend:
+  cd backend
+  python -m venv venv
+  venv\Scripts\activate   (Windows) OR source venv/bin/activate (macOS/Linux)
+  pip install -r requirements.txt
+  uvicorn main:app --reload --port 8000
+  API Docs: http://localhost:8000/docs
+
+Frontend:
+  cd frontend
+  npm install
+  npm run dev
+  Web UI: http://localhost:5173
+
+Run Test Suites:
+  cd backend
+  pytest tests/test_sender_agent.py -v   (Avni - 34 tests)
+  pytest tests/test_upi_agent.py -v      (Avni - 5 tests)
+  pytest tests/test_scoring.py -v        (Avika)
+  pytest tests/test_intent_agent.py -v   (Vikas)
+  pytest tests/test_url_agent.py -v      (Atharv)
+================================================================================

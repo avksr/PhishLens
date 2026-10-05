@@ -107,9 +107,11 @@ def compute_fuzzy_name_match(claimed: str, registered: str) -> float:
     r_clean = _clean_name_for_matching(r)
 
     if _HAS_RAPIDFUZZ:
+        # Use maximum of token_sort_ratio and token_set_ratio on cleaned and raw names
+        # to handle honorifics and bank account descriptors (e.g., 'STATE BANK OF INDIA - COLLECT').
         sort_score = float(fuzz.token_sort_ratio(c_clean, r_clean))
         set_score = float(fuzz.token_set_ratio(c_clean, r_clean))
-        raw_score = float(fuzz.token_sort_ratio(c, r))
+        raw_score = float(max(fuzz.token_sort_ratio(c, r), fuzz.token_set_ratio(c, r)))
         return max(sort_score, set_score, raw_score)
     else:
         return max(_token_sort_ratio_fallback(c_clean, r_clean), _token_sort_ratio_fallback(c, r))

@@ -49,6 +49,24 @@
       "first_reported": "2026-08-01T08:00:00Z",
       "last_reported": "2026-10-02T09:10:00Z",
       "tags": ["digital_arrest", "cbi_impersonation", "fake_fine"]
+    },
+    "refund-desk@oksbi": {
+      "complaint_count": 8,
+      "scam_category": "IMPERSONATION_REFUND_SCAM",
+      "proof_summary": "Posing as SBI refund desk requesting remote access via AnyDesk.",
+      "last_reported": "2026-09-30T10:00:00Z"
+    },
+    "sbi-refund@paytm": {
+      "complaint_count": 12,
+      "scam_category": "BANK_IMPERSONATION_MULE",
+      "proof_summary": "Individual mule account impersonating State Bank of India support.",
+      "last_reported": "2026-10-01T12:00:00Z"
+    },
+    "lottery-winner@ybl": {
+      "complaint_count": 6,
+      "scam_category": "LOTTERY_ADVANCE_FEE",
+      "proof_summary": "KBC lottery processing fee extortion scam.",
+      "last_reported": "2026-10-02T15:00:00Z"
     }
   },
   "scam_phones": {
@@ -58,6 +76,7 @@
       "scam_category": "BANK_KYC_PHISHING",
       "complaint_count": 15,
       "proof_summary": "Warning: Flagged 15 times for Bank KYC and OTP harvesting calls.",
+      "last_reported": "2026-10-02T14:00:00Z",
       "tags": ["bank_impersonation", "otp_call", "gsm_kyc"]
     },
     "+919823145678": {
@@ -66,6 +85,7 @@
       "scam_category": "BANK_KYC_PHISHING",
       "complaint_count": 9,
       "proof_summary": "Warning: Flagged 9 times for fake HDFC account deactivation alerts.",
+      "last_reported": "2026-10-03T09:30:00Z",
       "tags": ["kyc_alert", "phishing_sms"]
     },
     "+919988776655": {
@@ -74,6 +94,7 @@
       "scam_category": "UTILITY_ELECTRICITY_EXTORTION",
       "complaint_count": 11,
       "proof_summary": "Warning: Flagged 11 times for 'Bijli bill pending - tonight power cut' messages.",
+      "last_reported": "2026-10-02T18:00:00Z",
       "tags": ["discom_extortion", "power_cut"]
     }
   }

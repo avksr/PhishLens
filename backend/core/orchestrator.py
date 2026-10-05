@@ -2,10 +2,11 @@
 # OWNER: VANSH
 # FILE: backend/core/orchestrator.py
 # PURPOSE: Parallel Multimodal Agent Pipeline Orchestrator
-#   - Phase 1 & 2: Smart Modality Router (Text, Vision, Document)
-#   - Phase 2: Concurrent Agent Execution (3.5s Timeout Supervisor)
-#   - Phase 3: Synthesis Delegation via Avika's Scoring Engine
-#   - Phase 4: Non-blocking SQLite Audit Logging
+#          - Phase 1 & 2: Smart Modality Router (Text, Vision, Document)
+#          - Phase 2: Concurrent Agent Execution (3.5s Timeout Supervisor)
+#            Timeout -> SKIPPED (Never crash). GIGW 3.0 Compliant.
+#          - Phase 3: Synthesis Delegation via Avika's Scoring Engine
+#          - Phase 4: Non-blocking SQLite / Supabase Audit Logging
 # ============================================================
 
 from __future__ import annotations
@@ -13,11 +14,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from agents.ai_text_agent import analyze_ai_text
 from agents.bank_identity_agent import verify_bank_identity
-from agents.document_agent import analyze_document_fraud
+from agents.document_agent import analyze_document_fraud, analyze_document
 from agents.intent_agent import analyze_intent
 from agents.osint_agent import analyze_osint
 from agents.sender_agent import analyze_sender
@@ -26,20 +28,23 @@ from agents.url_agent import analyze_url
 from agents.vision_agent import analyze_image_screenshot
 from core.db_logger import log_scan_audit
 from core.scoring_engine import compute_score
+from core.upload_validator import detect_file_type
 from shared.models import (
+    ActionRequiredEnum,
     AgentStatusEnum,
     AiTextAgentResult,
     BankVerificationResult,
+    ChannelEnum,
     DocumentFraudResult,
     IntentAgentResult,
     ModalityEnum,
     OsintHistoryResult,
+    PrdVerdictEnum,
+    RiskTierEnum,
     ScanRequest,
     ScanResponse,
     SenderAgentResult,
     UpiAgentResult,
-    AgentStatusEnum,
-    ChannelEnum,
     UrlAgentResult,
     VisionAnalysisResult,
 )
@@ -50,9 +55,6 @@ TIMEOUT_SECONDS = 3.5
 URL_REGEX = re.compile(r'https?://[^\s<>"]+')
 UPI_VPA_REGEX = re.compile(r"\b[a-zA-Z0-9.\-_]{1,256}@[a-zA-Z0-9]{2,20}\b")
 PHONE_REGEX = re.compile(r"(?:\+?91[\-\s]?)?[6-9]\d{9}")
-
-
-# ── Supervised Worker Wrappers with SLA Timeouts & Fail-safes ───────────────
 
 URL_STANDALONE_REGEX = re.compile(
     r'^(?:https?://|www\.)[^\s/$.?#].[^\s]*$',
@@ -94,95 +96,108 @@ def classify_input_type(content: str) -> str:
     return "text_message"
 
 
+# ── Supervised Worker Wrappers with SLA Timeouts & Fail-safes ───────────────
+
 async def safe_url(req: ScanRequest) -> UrlAgentResult:
+    """Supervised call for Atharv's URL Agent with 3.5s timeout. Timeout -> SKIPPED (no crash)."""
     try:
         return await asyncio.wait_for(analyze_url(req), timeout=TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        logger.warning(f"URL Agent timed out (> {TIMEOUT_SECONDS}s).")
+        logger.warning(f"URL Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
         return UrlAgentResult(
-            status=AgentStatusEnum.ERROR,
+            status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="Agent timeout/error",
-            flags=["URL_TIMEOUT_EXCEEDED"],
+            details=f"Agent timeout/skipped (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+            flags=["URL_TIMEOUT_SKIPPED"],
         )
     except Exception as exc:
         logger.error(f"URL Agent error: {exc}", exc_info=True)
         return UrlAgentResult(
             status=AgentStatusEnum.ERROR,
             risk_score=0.0,
-            details=f"Agent timeout/error: {str(exc)}",
+            details=f"Agent error: {str(exc)}",
             flags=["URL_AGENT_ERROR"],
         )
 
 
 async def safe_sender(req: ScanRequest) -> SenderAgentResult:
+    """Supervised call for Avni's Sender Agent with 3.5s timeout. Timeout -> SKIPPED (no crash)."""
     try:
         return await asyncio.wait_for(analyze_sender(req), timeout=TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        logger.warning(f"Sender Agent timed out (> {TIMEOUT_SECONDS}s).")
+        logger.warning(f"Sender Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
         return SenderAgentResult(
-            status=AgentStatusEnum.ERROR,
+            status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="Agent timeout/error",
-            flags=["SENDER_TIMEOUT_EXCEEDED"],
+            details=f"Agent timeout/skipped (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+            flags=["SENDER_TIMEOUT_SKIPPED"],
         )
     except Exception as exc:
         logger.error(f"Sender Agent error: {exc}", exc_info=True)
         return SenderAgentResult(
             status=AgentStatusEnum.ERROR,
             risk_score=0.0,
-            details=f"Agent timeout/error: {str(exc)}",
+            details=f"Agent error: {str(exc)}",
             flags=["SENDER_AGENT_ERROR"],
         )
 
 
 async def safe_intent(req: ScanRequest) -> IntentAgentResult:
+    """Supervised call for Vikas's Intent Agent with 3.5s timeout. Timeout -> SKIPPED (no crash)."""
     try:
         return await asyncio.wait_for(analyze_intent(req), timeout=TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        logger.warning(f"Intent Agent timed out (> {TIMEOUT_SECONDS}s).")
+        logger.warning(f"Intent Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
         return IntentAgentResult(
-            status=AgentStatusEnum.ERROR,
+            status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="Agent timeout/error",
-            reasoning="Agent timeout/error",
-            flags=["INTENT_TIMEOUT_EXCEEDED"],
+            details=f"Agent timeout/skipped (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+            reasoning=f"Agent timeout/skipped (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+            flags=["INTENT_TIMEOUT_SKIPPED"],
         )
     except Exception as exc:
         logger.error(f"Intent Agent error: {exc}", exc_info=True)
         return IntentAgentResult(
             status=AgentStatusEnum.ERROR,
             risk_score=0.0,
-            details=f"Agent timeout/error: {str(exc)}",
-            reasoning=f"Agent timeout/error: {str(exc)}",
+            details=f"Agent error: {str(exc)}",
+            reasoning=f"Agent error: {str(exc)}",
             flags=["INTENT_AGENT_ERROR"],
         )
 
 
 async def safe_upi(req: ScanRequest) -> UpiAgentResult:
+    """Supervised call for Avni's UPI VPA Agent with 3.5s timeout. Timeout -> SKIPPED (no crash)."""
     try:
         return await asyncio.wait_for(analyze_upi(req), timeout=TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        logger.warning(f"UPI Agent timed out (> {TIMEOUT_SECONDS}s).")
+        logger.warning(f"UPI Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
         return UpiAgentResult(
-            status=AgentStatusEnum.ERROR,
+            status=AgentStatusEnum.SKIPPED,
             risk_score=0.0,
-            details="Agent timeout/error",
-            flags=["UPI_TIMEOUT_EXCEEDED"],
+            details=f"Agent timeout/skipped (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+            flags=["UPI_TIMEOUT_SKIPPED"],
         )
     except Exception as exc:
         logger.error(f"UPI Agent error: {exc}", exc_info=True)
         return UpiAgentResult(
             status=AgentStatusEnum.ERROR,
             risk_score=0.0,
-            details=f"Agent timeout/error: {str(exc)}",
+            details=f"Agent error: {str(exc)}",
             flags=["UPI_AGENT_ERROR"],
         )
 
 
 async def safe_bank_identity(req: ScanRequest) -> BankVerificationResult:
+    """Supervised call for Bank Identity Verification Agent with 3.5s timeout."""
     try:
         return await asyncio.wait_for(verify_bank_identity(req), timeout=TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(f"Bank Identity Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
+        return BankVerificationResult(
+            status=AgentStatusEnum.SKIPPED,
+            details=f"Bank identity timeout (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+        )
     except Exception as exc:
         logger.debug(f"Bank identity agent error: {exc}")
         return BankVerificationResult(
@@ -192,19 +207,42 @@ async def safe_bank_identity(req: ScanRequest) -> BankVerificationResult:
 
 
 async def safe_osint(req: ScanRequest) -> OsintHistoryResult:
+    """Supervised call for OSINT Agent with 3.5s timeout. Timeout -> SKIPPED (no crash)."""
     try:
         return await asyncio.wait_for(analyze_osint(req), timeout=TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(f"OSINT Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
+        return OsintHistoryResult(
+            status=AgentStatusEnum.SKIPPED,
+            risk_score=0.0,
+            query_target=None,
+            total_complaints=0,
+            internal_reports_count=0,
+            external_forum_mentions=0,
+            risk_level="CLEAN",
+            details=f"Agent timeout/skipped (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+            flags=["OSINT_TIMEOUT_SKIPPED"],
+        )
     except Exception as exc:
-        logger.debug(f"OSINT agent error: {exc}")
+        logger.debug(f"OSINT Agent error: {exc}")
         return OsintHistoryResult(
             status=AgentStatusEnum.ERROR,
-            details=f"OSINT query error: {exc}",
+            risk_score=0.0,
+            details=f"OSINT lookup error: {str(exc)}",
+            flags=["OSINT_AGENT_ERROR"],
         )
 
 
 async def safe_ai_text(req: ScanRequest) -> AiTextAgentResult:
+    """Supervised call for AI Text Detector Agent with 3.5s timeout."""
     try:
         return await asyncio.wait_for(analyze_ai_text(req), timeout=TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning(f"AI Text Agent timed out (> {TIMEOUT_SECONDS}s). Marking as SKIPPED per SLA.")
+        return AiTextAgentResult(
+            status=AgentStatusEnum.SKIPPED,
+            details=f"AI text detector timeout (> {TIMEOUT_SECONDS}s) — skipped for SLA",
+        )
     except Exception as exc:
         logger.debug(f"AI text agent error: {exc}")
         return AiTextAgentResult(
@@ -213,28 +251,8 @@ async def safe_ai_text(req: ScanRequest) -> AiTextAgentResult:
         )
 
 
-def detect_file_type(data: bytes, filename: str = "") -> str:
-    """Detect file type from magic bytes or file extension."""
-    if not data:
-        return "unknown"
-    if data.startswith(b"%PDF"):
-        return "pdf"
-    if (
-        data.startswith(b"\x89PNG\r\n\x1a\n")
-        or data.startswith(b"\xff\xd8\xff")
-        or (data.startswith(b"RIFF") and b"WEBP" in data[:16])
-        or data.startswith(b"GIF8")
-    ):
-        return "image"
-    fn = filename.lower()
-    if any(fn.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]):
-        return "image"
-    if fn.endswith(".pdf"):
-        return "pdf"
-    return "unknown"
-
-
 async def safe_vision(image_bytes: bytes) -> VisionAnalysisResult:
+    """Supervised call for Vision Analysis Agent with 3.5s timeout."""
     try:
         return await asyncio.wait_for(analyze_image_screenshot(image_bytes), timeout=TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
@@ -256,6 +274,7 @@ async def safe_vision(image_bytes: bytes) -> VisionAnalysisResult:
 
 
 async def safe_doc_fraud(doc_bytes: bytes) -> DocumentFraudResult:
+    """Supervised call for Document Fraud Detection Agent with 3.5s timeout."""
     try:
         return await asyncio.wait_for(analyze_document_fraud(doc_bytes), timeout=TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
@@ -278,7 +297,6 @@ async def safe_doc_fraud(doc_bytes: bytes) -> DocumentFraudResult:
 
 # ── Core Text Pipeline Orchestration ───────────────────────────────────────
 
-
 async def run_pipeline(req: ScanRequest) -> ScanResponse:
     """
     Vansh's Core Pipeline Orchestrator with Multimodal Smart Router:
@@ -292,8 +310,9 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
 
     # Step 0a: Multimodal Smart Routing for attached binary uploads
     if req.file_bytes:
-        detected_fmt = detect_file_type(req.file_bytes, getattr(req, "file_name", "") or "")
-        if detected_fmt == "image" or target_modality == ModalityEnum.IMAGE:
+        file_info = detect_file_type(req.file_bytes)
+        detected_fmt = file_info.get("file_type", "") if isinstance(file_info, dict) else ""
+        if detected_fmt in ("image", "IMAGE") or target_modality == ModalityEnum.IMAGE:
             target_modality = ModalityEnum.IMAGE
             vision_r = await safe_vision(req.file_bytes)
             if vision_r.ocr_extracted_text and vision_r.ocr_extracted_text not in req.content:
@@ -306,7 +325,7 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
                     req.sender = ph
                 elif ph not in req.content:
                     req.content += f" {ph}"
-        elif detected_fmt == "pdf" or target_modality == ModalityEnum.DOCUMENT:
+        elif detected_fmt in ("pdf", "PDF", "document", "DOCUMENT") or target_modality == ModalityEnum.DOCUMENT:
             target_modality = ModalityEnum.DOCUMENT
             doc_r = await safe_doc_fraud(req.file_bytes)
             if doc_r.details and doc_r.details not in req.content:
@@ -314,22 +333,19 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
 
     # Step 0b: Input Type Auto-Detection (FR-1 & FR-2)
     detected_type = classify_input_type(req.content)
-    req.input_type = detected_type
-    if req.metadata is None:
-        req.metadata = {}
-    req.metadata["input_type"] = detected_type
-
     if detected_type == "web_url":
-        if req.extracted_url is None:
-            stripped = req.content.strip()
-            req.extracted_url = stripped if stripped.startswith(("http://", "https://")) else f"https://{stripped}"
+        if not req.extracted_url:
+            cleaned = req.content.strip()
+            if not cleaned.lower().startswith(('http://', 'https://')):
+                cleaned = f'https://{cleaned}'
+            req.extracted_url = cleaned
         if req.channel in (ChannelEnum.SMS, ChannelEnum.UNKNOWN):
             req.channel = ChannelEnum.WEB_URL
     elif detected_type == "upi_handle":
         if req.channel in (ChannelEnum.SMS, ChannelEnum.UNKNOWN):
             req.channel = ChannelEnum.UPI_HANDLE
     else:
-        # Step 1: URL Pre-Extraction Fallback for general text messages
+        # Pre-extract URL if embedded in text message
         if req.extracted_url is None:
             url_match = URL_REGEX.search(req.content)
             if url_match:
@@ -373,7 +389,7 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
     bank_r: BankVerificationResult = results[5]
     osint_r: OsintHistoryResult = results[6]
 
-    # Step 3: Synthesis Delegation
+    # Step 3: Synthesis Delegation via Avika's Scoring Engine
     response: ScanResponse = compute_score(
         req=req,
         url_r=url_r,
@@ -390,7 +406,7 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
     response.detected_input_type = detected_type
     response.modality = target_modality
 
-    # Step 4: Asynchronous Audit Logging (non-blocking)
+    # ── Step 4: Asynchronous Audit Logging (non-blocking) ──
     try:
         asyncio.create_task(log_scan_audit(response, req))
     except Exception as e:
@@ -400,7 +416,6 @@ async def run_pipeline(req: ScanRequest) -> ScanResponse:
 
 
 # ── Multimodal Pipeline Orchestration (Images & Documents) ─────────────────
-
 
 async def run_multimodal_pipeline(
     file_bytes: Union[bytes, ScanRequest],

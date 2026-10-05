@@ -76,7 +76,7 @@ async def test_pipeline_resilience_agent_failure():
     with patch("core.orchestrator.analyze_intent", side_effect=mock_timeout_agent):
         resp: ScanResponse = await run_pipeline(req)
         assert isinstance(resp, ScanResponse)
-        assert resp.audit_trail.intent_analysis.status == AgentStatusEnum.ERROR
+        assert resp.audit_trail.intent_analysis.status in (AgentStatusEnum.SKIPPED, AgentStatusEnum.ERROR)
         assert "timeout" in resp.audit_trail.intent_analysis.details.lower()
         # Verify pipeline still computed a valid score using dynamic weight redistribution
         assert 0 <= resp.overall_risk_score <= 100
@@ -224,6 +224,7 @@ async def test_audit_privacy_sha256_and_production_mode():
         assert verify_audit_privacy(prod_record, prod_req.content) is True
     finally:
         del os.environ["PRODUCTION_MODE"]
+        await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio

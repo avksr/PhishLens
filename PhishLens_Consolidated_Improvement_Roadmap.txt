@@ -1,0 +1,578 @@
+================================================================================
+PHISHLENS (SCAMSHIELD AI) — CONSOLIDATED IMPROVEMENT ROADMAP
+================================================================================
+
+Project: PhishLens (ScamShield AI)
+Goal: Strengthen PhishLens as a fast, explainable, multi-agent
+      pre-transaction fraud interception system.
+
+This document combines:
+1. Relevant improvements from the team's original improvement recommendations.
+2. Additional architecture, detection, explainability, testing, and demo
+   recommendations identified during project review.
+
+The recommendations are grouped by priority and ownership area.
+
+
+================================================================================
+PART 1 — AVNI'S SENDER IDENTITY & UPI INTELLIGENCE
+================================================================================
+
+1. DYNAMIC LEVENSHTEIN / NEAR-MISS HEADER SPOOFING
+--------------------------------------------------------------------------------
+Current idea:
+Scammers can use legitimate-looking TRAI headers that differ from real bank
+headers by only one or two characters.
+
+Examples:
+    VM-SBIINM  -> resembles VM-SBIINB
+    AX-HDFCBX  -> resembles AX-HDFCBK
+    AD-ICICIR  -> resembles an ICICI header
+
+Implementation:
+- Parse the sender header into its meaningful 6-character identity.
+- Compare it against verified entities in the TRAI DLT registry.
+- Use Levenshtein distance <= 1 or 2.
+- Detect suspicious substitutions and near-matches.
+- Introduce a specific finding such as:
+      CRITICAL_NEAR_MISS_HEADER_SPOOF
+- Give the finding a high risk contribution (the original recommendation
+  suggests a risk score >= 85).
+
+Why it matters:
+This catches sophisticated sender impersonation that exact-match registry
+checks cannot detect.
+
+
+2. TRAI 140 / 160-SERIES INTELLIGENCE
+--------------------------------------------------------------------------------
+Implementation:
+- Add validation for 140-series promotional/marketing numbers.
+- Add validation/whitelisting logic for 160-series transactional/service
+  communication.
+- Flag suspicious financial requests originating from a 140-series source,
+  especially:
+      * KYC update requests
+      * account blocking threats
+      * urgent payment requests
+      * requests for sensitive financial information
+- Maintain an authorized list for legitimate 160-series financial/government
+  communication where appropriate.
+
+Why it matters:
+This gives PhishLens India-specific telecom intelligence instead of relying
+only on generic phishing indicators.
+
+
+3. EXTRACTED ENTITIES IN THE SHARED DATA CONTRACT
+--------------------------------------------------------------------------------
+Expose sender_agent.py's extracted entities through SenderAgentResult.
+
+Suggested structure:
+    extracted_entities:
+        claimed_bank
+        account_ref
+        claimed_amount
+
+Example:
+    claimed_bank: SBI
+    account_ref: XX4912
+    claimed_amount: INR 15,000
+
+Frontend:
+Add an "Extracted Entity" card showing:
+    CLAIMED                 VERIFIED
+    SBI                     Not verified
+    XX4912                  --
+    INR 15,000              --
+
+Why it matters:
+It makes the agent's reasoning visible and improves explainability.
+
+
+4. EXPAND UPI VPA REGISTRY
+--------------------------------------------------------------------------------
+Expand the consumer-only and PSP registries to cover more modern fintech and
+neo-bank handles.
+
+Examples to consider from the original recommendation:
+    @jupiteraxis
+    @waave
+    @slice
+    @naviaxis
+    @fam
+
+The registry should be treated as configurable data rather than hard-coded
+logic wherever practical.
+
+Why it matters:
+Modern fraud increasingly uses non-traditional payment handles.
+
+
+5. UPI VPA TYPOSQUATTING DETECTION
+--------------------------------------------------------------------------------
+Add distance-based detection to the local part of a VPA.
+
+Examples:
+    onllnesbi@oksbi
+    sbiinb-support@okaxis
+
+Possible signals:
+- Levenshtein distance from known organization names.
+- Suspicious additions such as "-support", "-help", "-secure".
+- Brand name + unrelated handle combination.
+- Character substitutions and repeated characters.
+
+Important:
+A near-match should be treated as a suspicious signal, not automatically
+declared fraudulent in isolation.
+
+
+6. COMPREHENSIVE UPI TEST SUITE
+--------------------------------------------------------------------------------
+Expand UPI tests from the current small set to 25+ meaningful cases.
+
+Include:
+- Standard UPI VPAs
+- Complex upi://pay links
+- Amount extraction
+- Currency formatting
+- Obfuscated VPAs
+- Punctuation/spacing variations
+- Hindi warning output
+- Neo-bank handles
+- Brand/PSP mismatches
+- VPA typosquatting
+- Missing/invalid fields
+- Multiple UPI links in one message
+
+Goal:
+Test both correct detection and false-positive resistance.
+
+
+================================================================================
+PART 2 — CROSS-AGENT INTELLIGENCE
+================================================================================
+
+7. CROSS-AGENT CONTRADICTION DETECTION
+--------------------------------------------------------------------------------
+This is a major architectural recommendation.
+
+Current model:
+Agents independently analyze:
+    URL Agent
+    Sender Agent
+    Intent Agent
+    UPI Agent
+
+Improved model:
+After individual analysis, the orchestrator should identify contradictions
+and correlations across agents.
+
+Example:
+
+    Message claims: SBI Customer Support
+    Sender:         VM-SBIINM
+    URL:            sbi-support.xyz
+    UPI:            sbihelp@suspicioushandle
+
+The system should generate a higher-level finding such as:
+
+    IDENTITY_CONTRADICTION_DETECTED
+
+Meaning:
+The claimed organization is not independently consistent across sender,
+website, intent, and payment identity.
+
+Why it matters:
+This makes the system genuinely multi-agent rather than simply running
+several independent detectors.
+
+
+8. CLAIMED IDENTITY VS VERIFIED IDENTITY
+--------------------------------------------------------------------------------
+Create a unified evidence view comparing what the message claims with what
+PhishLens can verify.
+
+Example:
+
+    Organization
+        Claimed:  SBI
+        Verified: Not verified
+
+    Sender
+        Claimed:  SBI support
+        Verified: Near-match header
+
+    Website
+        Claimed:  SBI support
+        Verified: Domain mismatch
+
+    Payment
+        Claimed:  SBI refund
+        Verified: Suspicious VPA
+
+This should be a central part of the final result rather than hidden inside
+individual agent outputs.
+
+
+9. EVIDENCE-BASED EXPLANATION PANEL
+--------------------------------------------------------------------------------
+Instead of displaying only:
+
+    HIGH RISK
+    BLOCKED
+
+show the evidence behind the decision.
+
+Example:
+
+    WHY PHISHLENS BLOCKED THIS
+
+    [!] Sender resembles a verified bank header
+    [!] Sender identity could not be verified
+    [!] URL domain does not match claimed organization
+    [!] Urgency language detected
+    [!] Payment identity is suspicious
+
+Also show the contributing agent signals.
+
+Goal:
+A judge/user should understand the decision within a few seconds.
+
+
+10. SEPARATE RISK FROM CONFIDENCE
+--------------------------------------------------------------------------------
+Do not treat risk score and confidence as the same concept.
+
+Example:
+
+    Risk:       91 / 100
+    Confidence: 97%
+
+versus:
+
+    Risk:       78 / 100
+    Confidence: 61%
+
+Risk answers:
+    "How dangerous does the evidence appear?"
+
+Confidence answers:
+    "How strongly does the available evidence support our assessment?"
+
+This makes the system more transparent and avoids implying certainty where
+evidence is incomplete.
+
+
+11. FAIL-SAFE VERDICT DESIGN
+--------------------------------------------------------------------------------
+Use risk levels carefully.
+
+Suggested presentation:
+    LOW RISK
+    SUSPICIOUS
+    HIGH RISK
+    CRITICAL
+
+Important:
+    LOW RISK != GUARANTEED SAFE
+
+The system should communicate uncertainty when evidence is incomplete.
+
+A high-risk signal from one agent should be considered together with the
+other available evidence and the scoring policy.
+
+
+================================================================================
+PART 3 — URL AGENT & PERFORMANCE
+================================================================================
+
+12. RDAP / DNS FALLBACK + PRE-WARMED CACHE
+--------------------------------------------------------------------------------
+Problem:
+WHOIS lookups can be slow or time out.
+
+Implementation:
+- Try rapid HTTP RDAP lookup first.
+- Use a strict timeout (the original recommendation suggests approximately
+  800 ms).
+- Fall back to python-whois when necessary.
+- Cache common legitimate and suspicious domains in memory.
+- Pre-load high-value Indian phishing domains and legitimate bank domains.
+- Use TTL-based cache expiration.
+
+Goal:
+Improve real-time response speed while preserving useful domain intelligence.
+
+
+13. AGENT-LEVEL LATENCY MEASUREMENT
+--------------------------------------------------------------------------------
+Record and expose execution time for each agent.
+
+Example:
+
+    URL Agent       183 ms
+    Sender Agent      4 ms
+    Intent Agent    421 ms
+    UPI Agent        11 ms
+    ----------------------
+    Total            436 ms
+
+Display:
+    Analysis completed in 436 ms
+
+Goal:
+Demonstrate the sub-1000 ms pre-transaction interception target and identify
+slow components during development.
+
+
+14. STREAMING MULTI-AGENT STATUS
+--------------------------------------------------------------------------------
+Add an SSE or WebSocket endpoint for streaming scan progress.
+
+Example UI:
+
+    [URL Agent:    RUNNING]
+    [Sender Agent: DONE]
+    [Intent Agent: RUNNING]
+    [UPI Agent:    DONE]
+
+As agents complete:
+    RUNNING -> DONE / FLAGGED
+
+Why it matters:
+Evaluators can visibly see the parallel multi-agent architecture instead of
+waiting for a final response.
+
+
+================================================================================
+PART 4 — INPUT & REAL-WORLD SCAM COVERAGE
+================================================================================
+
+15. QR CODE / SCREENSHOT SCANNER
+--------------------------------------------------------------------------------
+Add an upload mode for:
+- Screenshots
+- WhatsApp scam messages
+- Fake electricity bills
+- Fake bank notices
+- QR codes
+
+Possible implementation:
+- Decode QR codes using a client-side library or backend decoder.
+- Extract URLs and upi://pay links.
+- Feed extracted content into the existing PhishLens pipeline.
+
+Important:
+The upload layer should reuse the existing agents rather than creating an
+entirely separate detection pipeline.
+
+
+16. ADVERSARIAL / OBFUSCATION TESTING
+--------------------------------------------------------------------------------
+Test messages designed to evade simple keyword detection.
+
+Examples:
+    "Your SBI account will b3 bl0cked"
+    "S.B.I customer care"
+    "sbi-support[.]com"
+
+Also test:
+- Character substitutions
+- Extra spaces/punctuation
+- URL obfuscation
+- Repeated characters
+- Unicode lookalikes where applicable
+- Mixed Hindi/English scam text
+- Intent hidden behind polite or indirect wording
+
+Goal:
+Measure how robust the pipeline is against basic evasion techniques.
+
+
+================================================================================
+PART 5 — PRE-TRANSACTION DEMO EXPERIENCE
+================================================================================
+
+17. INTERACTIVE PRE-TRANSACTION PAYMENT SIMULATION
+--------------------------------------------------------------------------------
+Add a "Simulate Payment Flow" mode.
+
+Example:
+
+    CASHBACK RECEIVED
+    You are eligible for INR 5,000 cashback.
+
+    [ Enter UPI PIN ]
+
+When the user attempts to enter the PIN:
+    -> PhishLens analyzes the transaction context.
+    -> If the evidence is dangerous, display the Hard Block Modal.
+    -> Explain the deception BEFORE any PIN/OTP is entered.
+
+This directly demonstrates the project's core value proposition:
+pre-transaction interception.
+
+
+18. HARD-BLOCK MODAL WITH ACTIONABLE GUIDANCE
+--------------------------------------------------------------------------------
+When blocking a transaction, show:
+
+    TRANSACTION BLOCKED
+
+    Why:
+    - Suspicious sender
+    - Domain mismatch
+    - Urgency detected
+    - Suspicious payment identity
+
+    What you should do:
+    1. Do not enter your UPI PIN/OTP.
+    2. Do not open the suspicious link again.
+    3. Verify through the organization's official channel.
+    4. Report the incident if money or credentials were exposed.
+
+This turns the result from a detection-only feature into a safety workflow.
+
+
+================================================================================
+PART 6 — REPORTING, ACCESSIBILITY & EVALUATION
+================================================================================
+
+19. NCRP / 1930 EVIDENCE EXPORT
+--------------------------------------------------------------------------------
+Add a structured export option for incident information.
+
+Possible fields:
+    Suspect Number
+    Suspect VPA
+    Incident URL
+    Attack Category
+    Timestamp
+    Cryptographic SHA-256 Evidence Hash
+
+Formats:
+    PDF
+    JSON
+
+Important:
+Present this as a structured incident/evidence export and avoid claiming that
+the generated document is itself an official government filing unless the
+format and integration are actually verified.
+
+
+20. HINDI VOICE ADVISORY / TEXT-TO-SPEECH
+--------------------------------------------------------------------------------
+Add:
+    "आवाज़ में सुनें"
+
+Use the browser Web Speech API where supported, with a Hindi (hi-IN) voice.
+
+Benefits:
+- Accessibility
+- Better usability for users uncomfortable with technical English
+- No mandatory external cloud service
+
+Provide graceful fallback if a Hindi voice is unavailable.
+
+
+21. BENCHMARK / EVALUATION DASHBOARD
+--------------------------------------------------------------------------------
+Create a repeatable benchmark containing representative scam and legitimate
+cases.
+
+Show metrics such as:
+
+    Total test cases
+    Correct detections
+    False positives
+    False negatives
+    Detection rate
+    Average latency
+    P95 latency
+
+Break down results by category:
+
+    Phishing URLs
+    Sender spoofing
+    UPI scams
+    Intent scams
+    QR/screenshot cases
+
+Do not report a single accuracy number without explaining the test population
+and categories.
+
+
+================================================================================
+PART 7 — RECOMMENDED IMPLEMENTATION ORDER
+================================================================================
+
+TIER 1 — CORE DETECTION + ARCHITECTURE
+--------------------------------------------------------------------------------
+1. Dynamic Levenshtein sender-header spoofing
+2. TRAI 140/160 intelligence
+3. Extracted entities in shared models
+4. UPI VPA typosquatting
+5. Cross-agent contradiction detection
+6. Claimed-vs-verified identity
+7. Evidence-based explanation panel
+8. Risk vs confidence separation
+
+
+TIER 2 — PERFORMANCE + STRONG DEMO FEATURES
+--------------------------------------------------------------------------------
+9. RDAP fallback and caching
+10. Agent-level latency measurement
+11. SSE/WebSocket live agent status
+12. Pre-transaction payment simulation
+13. Hard-block actionable guidance
+
+
+TIER 3 — INPUT EXPANSION + EVALUATION
+--------------------------------------------------------------------------------
+14. QR/screenshot scanner
+15. Adversarial/obfuscation testing
+16. Expanded UPI test suite
+17. Benchmark/evaluation dashboard
+
+
+TIER 4 — PRODUCT POLISH
+--------------------------------------------------------------------------------
+18. NCRP/1930 evidence export
+19. Hindi voice advisory
+20. Additional registry expansion and UI refinements
+
+
+================================================================================
+FINAL PRODUCT DIRECTION
+================================================================================
+
+The improvements should reinforce one central story:
+
+    "PhishLens is a fast, explainable, multi-agent fraud investigation engine
+     that correlates sender identity, URLs, intent, and payment information
+     to help stop scams before the victim enters an OTP or PIN."
+
+The project should NOT become a collection of unrelated AI features.
+
+The most important architectural upgrade is CROSS-AGENT CORRELATION.
+
+The system should demonstrate not only:
+
+    "Four agents ran."
+
+but:
+
+    "Four agents independently investigated the interaction, and the
+     orchestrator correlated their evidence to identify contradictions,
+     calculate risk, explain the decision, and intervene before the
+     transaction."
+
+That is the strongest way to demonstrate the value of the multi-agent
+architecture.
+
+
+================================================================================
+END OF PHISHLENS CONSOLIDATED IMPROVEMENT ROADMAP
+================================================================================
