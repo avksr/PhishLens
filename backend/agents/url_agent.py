@@ -421,18 +421,54 @@ def prewarm_whois_cache(timeout_per_domain: float = 2.0) -> int:
 # Internal helpers
 # ──────────────────────────────────────────────
 
+_DEFANGED_URL_RE = re.compile(r'\b(?:hxxps?|https?)[\[\(]?:\s*//[^\s<>"]+', re.IGNORECASE)
+_DEFANGED_DOMAIN_RE = re.compile(r'\b([a-zA-Z0-9\-_]{2,63}[\[\(]\.[\]\)][a-zA-Z0-9.\-_]{2,63})\b')
+_NAKED_DOMAIN_RE = re.compile(r'\b([a-zA-Z0-9\-]{2,63}\.(?:top|xyz|club|cfd|online|site|link|info|live|shop|vip|fit|sbi|bank|co\.in|com|org|net))\b', re.IGNORECASE)
+
+
+def _normalize_defanged_url(text: str) -> str:
+    """Normalize defanged URLs and domain representations (e.g. hxxps:// or [.])."""
+    t = re.sub(r'\bhxxp(s?)[\[\(]?:\s*//', r'http\1://', text, flags=re.IGNORECASE)
+    t = re.sub(r'[\[\(]\.[\]\)]', '.', t)
+    t = re.sub(r'[\[\(]:[\]\)]', ':', t)
+    for zw in ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u00ad']:
+        t = t.replace(zw, '')
+    return t.strip()
+
+
 def _extract_url(req: ScanRequest) -> Optional[str]:
     """
-    Return the first URL to analyse.
-
-    Priority:
-      1. ``req.extracted_url`` (if not None / empty)
-      2. First ``http(s)://…`` match found in ``req.content``
+    Return the first URL to analyse with full defanging and obfuscation support.
     """
     if req.extracted_url:
-        return req.extracted_url.strip()
-    match = _URL_REGEX.search(req.content or "")
-    return match.group(0) if match else None
+        return _normalize_defanged_url(req.extracted_url)
+
+    content = req.content or ""
+    for zw in ['\u200b', '\u200c', '\u200d', '\ufeff', '\u2060', '\u00ad']:
+        content = content.replace(zw, '')
+
+    # 1. Standard URL match
+    match = _URL_REGEX.search(content)
+    if match:
+        return _normalize_defanged_url(match.group(0))
+
+    # 2. Defanged URL match (hxxps://, https[:]//)
+    d_match = _DEFANGED_URL_RE.search(content)
+    if d_match:
+        return _normalize_defanged_url(d_match.group(0))
+
+    # 3. Defanged domain match (e.g. sbi-support[.]top)
+    dom_match = _DEFANGED_DOMAIN_RE.search(content)
+    if dom_match:
+        norm_dom = _normalize_defanged_url(dom_match.group(1))
+        return f"http://{norm_dom}"
+
+    # 4. Naked domain match (e.g. sbi-kyc-verify.top without protocol)
+    naked_match = _NAKED_DOMAIN_RE.search(content)
+    if naked_match:
+        return f"http://{naked_match.group(1)}"
+
+    return None
 
 
 def _parse_domain(url: str) -> Tuple[str, str, str, str]:

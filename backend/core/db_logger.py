@@ -96,7 +96,7 @@ def mask_pii(text: Optional[str]) -> str:
 
 
 def _ensure_schema(conn: sqlite3.Connection):
-    """Ensure scan_audit table exists and has input_hash column."""
+    """Ensure scan_audit table exists and has input_hash column, and crowdsourced_reports table exists."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS scan_audit (
             scan_id TEXT PRIMARY KEY,
@@ -109,6 +109,18 @@ def _ensure_schema(conn: sqlite3.Connection):
             action_required TEXT,
             verdict TEXT,
             latency_ms REAL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS crowdsourced_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_handle TEXT,
+            target_type TEXT,
+            scam_category TEXT,
+            claimed_name TEXT,
+            details TEXT,
+            reported_by TEXT,
+            timestamp TEXT
         )
     """)
     cursor = conn.execute("PRAGMA table_info(scan_audit)")
@@ -296,6 +308,88 @@ async def get_scan_by_id(scan_id: str) -> Optional[Dict[str, Any]]:
             await asyncio.sleep(0.05)
 
     return None
+
+
+async def add_crowdsourced_report(
+    target_handle: str,
+    target_type: str,
+    scam_category: str,
+    claimed_name: Optional[str] = None,
+    details: Optional[str] = None,
+    reported_by: str = "COMMUNITY_USER",
+) -> bool:
+    """
+    Log a community-submitted scam report for a UPI ID or phone number.
+    """
+    import datetime
+
+    query = """
+    INSERT INTO crowdsourced_reports (
+        target_handle, target_type, scam_category, claimed_name, details, reported_by, timestamp
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    """
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    params = (
+        target_handle.strip().lower(),
+        target_type,
+        scam_category,
+        claimed_name or "Unknown",
+        details or "Community reported fraudulent activity",
+        reported_by,
+        now,
+    )
+    try:
+        if HAS_AIOSQLITE:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(query, params)
+                await db.commit()
+        else:
+            loop = asyncio.get_running_loop()
+
+            def _insert():
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute(query, params)
+                    conn.commit()
+
+            await loop.run_in_executor(None, _insert)
+        return True
+    except Exception as exc:
+        logger.error(f"Error inserting crowdsourced report: {exc}", exc_info=True)
+        return False
+
+
+async def get_crowdsourced_reports(target_handle: str) -> list[dict]:
+    """
+    Query prior community complaints for a specific target UPI handle or phone.
+    """
+    query = """
+    SELECT id, target_handle, target_type, scam_category, claimed_name, details, reported_by, timestamp
+    FROM crowdsourced_reports
+    WHERE target_handle = ?
+    ORDER BY timestamp DESC
+    """
+    target = target_handle.strip().lower()
+    try:
+        if HAS_AIOSQLITE:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(query, (target,)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        else:
+            loop = asyncio.get_running_loop()
+
+            def _fetch():
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(query, (target,))
+                    return [dict(row) for row in cursor.fetchall()]
+
+            return await loop.run_in_executor(None, _fetch)
+    except Exception as exc:
+        logger.error(f"Error reading crowdsourced reports: {exc}", exc_info=True)
+        return []
 
 
 # Backward compatibility alias

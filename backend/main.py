@@ -60,6 +60,21 @@ app.add_middleware(
 # Register routes
 app.include_router(api_router)
 
+from shared.models import ScanRequest, ScanResponse
+from core.orchestrator import run_pipeline
+
+
+@app.post("/api/scan", response_model=ScanResponse, tags=["Compatibility"], include_in_schema=False)
+async def scan_compat(req: ScanRequest) -> ScanResponse:
+    """Compatibility alias for /api/scan -> /api/v1/scan"""
+    return await run_pipeline(req)
+
+
+@app.get("/health", tags=["Compatibility"])
+def health_root():
+    """Top-level health check endpoint"""
+    return {"status": "HEALTHY", "service": "PhishLens ScamShield API", "version": "2.0.0"}
+
 
 @app.get("/")
 @app.get("/demo")
