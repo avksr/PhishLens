@@ -28,8 +28,17 @@ from shared.models import (
     ScanRequest,
     SenderCategoryEnum,
 )
-from agents.email_agent import analyze_email
-from agents.sender_agent import analyze_sender, analyze_sender_multi
+from agents.email_agent import analyze_email, parse_raw_eml
+from agents.sender_agent import (
+    analyze_sender,
+    analyze_sender_multi,
+    detect_telecom_circle_branch_mismatch,
+)
+from agents.phone_osint import (
+    resolve_phone_osint,
+    resolve_phone_osint_sync,
+    batch_resolve_phones_osint,
+)
 from agents.upi_agent import analyze_upi
 from scripts.refresh_dlt_registry import run_nnp_prefix_mismatch_audit
 from agents.upi_verifier import MockUpiVerifier, RapidApiUpiVerifier, get_upi_verifier
@@ -474,4 +483,236 @@ def test_email_header_injection_crlf():
     res = analyze_email(req)
     assert "EMAIL_HEADER_INJECTION_DETECTED" in res["flags"]
     assert res["risk_score"] >= 60.0
+
+
+# ===========================================================================
+# 5. AVNI DAY-4 / SPRINT 3 DELIVERABLES
+#    - Parallel Multi-Phone Resolution through Truecaller/OSINT Registry
+#    - Telecom Circle Mismatch Detector
+#    - Deep SPF/DKIM/DMARC Forensic Parser for Raw .eml Uploads
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_parallel_multi_phone_resolution_truecaller_osint():
+    """
+    Verify parallel multi-phone resolution via Truecaller / OSINT registry:
+    Extracts all numbers in content, resolves them concurrently with asyncio.gather,
+    and enriches with spam scores, report counts, and Truecaller caller names.
+    """
+    req = ScanRequest(
+        content="URGENT: Electricity disconnected tonight. Contact lineman desk 9876543210 or supervisor 9810123456.",
+        sender=None,
+    )
+    res = await analyze_sender(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.provider == "TRUECALLER_OSINT_REGISTRY"
+    assert "TRUECALLER_SCAM_REPORTED" in res.flags
+    assert "OSINT_HIGH_SPAM_SCORE" in res.flags
+    assert res.risk_score >= 88.0
+    assert "Electricity Bill Disconnection Fraud" in res.details
+    assert res.email_analysis is not None
+    assert "osint_registry_matches" in res.email_analysis
+    assert len(res.email_analysis["osint_registry_matches"]) >= 2
+    # Verify Truecaller caller names are extracted
+    caller_names = [m.get("caller_name") for m in res.email_analysis["osint_registry_matches"]]
+    assert any("Electricity" in name for name in caller_names if name)
+
+
+@pytest.mark.asyncio
+async def test_multi_phone_batch_osint_api():
+    """Verify batch_resolve_phones_osint executes non-blocking parallel lookups."""
+    phones = ["9876543210", "9123456780", "8888888888", "1800112211"]
+    records = await batch_resolve_phones_osint(phones, claimed_brand="State Bank of India")
+    assert len(records) == 4
+    by_phone = {r["phone"]: r for r in records}
+    assert by_phone["9876543210"]["spam_score"] >= 90.0
+    assert by_phone["9123456780"]["spam_category"] == "Financial Fraud"
+    assert by_phone["1800112211"]["is_verified_business"] is True
+    assert by_phone["1800112211"]["spam_score"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_single_gsm_osint_scam_detection():
+    """Verify single personal GSM number is enriched with Truecaller/OSINT reputation."""
+    req = ScanRequest(
+        content="Dear SBI customer, your YONO account is locked. Call helpline immediately.",
+        sender="9123456780",
+    )
+    res = await analyze_sender(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.provider == "TRUECALLER_OSINT_REGISTRY"
+    assert "TRUECALLER_SCAM_REPORTED" in res.flags
+    assert "OSINT_HIGH_SPAM_SCORE" in res.flags
+    assert "COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM" in res.flags
+    assert res.risk_score >= 90.0
+    assert "SBI NetBanking KYC Scam Desk" in res.details
+
+
+@pytest.mark.asyncio
+async def test_telecom_circle_branch_mismatch_mtnl_bangalore():
+    """
+    Verify Telecom Circle Mismatch Detector:
+    Header: TA-SBIINB (TA is MTNL, authorized ONLY for Delhi and Mumbai).
+    Text: Claims SBI Bangalore branch.
+    Should be flagged with TELECOM_CIRCLE_BRANCH_MISMATCH and high risk.
+    """
+    req = ScanRequest(
+        content="Dear SBI customer, your Bangalore MG Road branch account has been locked. Verify KYC.",
+        sender="TA-SBIINB",
+    )
+    res = await analyze_sender(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.is_spoofed_header is True
+    assert "TELECOM_CIRCLE_BRANCH_MISMATCH" in res.flags
+    assert "REGIONAL_BRANCH_OPERATOR_CONTRADICTION" in res.flags
+    assert res.risk_score >= 85.0
+    assert "Bangalore" in res.details
+    assert "Karnataka" in res.details
+
+
+@pytest.mark.asyncio
+async def test_telecom_circle_branch_mismatch_kerala_prefix_lucknow_branch():
+    """
+    Header: KL-HDFCBK (KL is Kerala Circle).
+    Text: Claims HDFC Bank Lucknow branch (Uttar Pradesh).
+    Should trigger circle mismatch.
+    """
+    req = ScanRequest(
+        content="Important: HDFC Bank Lucknow branch notices unusual debit on your card. Contact desk.",
+        sender="KL-HDFCBK",
+    )
+    res = await analyze_sender(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.is_spoofed_header is True
+    assert "TELECOM_CIRCLE_BRANCH_MISMATCH" in res.flags
+    assert "REGIONAL_BRANCH_OPERATOR_CONTRADICTION" in res.flags
+
+
+def test_telecom_circle_branch_mismatch_direct_function():
+    """Direct unit test of detect_telecom_circle_branch_mismatch function."""
+    # Mismatch case: TA (Delhi/Mumbai) sending for Bangalore branch
+    mismatch = detect_telecom_circle_branch_mismatch("TA", "SBI Bangalore branch notice")
+    assert mismatch is not None
+    assert mismatch["mismatch"] is True
+    assert mismatch["claimed_circle"] == "Karnataka"
+
+    # Match case: TA (Delhi/Mumbai) sending for Mumbai branch
+    match = detect_telecom_circle_branch_mismatch("TA", "SBI Mumbai Nariman Point branch notice")
+    assert match is None
+
+    # Pan-India operator case: VM (Vodafone Idea All-India) sending for any branch
+    pan_india = detect_telecom_circle_branch_mismatch("VM", "SBI Bangalore branch notice")
+    assert pan_india is None
+
+
+def test_parse_raw_eml_comprehensive_forensics():
+    """
+    Verify deep SPF, DKIM, and DMARC forensic parsing on raw RFC 822 .eml bytes.
+    Extracts hops, originating IP, DKIM tags, SPF alignment, and DMARC status.
+    """
+    raw_eml = (
+        b"From: State Bank Security <alerts@sbi.co.in>\r\n"
+        b"To: victim@gmail.com\r\n"
+        b"Subject: Immediate Account Security Verification\r\n"
+        b"Date: Mon, 06 Oct 2026 10:00:00 +0530\r\n"
+        b"Message-ID: <msg12345@sbi.co.in>\r\n"
+        b"Received: from mail-attacker.evil.net (203.0.113.45) by mx.google.com with ESMTPS id abc1 for victim@gmail.com; Mon, 06 Oct 2026 10:00:01 +0530\r\n"
+        b"Received: from internal-client (10.0.0.5) by mail-attacker.evil.net with SMTP id xyz2; Mon, 06 Oct 2026 09:59:59 +0530\r\n"
+        b"Received-SPF: pass (google.com: domain of bounced@evil.net designates 203.0.113.45 as permitted sender) client-ip=203.0.113.45; envelope-from=bounced@evil.net;\r\n"
+        b"Authentication-Results: mx.google.com; spf=pass (google.com: domain of bounced@evil.net designates 203.0.113.45); dkim=pass (test) header.i=@evil.net; dmarc=fail header.from=sbi.co.in\r\n"
+        b"DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=evil.net; s=selector1; h=from:to:subject:date; bh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=; b=dGVzdHNpZ25hdHVyZQ==\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n"
+        b"\r\n"
+        b"Dear customer, your account will be suspended within 24 hours. Please verify your credentials."
+    )
+
+    forensics = parse_raw_eml(raw_eml)
+    assert forensics["is_email"] is True
+    assert forensics["provider"] == "EMAIL_FORENSIC_PARSER"
+    
+    # Forensic report validation
+    rep = forensics["forensic_report"]
+    assert rep["spf"]["status"] == "PASS"
+    assert rep["spf"]["client_ip"] == "203.0.113.45"
+    assert rep["spf"]["aligned"] is False  # evil.net != sbi.co.in
+    assert "EMAIL_SPF_ALIGNMENT_FAIL" in forensics["flags"]
+
+    assert rep["dkim"]["status"] == "PASS"
+    assert rep["dkim"]["signing_domain"] == "evil.net"
+    assert rep["dkim"]["from_signed"] is True
+    assert rep["dkim"]["aligned"] is False  # evil.net != sbi.co.in
+    assert "EMAIL_DKIM_ALIGNMENT_FAIL" in forensics["flags"]
+
+    assert rep["dmarc"]["status"] == "fail"
+    assert "EMAIL_DMARC_FAIL" in forensics["flags"]
+
+    # MTA hops and originating IP
+    assert len(rep["mta_hops"]) == 2
+    assert rep["originating_ip"] == "203.0.113.45"
+    assert forensics["risk_score"] >= 70.0
+
+
+def test_parse_raw_eml_attachment_executable_forensics():
+    """Verify raw .eml parser flags malicious executable attachments (.exe / .scr)."""
+    raw_eml = (
+        "From: billing@accounts-desk.com\n"
+        "To: employee@company.com\n"
+        "Subject: Overdue Invoice Remittance\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: multipart/mixed; boundary="BOUNDARY123"\n\n'
+        "--BOUNDARY123\n"
+        "Content-Type: text/plain; charset=utf-8\n\n"
+        "Please find attached overdue invoice.\n\n"
+        "--BOUNDARY123\n"
+        'Content-Type: application/octet-stream; name="invoice_march.pdf.exe"\n'
+        'Content-Disposition: attachment; filename="invoice_march.pdf.exe"\n'
+        "Content-Transfer-Encoding: base64\n\n"
+        "TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+        "--BOUNDARY123--"
+    )
+    req = ScanRequest(
+        channel=ChannelEnum.EMAIL,
+        content=raw_eml,
+    )
+    res = analyze_email(req)
+    assert "EMAIL_EXECUTABLE_ATTACHMENT" in res["flags"]
+    assert res["risk_score"] >= 55.0
+    att = res["forensic_report"]["attachments"][0]
+    assert att["filename"] == "invoice_march.pdf.exe"
+    assert att["is_executable"] is True
+    assert att["is_double_extension"] is True
+
+
+def test_parse_raw_eml_html_anchor_domain_mismatch():
+    """Verify HTML body anchor domain mismatch detection in raw .eml."""
+    raw_eml = (
+        "From: service@hdfcbank.com\n"
+        "To: customer@gmail.com\n"
+        "Subject: Update your netbanking profile\n"
+        "Content-Type: text/html; charset=utf-8\n\n"
+        "<html><body>"
+        '<p>Dear customer, please click <a href="http://scam-harvest-site.xyz/login">https://netbanking.hdfcbank.com</a> to verify.</p>'
+        "</body></html>"
+    )
+    res = parse_raw_eml(raw_eml)
+    assert "EMAIL_HTML_ANCHOR_DOMAIN_MISMATCH" in res["flags"]
+    assert len(res["forensic_report"]["html_forensics"]["anchor_mismatches"]) == 1
+    assert res["risk_score"] >= 40.0
+
+
+def test_parse_raw_eml_dkim_unsigned_from_and_expired():
+    """Verify DKIM parser flags when From: header is omitted from h= and when expired."""
+    raw_eml = (
+        "From: alerts@icicibank.com\n"
+        "To: user@gmail.com\n"
+        "Subject: Security Update\n"
+        "Authentication-Results: mx.google.com; dkim=pass\n"
+        "DKIM-Signature: v=1; a=rsa-sha1; d=icicibank.com; s=s1; h=subject:date; x=1577836800; bh=abc; b=xyz\n\n"
+        "Please check your card status."
+    )
+    res = parse_raw_eml(raw_eml)
+    assert "EMAIL_DKIM_UNSIGNED_FROM_HEADER" in res["flags"]
+    assert "EMAIL_DKIM_WEAK_ALGORITHM" in res["flags"]
+    assert "EMAIL_DKIM_SIGNATURE_EXPIRED" in res["flags"]
+
 
