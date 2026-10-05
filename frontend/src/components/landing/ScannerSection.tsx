@@ -4,6 +4,7 @@
 //  Dark Theme block (#0B1120) with 2-col Split: Scanner + Live Radar
 // ─────────────────────────────────────────────────────────────
 import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Terminal,
   ScanLine,
@@ -14,6 +15,10 @@ import {
   ExternalLink,
   Radio,
   Loader2,
+  ChevronDown,
+  Flag,
+  X,
+  Send,
 } from 'lucide-react';
 
 export interface ThreatAnalysis {
@@ -196,8 +201,350 @@ const SAMPLES = [
   },
 ];
 
+// ─── Mock Raw Technical Evidence ────────────────────────────────────────────
+const MOCK_EVIDENCE = {
+  rawHeaders: {
+    'X-Forwarded-For': '185.220.101.47',
+    'X-Real-IP': '185.220.101.47',
+    'Server': 'nginx/1.18.0 (Ubuntu)',
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache',
+    'Strict-Transport-Security': 'MISSING',
+    'X-Frame-Options': 'MISSING',
+    'X-Content-Type-Options': 'MISSING',
+  },
+  pHash: '8f9a2b4c1d7e3f06a5b8c9d2e4f1a703',
+  originASN: 'AS209588 — Flyservers S.A. (Bulletproof Hosting)',
+  dkimStatus: 'FAIL — No DKIM record found. SPF: ~all (SoftFail)',
+};
+
+const EVIDENCE_JSON = JSON.stringify(
+  {
+    raw_headers: MOCK_EVIDENCE.rawHeaders,
+    perceptual_hash: {
+      matched_phash: MOCK_EVIDENCE.pHash,
+      similarity_score: '97.4% match to known phishing kit #TG-4829',
+    },
+    network: {
+      origin_asn: MOCK_EVIDENCE.originASN,
+      ip_reputation: 'BLACKLISTED — Tor exit node (Ahmia index)',
+      geo: 'NL → proxy chain → US-VA',
+    },
+    email_auth: {
+      dkim_status: MOCK_EVIDENCE.dkimStatus,
+      dmarc: 'p=none — No enforcement policy',
+    },
+  },
+  null,
+  2
+);
+
+// ─── Tech Evidence Panel Component ───────────────────────────────────────────
+function TechEvidencePanel() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-800 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-900/70 hover:bg-slate-800/80 transition-colors text-[11px] font-mono-code text-slate-400 hover:text-slate-300 group cursor-pointer"
+        aria-expanded={isOpen}
+        id="tech-evidence-toggle"
+      >
+        <span className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span>View Raw Technical Evidence (Headers, pHash, IP)</span>
+        </span>
+        <motion.span
+          animate={{ rotate: isOpen ? 180 : 0 }}
+          transition={{ duration: 0.25, ease: 'easeInOut' }}
+        >
+          <ChevronDown className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-400" />
+        </motion.span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key="evidence-panel"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="bg-[#050B14] p-4 font-mono text-xs text-slate-400 rounded-b-md border-t border-slate-800">
+              <div className="flex items-center gap-1.5 mb-3 pb-2 border-b border-slate-800/80">
+                <span className="w-2 h-2 rounded-full bg-rose-500/80" />
+                <span className="w-2 h-2 rounded-full bg-amber-500/80" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500/80" />
+                <span className="ml-2 text-[10px] text-slate-600 tracking-wider uppercase">
+                  phishlens-engine // raw-dump v4.2 // output: forensic_trace.json
+                </span>
+              </div>
+              <pre className="whitespace-pre-wrap break-all leading-relaxed text-[11px]">
+                <span className="text-slate-500">{'// FORENSIC TRACE — DO NOT SHARE\n'}</span>
+                {EVIDENCE_JSON.split('\n').map((line, i) => {
+                  const keyMatch = line.match(/^(\s*)("[\w_-]+")(: )(.*)/);
+                  if (keyMatch) {
+                    const [, indent, key, colon, val] = keyMatch;
+                    const isStr = val.startsWith('"');
+                    const vc =
+                      val.includes('MISSING') || val.includes('FAIL') || val.includes('BLACKLISTED')
+                        ? 'text-rose-400'
+                        : val.includes('97.4%') || val.includes('AS209')
+                        ? 'text-amber-400'
+                        : isStr
+                        ? 'text-emerald-300'
+                        : 'text-blue-300';
+                    return (
+                      <span key={i}>
+                        {indent}
+                        <span className="text-blue-400">{key}</span>
+                        <span className="text-slate-500">{colon}</span>
+                        <span className={vc}>{val}</span>
+                        {'\n'}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span key={i} className="text-slate-600">
+                      {line}
+                      {'\n'}
+                    </span>
+                  );
+                })}
+              </pre>
+              <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-600">
+                <span>Generated: {new Date().toISOString()} · Session ephemeral</span>
+                <span className="text-blue-500/70 hover:text-blue-400 cursor-pointer transition-colors">
+                  Export JSON ↗
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Report Scammer Modal ─────────────────────────────────────────────────────
+const THREAT_TYPES = ['URL / Website', 'Phone / WhatsApp', 'Fake UPI / QR Code', 'Email / Phishing Mail'];
+
+interface ReportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+function ReportScammerModal({ isOpen, onClose }: ReportModalProps) {
+  const [threatType, setThreatType] = useState(THREAT_TYPES[0]);
+  const [indicator, setIndicator] = useState('');
+  const [details, setDetails] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!indicator.trim()) return;
+    setSubmitted(true);
+    setTimeout(() => {
+      setSubmitted(false);
+      setIndicator('');
+      setDetails('');
+      setThreatType(THREAT_TYPES[0]);
+      onClose();
+    }, 2000);
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            key="modal-backdrop"
+            className="fixed inset-0 z-50 backdrop-blur-sm bg-slate-950/80"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <motion.div
+            key="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-modal-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 10 }}
+            transition={{ duration: 0.28, ease: [0.34, 1.26, 0.64, 1] }}
+          >
+            <div
+              className="relative w-full max-w-lg bg-[#0B1120] border border-slate-800 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-rose-500/60 to-transparent" />
+              <div className="flex items-start justify-between p-6 pb-4 border-b border-slate-800/80">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                      <Flag className="w-4 h-4 text-rose-400" />
+                    </div>
+                    <h2
+                      id="report-modal-title"
+                      className="text-base font-semibold text-white tracking-tight"
+                    >
+                      Report Phishing Threat
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-500 font-mono-code leading-relaxed">
+                    Submit to PhishLens threat intelligence registry. Reviewed by our SOC within 4h.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  id="report-modal-close"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <AnimatePresence mode="wait">
+                  {submitted ? (
+                    <motion.div
+                      key="success"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex flex-col items-center justify-center py-10 gap-4 text-center"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                        <CheckCircle className="w-6 h-6 text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold mb-1">Report Submitted</p>
+                        <p className="text-xs text-slate-500 font-mono-code">
+                          Threat logged to intelligence registry. TID:{' '}
+                          <span className="text-blue-400">
+                            PLR-{Math.floor(Math.random() * 90000) + 10000}
+                          </span>
+                        </p>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.form
+                      key="form"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onSubmit={handleSubmit}
+                      className="space-y-4"
+                    >
+                      <div>
+                        <label
+                          htmlFor="threat-type-select"
+                          className="block text-[11px] font-mono-code uppercase tracking-wider text-slate-400 mb-1.5"
+                        >
+                          Type of Threat
+                        </label>
+                        <select
+                          id="threat-type-select"
+                          value={threatType}
+                          onChange={e => setThreatType(e.target.value)}
+                          className="w-full bg-slate-900/80 border border-slate-700/80 rounded-lg px-3 py-2.5 text-sm text-slate-200 font-mono-code focus:outline-none focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all cursor-pointer"
+                        >
+                          {THREAT_TYPES.map(t => (
+                            <option key={t} value={t} className="bg-slate-900">
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="threat-indicator-input"
+                          className="block text-[11px] font-mono-code uppercase tracking-wider text-slate-400 mb-1.5"
+                        >
+                          Threat Indicator
+                        </label>
+                        <input
+                          id="threat-indicator-input"
+                          type="text"
+                          value={indicator}
+                          onChange={e => setIndicator(e.target.value)}
+                          placeholder="e.g. https://evil-phish.xyz or +91-9876543210"
+                          required
+                          className="w-full bg-slate-900/80 border border-slate-700/80 rounded-lg px-3 py-2.5 text-sm text-slate-200 font-mono-code placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="threat-details-textarea"
+                          className="block text-[11px] font-mono-code uppercase tracking-wider text-slate-400 mb-1.5"
+                        >
+                          Additional Details
+                        </label>
+                        <textarea
+                          id="threat-details-textarea"
+                          value={details}
+                          onChange={e => setDetails(e.target.value)}
+                          placeholder="Describe the scam — how you received it, what it claimed, any lured action..."
+                          rows={4}
+                          className="w-full bg-slate-900/80 border border-slate-700/80 rounded-lg px-3 py-2.5 text-sm text-slate-200 font-mono-code placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all resize-none leading-relaxed"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-1">
+                        <button
+                          type="button"
+                          onClick={onClose}
+                          id="report-modal-cancel-btn"
+                          className="flex-1 px-4 py-2.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 hover:bg-slate-800/60 text-sm font-medium transition-all cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          id="report-modal-submit-btn"
+                          disabled={!indicator.trim()}
+                          className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-rose-900/40 active:scale-95 cursor-pointer"
+                        >
+                          <Send className="w-4 h-4" />
+                          Submit Report to Database
+                        </button>
+                      </div>
+
+                      <p className="text-[10px] text-slate-600 font-mono-code text-center leading-relaxed">
+                        Reports are anonymized. By submitting you agree to our{' '}
+                        <span className="text-slate-500 hover:text-slate-400 cursor-pointer transition-colors underline underline-offset-2">
+                          Threat Data Policy
+                        </span>
+                        .
+                      </p>
+                    </motion.form>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─── Main ScannerSection ──────────────────────────────────────────────────────
 export function ScannerSection() {
-  // 1. State Management
+  // 1. State Management (existing — preserved)
   const [inputText, setInputText] = useState(
     'https://support-telegram-verify-auth.xyz/recovery?id=829012'
   );
@@ -205,6 +552,9 @@ export function ScannerSection() {
   const [scanResult, setScanResult] = useState<ThreatAnalysis | null>(() =>
     analyzeThreat('https://support-telegram-verify-auth.xyz/recovery?id=829012')
   );
+
+  // 2. Report Modal state
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // 2. The handleScan Function
   const handleScan = (customText?: string) => {
@@ -227,9 +577,16 @@ export function ScannerSection() {
   };
 
   return (
-    <section
-      id="scanner"
-      className="relative bg-[#0B1120] text-white py-14 sm:py-20 overflow-hidden border-y border-slate-800"
+    <>
+      {/* Report Scammer Modal */}
+      <ReportScammerModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+      />
+
+      <section
+        id="scanner"
+        className="relative bg-[#0B1120] text-white py-14 sm:py-20 overflow-hidden border-y border-slate-800"
     >
       {/* Subtle background grid + animated scanline overlay inside terminal container */}
       <div
@@ -262,6 +619,17 @@ export function ScannerSection() {
               <span>256-bit Ephemeral Tunnel</span>
             </span>
             <span className="hidden sm:inline text-slate-500">Node: us-east-ciso</span>
+
+            {/* Report Phishing button — top-right header */}
+            <button
+              type="button"
+              id="open-report-modal-btn"
+              onClick={() => setIsReportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/50 hover:text-rose-300 transition-all text-[11px] font-medium cursor-pointer active:scale-95"
+            >
+              <Flag className="w-3 h-3" />
+              <span>Report Phishing</span>
+            </button>
           </div>
         </div>
 
@@ -336,6 +704,17 @@ export function ScannerSection() {
                       <span>{sample.label}</span>
                     </button>
                   ))}
+
+                  {/* Inline Report Scammer CTA */}
+                  <button
+                    type="button"
+                    id="report-cta-inline-btn"
+                    onClick={() => setIsReportModalOpen(true)}
+                    className="ml-auto group px-2.5 py-1 rounded bg-rose-500/8 hover:bg-rose-500/15 border border-rose-500/25 hover:border-rose-500/40 text-rose-400 hover:text-rose-300 transition-all duration-150 flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                  >
+                    <Flag className="w-3 h-3" />
+                    <span>Report Phishing Link / Number</span>
+                  </button>
                 </div>
 
                 {/* Scanning Progress Bar Animation (Shown while isScanning) */}
@@ -452,6 +831,11 @@ export function ScannerSection() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Expandable Tech Evidence Panel (Suspicious / Critical only) */}
+                    {(scanResult.status === 'Suspicious' || scanResult.status === 'Critical') && (
+                      <TechEvidencePanel key={scanResult.verdictTitle} />
+                    )}
 
                     {/* Remediation line */}
                     <div className="mt-3.5 flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/50 px-3 py-2 rounded border border-slate-800/80">
@@ -609,5 +993,6 @@ export function ScannerSection() {
 
       </div>
     </section>
+    </>
   );
 }
