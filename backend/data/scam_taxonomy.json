@@ -1,0 +1,184 @@
+[
+  {
+    "id": "electricity_bill_disconnection",
+    "name": "Electricity Bill Disconnection / Utility Extortion",
+    "authority": "CERT-In & RBI",
+    "advisory_source": "CERT-In Advisory CIAD-2023-0041 & RBI Consumer Alert on Utility Scams",
+    "intent": "PANIC_URGENCY",
+    "severity": "HIGH",
+    "description": "Fraudulent messages falsely claiming electricity or power supply will be cut off tonight due to non-updated previous month bill, directing victims to contact personal mobile numbers or download malicious APKs.",
+    "keywords": [
+      "electricity bill",
+      "bijli bill",
+      "power cut",
+      "power cut tonight",
+      "connection kat diya jayega",
+      "light kaat di jayegi",
+      "bill update nahi hua",
+      "electricity disconnection",
+      "disconnection tonight",
+      "contact electricity officer",
+      "discom bill",
+      "bill pay karo warna light",
+      "bill overdue"
+    ],
+    "typical_phrases": [
+      "Aapka bijli bill update nahi hua, connection kat diya jayega.",
+      "2 ghante ke andar bill pay nahi kiya toh light kaat di jayegi.",
+      "Electricity power disconnected tonight at 9.30 pm contact officer.",
+      "Aapka electricity connection aaj raat tak cut ho jayega."
+    ]
+  },
+  {
+    "id": "digital_arrest_cbi_extortion",
+    "name": "Digital Arrest / CBI & Law Enforcement Extortion",
+    "authority": "CERT-In & MHA I4C",
+    "advisory_source": "CERT-In Advisory CIAD-2024-0018 & MHA Indian Cyber Crime Coordination Centre (I4C)",
+    "intent": "FINANCIAL_EXTORTION",
+    "severity": "CRITICAL",
+    "description": "Coercive psychological extortion where cybercriminals impersonate Police, CBI, Cyber Crime Cell, or Supreme Court officials via phone or video calls, claiming the victim is under digital arrest and demanding immediate payments to avoid jail.",
+    "keywords": [
+      "digital arrest",
+      "digital arrest warrant",
+      "video call arrest warrant",
+      "video call arrest warrant issued by cbi",
+      "video call arrest warrant issued by cyber cell",
+      "supreme court warrant",
+      "supreme court notice",
+      "cbi officer",
+      "cyber crime police",
+      "cyber crime cell",
+      "court summons",
+      "giraftari",
+      "jail bhej diya jayega",
+      "arrest kar liya jayega",
+      "police case se bachna hai",
+      "aapke naam pe warrant"
+    ],
+    "typical_phrases": [
+      "video call arrest warrant issued by CBI / Cyber Cell",
+      "Aapke naam pe digital arrest warrant hai.",
+      "Supreme Court ka warrant issue hua hai, turant payment karo.",
+      "Police case se bachna hai toh abhi fine pay karo.",
+      "You are under digital arrest by Cyber Crime Cell."
+    ]
+  },
+  {
+    "id": "telecom_sim_deactivation",
+    "name": "Telecom SIM & Mobile Number Deactivation Fraud",
+    "authority": "DoT & TRAI",
+    "advisory_source": "Department of Telecommunications (DoT) & TRAI Advisory on Impersonation and SIM Disconnection",
+    "intent": "PANIC_URGENCY",
+    "severity": "HIGH",
+    "description": "Deceptive notices purporting to be from TRAI or the Department of Telecommunications threatening that the user's mobile number or SIM card will be deactivated or disconnected within 2 hours unless immediate verification is performed.",
+    "keywords": [
+      "trai disconnect",
+      "trai will disconnect your mobile number",
+      "trai will disconnect your mobile number within 2 hours",
+      "mobile number disconnected within 2 hours",
+      "sim card blocked within 2 hours",
+      "dot verification",
+      "trai verification notice",
+      "sim deactivation within 2 hours",
+      "mobile number band ho jayega",
+      "trai notice",
+      "sim card deactivation"
+    ],
+    "typical_phrases": [
+      "TRAI will disconnect your mobile number within 2 hours.",
+      "DoT alert: Your mobile number will be disconnected within 2 hours.",
+      "TRAI verification notice: Mobile SIM will be deactivated today."
+    ]
+  },
+  {
+    "id": "irctc_refund_phishing",
+    "name": "IRCTC Ticket Cancellation Refund Phishing",
+    "authority": "CERT-In & Indian Railways",
+    "advisory_source": "CERT-In Advisory CIAD-2023-0029 on Malicious IRCTC Phishing & Rogue APKs",
+    "intent": "KYC_VERIFICATION",
+    "severity": "HIGH",
+    "description": "Phishing scams exploiting train passengers awaiting ticket cancellation refunds by sending spoofed messages with fake links or malicious Android APKs to capture NetBanking credentials, debit cards, and OTPs.",
+    "keywords": [
+      "irctc refund",
+      "irctc ticket cancellation refund",
+      "ticket cancellation refund",
+      "rail connect apk",
+      "irctc rail connect",
+      "tatkal refund",
+      "irctc pending refund",
+      "refund of ticket failed",
+      "update bank details for irctc refund",
+      "irctc customer care refund"
+    ],
+    "typical_phrases": [
+      "Your IRCTC ticket cancellation refund of Rs 1,450 is pending. Verify bank details to receive refund.",
+      "IRCTC refund failed for PNR 2847192841. Download IRCTC RailConnect APK to credit refund immediately.",
+      "Dear passenger, claim your IRCTC refund by updating your account details."
+    ]
+  },
+  {
+    "id": "part_time_telegram_job_scam",
+    "name": "Part-Time Task & Telegram Earning Scam",
+    "authority": "CERT-In & RBI",
+    "advisory_source": "CERT-In Advisory CIAD-2023-0015 & RBI Warning on Part-Time Work from Home Scams",
+    "intent": "LOTTERY_REWARD",
+    "severity": "HIGH",
+    "description": "Advance-fee and task-based financial fraud offering lucrative daily commissions for liking YouTube videos or completing Telegram tasks, followed by demands for upfront registration fees, deposits, or investments before funds can be withdrawn.",
+    "keywords": [
+      "telegram task",
+      "telegram pe task",
+      "youtube video like",
+      "youtube videos like karo",
+      "videos ko like karo",
+      "screenshot telegram pe bhejo",
+      "screenshot bhejo",
+      "part-time task",
+      "part-time job",
+      "daily earning",
+      "ghar baithe earning",
+      "commission kamao",
+      "task complete karo",
+      "pehle recharge karo",
+      "recharge to unlock task",
+      "investment before withdrawal",
+      "registration fee"
+    ],
+    "typical_phrases": [
+      "YouTube video like karo aur Telegram pe screenshot bhejo, daily earning hogi.",
+      "Telegram task complete karo aur daily 5000 kamao.",
+      "Pehle recharge karo tab task unlock hoga.",
+      "Part time job hai, pehle registration fee pay karo."
+    ]
+  },
+  {
+    "id": "kyc_expiry_deactivation",
+    "name": "KYC Expiry & Account Suspension Fraud",
+    "authority": "RBI & Indian Banks Association",
+    "advisory_source": "RBI Consumer Advisory on Fraudulent KYC Update & Phishing Links",
+    "intent": "KYC_VERIFICATION",
+    "severity": "CRITICAL",
+    "description": "Phishing and credential harvesting scams impersonating leading banks (SBI, HDFC, ICICI, PNB) claiming account or debit card suspension within 2 hours due to expired KYC, coercing victims into entering credentials or sharing OTPs.",
+    "keywords": [
+      "kyc expire",
+      "kyc expired",
+      "kyc update karo",
+      "account blocked within 2 hours",
+      "account will be blocked",
+      "submit pan",
+      "verify aadhaar",
+      "share otp",
+      "otp bata do",
+      "otp bhejo",
+      "netbanking password",
+      "unblock account",
+      "pan card link",
+      "kyc verify karo"
+    ],
+    "typical_phrases": [
+      "Sir aapka KYC expire ho gaya hai, abhi update karo.",
+      "URGENT: SBI account blocked within 2 hours submit PAN.",
+      "OTP bata do verification ke liye.",
+      "Your bank account will be suspended today. Update KYC immediately."
+    ]
+  }
+]

@@ -229,6 +229,9 @@ class IntentAgentResult(BaseModel):
     reasoning: str = ""
     details: str = ""
     latency_ms: float = 0.0
+    # Added by Vikas — scam_taxonomy.json audit fields (optional, backward-compatible)
+    scam_category: Optional[str] = None
+    taxonomy_match_score: Optional[float] = None
 
 
 class UpiAgentResult(BaseModel):

@@ -615,6 +615,10 @@ def format_1930_complaint(
     )
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    bullet = "\u2022"
+    heuristics_lines = [f"  {bullet} {h}" for h in syn.heuristics_triggered]
+    heuristics_str = "\n".join(heuristics_lines) if heuristics_lines else "  None"
+
     complaint = f"""{DIVIDER}
 CYBER CRIME COMPLAINT — NATIONAL CYBER CRIME REPORTING PORTAL
 Helpline  : 1930 (24\u00d77 National Cyber Crime Helpline)
@@ -659,7 +663,7 @@ SECTION D — AUTOMATED ANALYSIS SUMMARY
 {syn.summary_explanation}
 
 Heuristics Triggered:
-{chr(10).join(f"  \u2022 {h}" for h in syn.heuristics_triggered) if syn.heuristics_triggered else "  None"}
+{heuristics_str}
 
 SECTION E — DECLARATION
 I declare that the above information is true and correct to the best of my
