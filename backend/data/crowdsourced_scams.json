@@ -1,0 +1,36 @@
+{
+  "scam_upis": {
+    "refund-desk@oksbi": {
+      "complaint_count": 8,
+      "scam_category": "IMPERSONATION_REFUND_SCAM",
+      "proof_summary": "Posing as SBI refund desk requesting remote access via AnyDesk.",
+      "last_reported": "2026-09-30T10:00:00Z"
+    },
+    "sbi-refund@paytm": {
+      "complaint_count": 12,
+      "scam_category": "BANK_IMPERSONATION_MULE",
+      "proof_summary": "Individual mule account impersonating State Bank of India support.",
+      "last_reported": "2026-10-01T12:00:00Z"
+    },
+    "lottery-winner@ybl": {
+      "complaint_count": 6,
+      "scam_category": "LOTTERY_ADVANCE_FEE",
+      "proof_summary": "KBC lottery processing fee extortion scam.",
+      "last_reported": "2026-10-02T15:00:00Z"
+    }
+  },
+  "scam_phones": {
+    "+919876543210": {
+      "complaint_count": 5,
+      "scam_category": "ELECTRICITY_DISCONNECTION_SCAM",
+      "proof_summary": "Fake electricity bill payment urgency scam.",
+      "last_reported": "2026-10-02T14:00:00Z"
+    },
+    "+919823145678": {
+      "complaint_count": 9,
+      "scam_category": "KYC_SUSPENSION_PHISHING",
+      "proof_summary": "Phishing link distribution impersonating banking officials.",
+      "last_reported": "2026-10-03T09:30:00Z"
+    }
+  }
+}

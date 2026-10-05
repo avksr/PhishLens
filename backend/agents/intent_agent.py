@@ -251,6 +251,9 @@ _PANIC_URGENCY_PATTERNS = [
         r"(?:band|block)\s*ho\s*jayega\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\bpower\s+supply\s+(?:will\s+be\s+)?(?:cut\s*off|disconnected)\b", re.IGNORECASE),
+    re.compile(r"\b(?:power|supply|electricity)\s+(?:will\s+be\s+)?cut\s*off\b", re.IGNORECASE),
+    re.compile(r"\bbill\s+disconnection\b", re.IGNORECASE),
 ]
 
 # Coercive Authority & Legal Threats: +45.0 risk
@@ -269,7 +272,8 @@ _COERCIVE_AUTHORITY_PATTERNS = [
     re.compile(r"\b(?:contact|call|reach)\s+(?:our\s+)?(?:electricity\s+)?officer\b", re.IGNORECASE),
     re.compile(r"\b(?:police|cbi)\s+case\b", re.IGNORECASE),
     re.compile(r"\bpolice\s+arrest\b", re.IGNORECASE),
-    re.compile(r"\b(?:rbi|trai|customs|income\s*tax)\s+department\b", re.IGNORECASE),
+    re.compile(r"\bcustoms\s+department\b", re.IGNORECASE),
+    re.compile(r"\b(?:rbi|trai|customs|income\s*tax)\s+department\s+(?:notice|penalty|officer|summons|warning|raid|defaulter|investigation)\b", re.IGNORECASE),
     # Hinglish legal / arrest threats
     re.compile(r"\bdigital\s*arrest\s*(?:warrant|ke\s*liye\s*ready|issue|hoga|hogi)?\b", re.IGNORECASE),
     re.compile(r"\baapke\s+naam\s+p(?:e|ar)\s+(?:.*)?warrant\b", re.IGNORECASE),
@@ -300,8 +304,9 @@ _CREDENTIAL_HARVEST_PATTERNS = [
     # English credential harvesting
     re.compile(r"\bsubmit\s+(?:your\s+)?pan\b", re.IGNORECASE),
     re.compile(r"\bverify\s+(?:your\s+)?aadhaar\b", re.IGNORECASE),
-    re.compile(r"\bshare\s+(?:your\s+)?otp\b", re.IGNORECASE),
+    re.compile(r"\bshare\s+.*?\botp\b", re.IGNORECASE),
     re.compile(r"\b(?:verify|enter|forward|send)\s+(?:your\s+)?otp\b", re.IGNORECASE),
+    re.compile(r"\b(?:debit|credit|atm)?\s*card\s+(?:will\s+)?expire\b", re.IGNORECASE),
     re.compile(r"\bupdate\s+(?:your\s+)?kyc\b", re.IGNORECASE),
     re.compile(r"\b(?:complete|submit)\s+(?:your\s+)?kyc\b", re.IGNORECASE),
     re.compile(r"\bunblock\s+(?:your\s+)?account\b", re.IGNORECASE),
@@ -366,6 +371,9 @@ _BENIGN_PATTERNS = [
     re.compile(r"\bdiscussed\s+trai\s+guidelines\b", re.IGNORECASE),
     re.compile(r"\bvideo\s+call\s+with\s+(?:our\s+)?(?:team|family|friends?)\b", re.IGNORECASE),
     re.compile(r"\birctc\s+ticket\s+confirmed\b", re.IGNORECASE),
+    re.compile(r"\b(?:itr[-\s]?\d*|tax\s+return)\s+(?:filed|verified|processed)\b", re.IGNORECASE),
+    re.compile(r"\backnowledgement\s+no\b", re.IGNORECASE),
+    re.compile(r"\bsuccessfully\s+verified\b", re.IGNORECASE),
 ]
 
 

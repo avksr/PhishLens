@@ -1,0 +1,782 @@
+[
+  {
+    "id": "scam_001",
+    "category": "DISCOM Electricity Cutoff",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Dear consumer your electricity power will be disconnected tonight at 9.30 pm from electricity office because your previous month bill was not update. Please immediately contact our electricity officer 8250912345.",
+      "sender": "+918250912345",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Hinglish electricity cutoff extortion from personal 10-digit GSM"
+  },
+  {
+    "id": "scam_002",
+    "category": "DISCOM Electricity Link Phishing",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Urgent Alert: BESCOM electricity line will be disconnected tonight at 10:00 PM due to unpaid electricity bill of Rs 1,480. Update bill and pay online immediately: https://bescom-bill-update.top",
+      "sender": "+919820012345",
+      "extracted_url": "https://bescom-bill-update.top",
+      "channel": "sms"
+    },
+    "notes": "BESCOM power cut threat with .top typosquatted link from personal GSM"
+  },
+  {
+    "id": "scam_003",
+    "category": "Mahavitaran Power Cut Extortion",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Mahavitaran Notice: Consumer No 0192837462 power supply will be cut off today at 9:00 PM. Call electricity sub-division officer at 9876543210 to avoid bill disconnection.",
+      "sender": "+919876543210",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Personal GSM number claiming Mahavitaran electricity disconnection"
+  },
+  {
+    "id": "scam_004",
+    "category": "SBI KYC Phishing (.top)",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "URGENT: SBI customer! Your account 4321 is blocked today. To unblock immediately submit your Aadhaar & Pan details at https://sbi-kyc-verify.top or call 9876543210. Failing which account deactivated within 2 hours.",
+      "sender": "+919876543210",
+      "extracted_url": "https://sbi-kyc-verify.top",
+      "channel": "sms"
+    },
+    "notes": "Double Whammy: GSM number + typosquatted SBI link on high-risk TLD"
+  },
+  {
+    "id": "scam_005",
+    "category": "HDFC PAN Update Phishing",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "Dear Customer, Your HDFC netbanking will be deactivated within 24 hours. Update your PAN card details immediately at https://hdfc-pan-update.xyz to avoid suspension.",
+      "sender": "+919811223344",
+      "extracted_url": "https://hdfc-pan-update.xyz",
+      "channel": "sms"
+    },
+    "notes": "HDFC bank impersonation on .xyz phishing domain"
+  },
+  {
+    "id": "scam_006",
+    "category": "ICICI Reward Points Phishing",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Congratulations! Your ICICI credit card reward points worth Rs 7,850 are expiring today. Redeem cash directly to your account at https://icici-rewards-cash.club",
+      "sender": "+919920192837",
+      "extracted_url": "https://icici-rewards-cash.club",
+      "channel": "sms"
+    },
+    "notes": "ICICI credit card points lure on .club domain"
+  },
+  {
+    "id": "scam_007",
+    "category": "Axis Bank Account KYC Suspension",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Axis Bank Alert: Your account is blocked today due to pending re-KYC. Visit https://axis-kyc-verification.top to complete online KYC verification and unfreeze account.",
+      "sender": "+919871234567",
+      "extracted_url": "https://axis-kyc-verification.top",
+      "channel": "sms"
+    },
+    "notes": "Axis bank account freeze threat on .top link"
+  },
+  {
+    "id": "scam_008",
+    "category": "PNB Debit Card Block OTP Harvest",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "PNB Alert: Your debit card is blocked. Submit Aadhaar number and OTP at https://pnb-aadhaar-link.cfd within 2 hours to reactivate your ATM card.",
+      "sender": "+919823456789",
+      "extracted_url": "https://pnb-aadhaar-link.cfd",
+      "channel": "sms"
+    },
+    "notes": "PNB card block lure with active OTP harvesting on .cfd domain"
+  },
+  {
+    "id": "scam_009",
+    "category": "Digital Arrest / CBI Extortion",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "Supreme Court & CBI Cyber Cell Notice: A non-bailable arrest warrant has been issued against you for illegal money laundering. Connect on Skype/WhatsApp immediately with Cyber Officer or police squad will raid your residence.",
+      "sender": "+919112233445",
+      "extracted_url": null,
+      "channel": "whatsapp"
+    },
+    "notes": "Coercive psychological digital arrest threat by fake CBI officers"
+  },
+  {
+    "id": "scam_010",
+    "category": "Customs Drug Parcel Extortion",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Customs Department Delhi: Your courier package containing contraband drugs has been intercepted. Case registered under NDPS Act. Pay clearance penalty of Rs 48,500 immediately to avoid immediate arrest.",
+      "sender": "+919870192837",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Fake customs parcel interception extortion scam"
+  },
+  {
+    "id": "scam_011",
+    "category": "ED Money Laundering Summons",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Enforcement Directorate (ED): Your Aadhaar is linked to 14 illegal bank accounts in Mumbai. Summons issued under PMLA. Contact Investigation Officer immediately at 9871122334.",
+      "sender": "+919871122334",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "ED money laundering summons coercion from personal mobile"
+  },
+  {
+    "id": "scam_012",
+    "category": "TRAI SIM Deactivation Extortion",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Department of Telecommunications / TRAI: Your mobile number has been reported for sending 1200 spam messages. All outgoing calls and internet will be disconnected within 2 hours. Call 9123456789.",
+      "sender": "+919123456789",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "TRAI 2-hour disconnection threat"
+  },
+  {
+    "id": "scam_013",
+    "category": "Fake Cyber Police Video Call",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Delhi Cyber Crime Police: An FIR has been registered against you for illegal transaction. Join video investigation immediately on WhatsApp 9811223344 or police squad will be dispatched.",
+      "sender": "+919811223344",
+      "extracted_url": null,
+      "channel": "whatsapp"
+    },
+    "notes": "Fake video interrogation threat under cyber crime guise"
+  },
+  {
+    "id": "scam_014",
+    "category": "Fake District Court E-Summons",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "District Court e-Summons: You are summoned for hearing tomorrow in financial fraud matter. Failing to appear leads to non-bailable warrant. View case file at https://court-summons-notice.top",
+      "sender": "+919821908271",
+      "extracted_url": "https://court-summons-notice.top",
+      "channel": "sms"
+    },
+    "notes": "Legal summons threat with malicious .top download link"
+  },
+  {
+    "id": "scam_015",
+    "category": "Deceptive UPI Refund Trap",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "Dear Customer, your refund of Rs 2,450 for failed transaction is approved. Accept UPI collect request sent by refund-desk@oksbi to receive funds in your account.",
+      "sender": "+919876543210",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Deceptive collect request masquerading as refund via spoofed VPA"
+  },
+  {
+    "id": "scam_016",
+    "category": "Google Pay Cashback VPA Lure",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "You have won a scratch card cashback of Rs 999 from Google Pay! Click to claim and enter UPI PIN: gpay-cashback@ybl",
+      "sender": "+919711223344",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Fraudulent cashback collect request on consumer PhonePe handle"
+  },
+  {
+    "id": "scam_017",
+    "category": "PhonePe Diwali Prize VPA Trap",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "PhonePe Diwali bumper gift of Rs 5,000 waiting! Accept payment request from phonepe-rewards@paytm to claim prize money instantly.",
+      "sender": "+919650123456",
+      "extracted_url": null,
+      "channel": "whatsapp"
+    },
+    "notes": "Fake festival prize collect request on cross-fintech handle"
+  },
+  {
+    "id": "scam_018",
+    "category": "Fake Electricity Bill UPI Payment",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Electricity Officer: Pay unpaid electricity bill Rs 1,840 to avoid disconnection tonight via UPI: bescom-officer@okaxis immediately.",
+      "sender": "+918800112233",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Personal Axis VPA used to collect fraudulent utility bill payments"
+  },
+  {
+    "id": "scam_019",
+    "category": "Fake Airline Refund Handle",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Indigo Airlines Refund Desk: Your flight cancellation refund of Rs 4,200 is ready. Authorize collect request from indigo-refund@ibl to receive money.",
+      "sender": "+919810123456",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Airline refund impersonation on consumer UPI handle"
+  },
+  {
+    "id": "scam_020",
+    "category": "Part-Time YouTube Liking Job",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 70,
+    "payload": {
+      "content": "Congratulations! You have been selected for part-time remote work. Like 3 YouTube videos and earn Rs 3500 daily. Join Telegram: https://t.me/quick-earn-daily-bonus",
+      "sender": "+917001234567",
+      "extracted_url": "https://t.me/quick-earn-daily-bonus",
+      "channel": "whatsapp"
+    },
+    "notes": "Advance-fee YouTube task scam leading to Telegram group"
+  },
+  {
+    "id": "scam_021",
+    "category": "Amazon Product Review Work From Home",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 70,
+    "payload": {
+      "content": "Amazon Hiring: Work from home product review rating task. Daily payout Rs 2,500. No experience needed. Join Telegram: https://t.me/amazon-review-tasks to start today.",
+      "sender": "+919818291029",
+      "extracted_url": "https://t.me/amazon-review-tasks",
+      "channel": "sms"
+    },
+    "notes": "Impersonating Amazon recruiting for fake review jobs"
+  },
+  {
+    "id": "scam_022",
+    "category": "Guaranteed Crypto Trading Multiplier",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Guaranteed 300% profit in 24 hours on Bitcoin trading! Invest Rs 1,000 get Rs 10,000 back. Official SEBI registered: https://crypto-fast-multiply.xyz",
+      "sender": "+919911223344",
+      "extracted_url": "https://crypto-fast-multiply.xyz",
+      "channel": "whatsapp"
+    },
+    "notes": "Ponzi crypto scheme with false regulatory claims on .xyz link"
+  },
+  {
+    "id": "scam_023",
+    "category": "Instagram Influencer Starter Kit Fee",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 70,
+    "payload": {
+      "content": "Selected for brand ambassador! Earn Rs 50,000 monthly. Pay registration fee of Rs 499 at https://influencer-register.club to get starter kit.",
+      "sender": "+919876501234",
+      "extracted_url": "https://influencer-register.club",
+      "channel": "sms"
+    },
+    "notes": "Advance fee job fraud asking for upfront registration payment"
+  },
+  {
+    "id": "scam_024",
+    "category": "KBC Jio Lucky Draw WhatsApp Scam",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Dear Friend, Congratulations! Your mobile number won 25 Lakh Rupees in Kaun Banega Crorepati (KBC) Jio Lucky Draw! Call KBC manager Rana Pratap Singh at 9876543210 to claim lottery.",
+      "sender": "+919876543210",
+      "extracted_url": null,
+      "channel": "whatsapp"
+    },
+    "notes": "Famous Indian KBC 25 Lakh lottery fraud"
+  },
+  {
+    "id": "scam_025",
+    "category": "IRCTC Fake Ticket Refund",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "IRCTC Alert: Your ticket refund of Rs 1,620 is pending due to wrong bank IFSC. Enter your debit card and CVV at https://irctc-refund-portal.top to process refund immediately.",
+      "sender": "+919820192837",
+      "extracted_url": "https://irctc-refund-portal.top",
+      "channel": "sms"
+    },
+    "notes": "IRCTC railway refund phishing targeting card CVV on .top domain"
+  },
+  {
+    "id": "scam_026",
+    "category": "Income Tax Refund Approval Phishing",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "Income Tax Department: An excess tax refund of Rs 15,490 has been approved. Submit your bank account and NetBanking credentials at https://incometax-refund-gov.xyz",
+      "sender": "+919811902819",
+      "extracted_url": "https://incometax-refund-gov.xyz",
+      "channel": "sms"
+    },
+    "notes": "Tax refund credential theft mimicking official ITD portal"
+  },
+  {
+    "id": "scam_027",
+    "category": "PM Kisan Samman Nidhi e-KYC",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "PM Kisan Samman Nidhi: 17th installment of Rs 2,000 released. Update your e-KYC immediately at https://pm-kisan-ekyc.online to claim before deadline tonight.",
+      "sender": "+919721092837",
+      "extracted_url": "https://pm-kisan-ekyc.online",
+      "channel": "sms"
+    },
+    "notes": "Government scheme subsidy lure targeting rural citizens"
+  },
+  {
+    "id": "scam_028",
+    "category": "Aadhaar Biometric Deactivation Extortion",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "UIDAI Alert: Your Aadhaar biometrics will be permanently deactivated within 24 hours due to non-compliance. Unlock at https://myaadhaar-update.cfd to keep Aadhaar active.",
+      "sender": "+919810928172",
+      "extracted_url": "https://myaadhaar-update.cfd",
+      "channel": "sms"
+    },
+    "notes": "Aadhaar suspension threat harvesting credentials on .cfd domain"
+  },
+  {
+    "id": "scam_029",
+    "category": "ATM Card Expiry OTP Solicitation",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 85,
+    "payload": {
+      "content": "Bank Customer Care: Your ATM Debit card will expire today. To continue card services share 6 digit verification OTP with customer agent calling from 9871122334.",
+      "sender": "+919871122334",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Direct bank employee impersonation demanding OTP disclosure"
+  },
+  {
+    "id": "scam_030",
+    "category": "Fake Traffic e-Challan Penalty",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "Traffic Police Notice: You have 1 unpaid e-Challan of Rs 1,000 for over-speeding. Pay immediately at https://echallan-parivahan-pay.xyz within 2 hours or vehicle will be seized.",
+      "sender": "+919821092837",
+      "extracted_url": "https://echallan-parivahan-pay.xyz",
+      "channel": "sms"
+    },
+    "notes": "Urgent traffic fine coercion with vehicle seizure threat on .xyz link"
+  },
+  {
+    "id": "scam_031",
+    "category": "WhatsApp Pink Trojan Download",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Update WhatsApp to WhatsApp Pink with new features and gold theme! Download official update now: https://whatsapp-pink-update.top",
+      "sender": "+919819283746",
+      "extracted_url": "https://whatsapp-pink-update.top",
+      "channel": "whatsapp"
+    },
+    "notes": "Malicious Android trojan download masquerading as WhatsApp update"
+  },
+  {
+    "id": "scam_032",
+    "category": "Instant 5-Minute Loan Lure",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Pre-approved loan of Rs 5,00,000 disbursed instantly with 0% interest! No documents required. Click https://instant-cash-loan.icu to get money in 5 minutes.",
+      "sender": "+919910293847",
+      "extracted_url": "https://instant-cash-loan.icu",
+      "channel": "sms"
+    },
+    "notes": "Predatory Chinese loan app scam on .icu domain"
+  },
+  {
+    "id": "scam_033",
+    "category": "LPG Gas Subsidy KYC Cutoff",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 75,
+    "payload": {
+      "content": "Indane Gas Subsidy: Your LPG cylinder subsidy of Rs 300 will be stopped today. Complete biometric KYC at https://lpg-subsidy-kyc.top to continue subsidy.",
+      "sender": "+919820192830",
+      "extracted_url": "https://lpg-subsidy-kyc.top",
+      "channel": "sms"
+    },
+    "notes": "LPG subsidy stoppage threat harvesting credentials on .top domain"
+  },
+  {
+    "id": "scam_034",
+    "category": "EPFO PF Claim Rejection Lure",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "EPFO Alert: Your Provident Fund claim of Rs 64,000 is rejected due to KYC error. Re-apply with PAN and NetBanking password at https://epfindia-claim-portal.xyz",
+      "sender": "+919811092837",
+      "extracted_url": "https://epfindia-claim-portal.xyz",
+      "channel": "sms"
+    },
+    "notes": "EPFO claim rejection phishing seeking banking passwords"
+  },
+  {
+    "id": "scam_035",
+    "category": "India Post Parcel Re-delivery Fee",
+    "expected_verdict": "LIKELY_SCAM",
+    "expected_min_score": 80,
+    "payload": {
+      "content": "India Post: Your package could not be delivered due to wrong address. Pay Rs 25 re-delivery fee at https://indiapost-parcel-tracking.top within 12 hours or package returned.",
+      "sender": "+919823901928",
+      "extracted_url": "https://indiapost-parcel-tracking.top",
+      "channel": "sms"
+    },
+    "notes": "Smishing parcel re-delivery scam stealing credit cards via .top site"
+  },
+  {
+    "id": "benign_001",
+    "category": "HDFC Bank Transaction OTP",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "Dear Customer, your OTP for transaction of Rs 1,499 at Amazon on card ending 8812 is 654321. Valid for 5 mins. Do not share OTP with anyone - HDFC Bank",
+      "sender": "VM-HDFCBK",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Legitimate transactional OTP with official TRAI DLT header"
+  },
+  {
+    "id": "benign_002",
+    "category": "SBI NetBanking Login OTP",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "123456 is your high security OTP for SBI Internet Banking login. Valid for 3 minutes. Do not disclose it to anyone including SBI staff - State Bank of India",
+      "sender": "AD-SBIINB",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Standard internet banking OTP with official SBI header"
+  },
+  {
+    "id": "benign_003",
+    "category": "ICICI Bank Debit Alert",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "Dear Customer, your Acct XX1234 is debited for Rs 350.00 on 30-Sep-26 by UPI. Avl Bal: Rs 24,500.20. Call 18001080 if not done by you - ICICI Bank",
+      "sender": "AX-ICICIB",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Legitimate bank debit transaction notification"
+  },
+  {
+    "id": "benign_004",
+    "category": "Axis Bank Salary Credit",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Salary of Rs 65,000.00 credited to your Axis Bank account ending 9012 on 30-Sep-26. Total Available Balance Rs 82,140.00 - Axis Bank",
+      "sender": "VM-AXISBK",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Monthly salary credit alert from certified commercial header"
+  },
+  {
+    "id": "benign_005",
+    "category": "Kotak Credit Card Statement",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "Your Kotak Credit Card ending 4455 statement for Sep 2026 is generated. Total Due: Rs 4,210.00. Due date: 20-Oct-26 - Kotak Mahindra Bank",
+      "sender": "AD-KOTAKB",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Routine credit card statement alert"
+  },
+  {
+    "id": "benign_006",
+    "category": "PNB ATM Cash Withdrawal",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "Rs 2,000.00 withdrawn from ATM at Connaught Place on PNB Card ending 3321. Avl Bal: Rs 15,200.00 - Punjab National Bank",
+      "sender": "VK-PNBSMS",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Standard ATM cash withdrawal notification"
+  },
+  {
+    "id": "benign_007",
+    "category": "Bank of Baroda UPI Payment",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "Paid Rs 120.00 to Chai Point via UPI from BOB Acct ending 7788 on 30-09-2026. Ref No 6271829101 - Bank of Baroda",
+      "sender": "VM-BOBSMS",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Merchant UPI transaction confirmation"
+  },
+  {
+    "id": "benign_008",
+    "category": "Canara Bank Subscription Mandate",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "UPI Mandate of Rs 499.00 successfully executed for Netflix subscription from Canara Bank Acct ending 5541 - Canara Bank",
+      "sender": "TA-CANBNK",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Automatic recurring subscription mandate notification"
+  },
+  {
+    "id": "benign_009",
+    "category": "Indian Bank Interest Credit",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Quarterly savings bank interest of Rs 312.00 credited to account ending 6620 on 30-Sep-26 - Indian Bank",
+      "sender": "AD-INDBNK",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Quarterly interest deposit notification"
+  },
+  {
+    "id": "benign_010",
+    "category": "UIDAI Aadhaar OTP Verification",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "OTP for generation of Aadhaar related services is 908123. Valid for 10 minutes. Do not share this OTP with anyone - UIDAI",
+      "sender": "AD-UIDAIT",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Official Aadhaar verification code from registered UIDAI header"
+  },
+  {
+    "id": "benign_011",
+    "category": "Swiggy Food Delivery Tracking",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "Your Swiggy order from Biryani Blues is arriving in 15 mins. Track your rider at https://swiggy.com/orders/89211029",
+      "sender": "AD-SWIGGY",
+      "extracted_url": "https://swiggy.com/orders/89211029",
+      "channel": "sms"
+    },
+    "notes": "Legitimate delivery tracking on verified domain swiggy.com"
+  },
+  {
+    "id": "benign_012",
+    "category": "Zomato Order Delivered Rating",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Your Zomato order from Domino's Pizza has been delivered. Rate your food and delivery partner on the Zomato app.",
+      "sender": "VM-ZOMATO",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Post-delivery rating prompt from official Zomato header"
+  },
+  {
+    "id": "benign_013",
+    "category": "Amazon Package Delivery Code",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Amazon: Your package with order #402-8192019-1299 is out for delivery. Share delivery code 4821 with your delivery associate.",
+      "sender": "AX-AMZNIN",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Routine package delivery PIN from registered Amazon header"
+  },
+  {
+    "id": "benign_014",
+    "category": "Flipkart Order Dispatch Update",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Good news! Your Flipkart order for Wireless Earbuds has been shipped and will reach you by 2 Oct. Track order on Flipkart app.",
+      "sender": "AD-FLIPKT",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "E-commerce order dispatch alert from certified Flipkart header"
+  },
+  {
+    "id": "benign_015",
+    "category": "Uber Ride Confirmation",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Your Uber driver Suresh (Swift Dzire KA03AB1234) is arriving in 3 mins. Share OTP 7721 with the driver.",
+      "sender": "VM-UBERIN",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Legitimate cab arrival message with vehicle and driver details"
+  },
+  {
+    "id": "benign_016",
+    "category": "Ola Cabs Booking Confirmation",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Ola booking confirmed! Driver Ramesh is arriving in 4 mins. Start code: 5412. Track cab on Ola app.",
+      "sender": "AD-OLACBS",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Standard ride-hailing confirmation from official Ola header"
+  },
+  {
+    "id": "benign_017",
+    "category": "IRCTC Train Ticket Confirmed",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "PNR 2415829101: Train 12952 NDLS-MMCT Tejas Rajdhani. Confirmed Berth B3-42, Date 05-Oct-26. Check status at https://irctc.co.in",
+      "sender": "AD-IRCTCS",
+      "extracted_url": "https://irctc.co.in",
+      "channel": "sms"
+    },
+    "notes": "Legitimate Indian Railways booking confirmation with official portal URL"
+  },
+  {
+    "id": "benign_018",
+    "category": "BESCOM Electricity Bill Receipt",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "BESCOM: Payment of Rs 1,450 for Consumer ID 1092829 received successfully on 30-Sep-26. Current outstanding: Rs 0.00 - BESCOM",
+      "sender": "VK-BESCOM",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Authentic power bill receipt notification from official BESCOM header"
+  },
+  {
+    "id": "benign_019",
+    "category": "Airtel Bill Payment Confirmation",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Payment of Rs 599 for your Airtel postpaid number 9845012345 received with thanks. Transaction ID: TXN91829102 - Airtel",
+      "sender": "VM-AIRTEL",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Telecom recharge receipt from official Airtel header"
+  },
+  {
+    "id": "benign_020",
+    "category": "Personal Message - Meeting Plan",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Bhai sham ko 7 baje cafe pe milte hain. Main time se pahuch jaunga.",
+      "sender": "+919811223344",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Standard personal conversational SMS between friends"
+  },
+  {
+    "id": "benign_021",
+    "category": "Personal Message - Family Health Care",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Mummy ji medicines le li aapne? Dopehar wali tablet time se lena please.",
+      "sender": "+919876512345",
+      "extracted_url": null,
+      "channel": "whatsapp"
+    },
+    "notes": "Caring family conversation without any financial or link elements"
+  },
+  {
+    "id": "benign_022",
+    "category": "Personal Message - Work Sync",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "Hey team, the presentation slides are ready. Let's do a quick sync at 10 AM tomorrow.",
+      "sender": "+919820011223",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Internal team coordination message"
+  },
+  {
+    "id": "benign_023",
+    "category": "Personal Message - Birthday Wishes",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 10,
+    "payload": {
+      "content": "Happy Birthday Rohit! Wishing you a fantastic year ahead with good health and happiness.",
+      "sender": "+919910022334",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Warm personal birthday greeting"
+  },
+  {
+    "id": "benign_024",
+    "category": "CoWIN Vaccine Certificate Alert",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 20,
+    "payload": {
+      "content": "CoWIN: Your precaution dose certificate is ready for download. Visit official portal cowin.gov.in using registered mobile - Ministry of Health",
+      "sender": "VM-COVIDV",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Official public health notice from verified CoWIN header"
+  },
+  {
+    "id": "benign_025",
+    "category": "Income Tax ITR Verification Receipt",
+    "expected_verdict": "SAFE",
+    "expected_max_score": 15,
+    "payload": {
+      "content": "ITD: ITR-1 filed by PAN ABCDE1234F for AY 2026-27 has been successfully verified. Acknowledgement No: 8192019281 - Income Tax Department",
+      "sender": "AD-INCOTX",
+      "extracted_url": null,
+      "channel": "sms"
+    },
+    "notes": "Standard tax filing acknowledgment from verified INCOTX header"
+  }
+]
