@@ -30,12 +30,13 @@ Module  : PhishLens v1.0
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
 import unicodedata
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from shared.models import (
     AgentStatusEnum,
@@ -680,29 +681,39 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
     has_homoglyphs = bool(raw_sender and _NON_ASCII_RE.search(raw_sender))
 
     if raw_sender:
+        sender_phone_candidates = _extract_all_phone_candidates(raw_sender)
+        if len(sender_phone_candidates) > 1:
+            return await analyze_sender_multi(req)
         normalised = _sanitise_sender(raw_sender)
     else:
-        # Attempt to extract a phone number from the message body.
-        extracted = _extract_phone_from_content(req.content)
-        if extracted:
-            raw_sender = extracted
-            normalised = extracted
+        # Check if multiple phone numbers exist in the message body
+        candidates = _extract_all_phone_candidates(req.content)
+        if len(candidates) > 1:
+            return await analyze_sender_multi(req)
+        elif len(candidates) == 1:
+            raw_sender = candidates[0]
+            normalised = candidates[0]
         else:
-            # No sender metadata whatsoever — return early.
-            latency_ms = (time.perf_counter() - t_start) * 1000.0
-            return SenderAgentResult(
-                status=AgentStatusEnum.SUCCESS,
-                sender_category=SenderCategoryEnum.UNKNOWN,
-                risk_score=20.0,
-                details=(
-                    "This message arrived without any sender information. "
-                    "We could not identify who sent it, which is unusual for "
-                    "legitimate SMS from banks or government services."
-                ),
-                latency_ms=round(latency_ms, 3),
-                raw_sender=None,
-                normalised_sender=None,
-            )
+            extracted = _extract_phone_from_content(req.content)
+            if extracted:
+                raw_sender = extracted
+                normalised = extracted
+            else:
+                # No sender metadata whatsoever — return early.
+                latency_ms = (time.perf_counter() - t_start) * 1000.0
+                return SenderAgentResult(
+                    status=AgentStatusEnum.SUCCESS,
+                    sender_category=SenderCategoryEnum.UNKNOWN,
+                    risk_score=20.0,
+                    details=(
+                        "This message arrived without any sender information. "
+                        "We could not identify who sent it, which is unusual for "
+                        "legitimate SMS from banks or government services."
+                    ),
+                    latency_ms=round(latency_ms, 3),
+                    raw_sender=None,
+                    normalised_sender=None,
+                )
 
     # ── Email / Message Analysis Check ──
     is_email_input = bool(
@@ -842,6 +853,30 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                     f"(category: {entry['category']}). "
                     "This sender is legitimate and verified by India's telecom regulator."
                     + entity_note
+                ),
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender,
+                normalised_sender=normalised,
+            )
+
+        # ── Operator / Circle Mismatch: entity is registered, but NOT with this operator prefix ──
+        if entry and not pair_valid:
+            flags.append("TRAI_OPERATOR_ENTITY_PREFIX_MISMATCH")
+            flags.append("UNAUTHORIZED_OPERATOR_FOR_ENTITY")
+            flags.append("UNVERIFIED_LOOKALIKE_HEADER")
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=SenderCategoryEnum.LOOKALIKE_HEADER,
+                risk_score=_clamp_score(78.0),
+                is_spoofed_header=True,
+                brand_claimed=entry.get("brand_name"),
+                flags=flags,
+                details=(
+                    f"The sender ID '{normalised}' claims to represent '{entry['brand_name']}', "
+                    f"but operator prefix '{operator_prefix}' is NOT authorized for entity code '{entity_code}'. "
+                    f"Authorized prefixes for '{entry['brand_name']}' are: {', '.join(entry.get('operator_prefixes', []))}. "
+                    "This indicates an operator route mismatch or spoofing attempt."
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
@@ -1145,3 +1180,184 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
         raw_sender=raw_sender,
         normalised_sender=normalised,
     )
+
+
+# ---------------------------------------------------------------------------
+# Multi-Phone Parallel Analysis (AVNI — Sprint 2)
+# ---------------------------------------------------------------------------
+
+# Maximum concurrent phone sub-analyses to avoid runaway fan-out.
+_MAX_PARALLEL_PHONES: int = 8
+
+# Regex for extracting ALL Indian phone-like tokens from free-form text.
+# Matches standalone 10-digit GSM, 140 promotional, 160 service, and 1800 toll-free,
+# with optional country-code prefix (+91 / 91) and common separators (space, dash, dot).
+_ALL_PHONES_RE = re.compile(
+    r"(?<!\d)(?:\+91[\s\-\.]?|91[\s\-\.]?)?((?:[6-9]\d{2}[\s\-\.]?\d{3}[\s\-\.]?\d{4})|(?:140\d{7})|(?:160\d{7})|(?:1800[\s\-\.]?\d{3}[\s\-\.]?\d{3,4}))(?!\d)",
+    re.ASCII,
+)
+
+
+def _is_valid_phone_candidate(phone: str) -> bool:
+    """Check if candidate is a valid Indian GSM, 140 promo, 160 service, or 1800 toll-free."""
+    return bool(
+        _INDIAN_GSM_RE.match(phone)
+        or _TRAI_140_RE.match(phone)
+        or _TRAI_160_RE.match(phone)
+        or _TOLL_FREE_RE.match(phone)
+    )
+
+
+def _extract_all_phone_candidates(text: str) -> List[str]:
+    """
+    Extract every distinct Indian phone number candidate from *text*.
+
+    - Strips country-code prefix (+91 / 91).
+    - Removes internal separators (space, dash, dot).
+    - Deduplicates while preserving order of first occurrence.
+    - Validates candidate against GSM, 140, 160, and 1800 patterns.
+
+    Returns up to ``_MAX_PARALLEL_PHONES`` unique numbers.
+    """
+    seen: set = set()
+    results: List[str] = []
+    for match in _ALL_PHONES_RE.finditer(text):
+        raw = match.group(1).replace(" ", "").replace("-", "").replace(".", "")
+        cleaned = _strip_country_code(raw)
+        if _is_valid_phone_candidate(cleaned) and cleaned not in seen:
+            seen.add(cleaned)
+            results.append(cleaned)
+            if len(results) >= _MAX_PARALLEL_PHONES:
+                break
+    return results
+
+
+async def _analyse_phone_candidate(
+    base_req: ScanRequest,
+    phone: str,
+    t_start: float,
+) -> Dict[str, Any]:
+    """
+    Run ``analyze_sender`` for a single phone candidate derived from the
+    message body.  Returns a serialisable summary dict, never raises.
+    """
+    synthetic_req = ScanRequest(
+        content=base_req.content,
+        sender=phone,
+        channel=base_req.channel,
+        metadata=base_req.metadata or {},
+    )
+    try:
+        result = await analyze_sender(synthetic_req)
+        return {
+            "phone": phone,
+            "risk_score": result.risk_score,
+            "sender_category": result.sender_category.value,
+            "flags": result.flags,
+            "details": result.details,
+            "phone_type": result.phone_type,
+            "brand_claimed": result.brand_claimed,
+            "is_spoofed_header": result.is_spoofed_header,
+            "latency_ms": result.latency_ms,
+        }
+    except Exception as exc:  # noqa: BLE001 — fail-safe
+        return {
+            "phone": phone,
+            "risk_score": 0.0,
+            "sender_category": SenderCategoryEnum.UNKNOWN.value,
+            "flags": ["ANALYSIS_ERROR"],
+            "details": str(exc),
+            "phone_type": None,
+            "brand_claimed": None,
+            "is_spoofed_header": False,
+            "latency_ms": round((time.perf_counter() - t_start) * 1000.0, 3),
+        }
+
+
+async def analyze_sender_multi(req: ScanRequest) -> SenderAgentResult:
+    """
+    Multi-phone parallel sender analysis (AVNI Sprint 2).
+
+    Behaviour
+    ---------
+    1. If ``req.sender`` is already provided *and* is a single phone / header,
+       fall through to the standard ``analyze_sender`` path.
+    2. Otherwise, extract ALL distinct Indian phone numbers found in the
+       message body and analyse them **concurrently** via ``asyncio.gather``.
+    3. The sub-result with the **highest risk_score** is returned as the
+       primary ``SenderAgentResult``.
+    4. All sub-results (for UI accordion / expandable evidence panel) are
+       embedded in the result's ``email_analysis`` dict under the key
+       ``multi_phone_results`` — reusing the existing optional field so no
+       schema change is required.
+
+    Parameters
+    ----------
+    req : ScanRequest
+
+    Returns
+    -------
+    SenderAgentResult
+        Primary result (highest-risk phone).  Never raises.
+    """
+    t_start = time.perf_counter()
+
+    # ── Fast path / multi-sender extraction ──────────────────────────────
+    if req.sender:
+        sender_candidates = _extract_all_phone_candidates(req.sender)
+        if len(sender_candidates) > 1:
+            candidates = sender_candidates
+        else:
+            return await analyze_sender(req)
+    else:
+        # ── Extract all phone candidates from body ───────────────────────────
+        candidates = _extract_all_phone_candidates(req.content)
+
+    if not candidates:
+        # No phone numbers found at all — delegate to normal path
+        return await analyze_sender(req)
+
+    if len(candidates) == 1:
+        # Only one number; no need for fan-out overhead
+        single_req = ScanRequest(
+            content=req.content,
+            sender=candidates[0],
+            channel=req.channel,
+            metadata=req.metadata or {},
+        )
+        return await analyze_sender(single_req)
+
+    # ── Parallel analysis of all candidates ─────────────────────────────
+    tasks = [_analyse_phone_candidate(req, phone, t_start) for phone in candidates]
+    sub_results: List[Dict[str, Any]] = list(await asyncio.gather(*tasks, return_exceptions=False))
+
+    # ── Pick the highest-risk result as primary ──────────────────────────
+    best = max(sub_results, key=lambda r: r.get("risk_score", 0.0))
+    total_latency_ms = round((time.perf_counter() - t_start) * 1000.0, 3)
+
+    # Build a SenderAgentResult from the best sub-result.
+    primary_result = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        sender_category=SenderCategoryEnum(best["sender_category"]),
+        risk_score=float(best["risk_score"]),
+        flags=best["flags"],
+        details=(
+            f"[Multi-phone scan — {len(candidates)} numbers found] "
+            + best["details"]
+        ),
+        phone_type=best.get("phone_type"),
+        brand_claimed=best.get("brand_claimed"),
+        is_spoofed_header=bool(best.get("is_spoofed_header")),
+        raw_sender=best["phone"],
+        normalised_sender=best["phone"],
+        latency_ms=total_latency_ms,
+        provider="TRAI_DLT_REGISTRY",
+        # Embed all sub-results for UI panels (reuses email_analysis slot)
+        email_analysis={
+            "multi_phone_results": sub_results,
+            "phone_count": len(candidates),
+            "highest_risk_phone": best["phone"],
+        },
+    )
+
+    return primary_result
