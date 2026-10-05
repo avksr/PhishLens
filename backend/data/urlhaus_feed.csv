@@ -1,0 +1,4 @@
+# URLhaus abuse.ch feed — placeholder
+# Real feed URL: https://urlhaus.abuse.ch/downloads/csv_online/
+# This file is refreshed hourly by the threat_intel loader.
+# CSV format: id,dateadded,url,url_status,last_online,threat,tags,urlhaus_link,reporter

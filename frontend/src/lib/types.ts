@@ -143,6 +143,7 @@ export interface AuditLogEntry {
   risk_tier: RiskTier;
   overall_risk_score: number;
   verdict: string;
+  verdict_hi?: string;
   channel: Channel;
   processing_time_ms: number;
 }

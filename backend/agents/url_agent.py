@@ -22,10 +22,13 @@ Author : Atharv (URL Agent team)
 from __future__ import annotations
 
 import asyncio
+import base64
 import collections
+import csv
 import functools
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -34,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import tldextract
 
@@ -72,6 +75,7 @@ _RISK_HIGH_RISK_TLD = 35.0
 _RISK_TYPOSQUATTING = 50.0
 _RISK_NEW_DOMAIN = 40.0
 _RISK_HOMOGLYPH = 45.0
+_RISK_SAFE_BROWSING = 30.0
 _RISK_WHOIS_TIMEOUT_PENALTY = 15.0  # penalty when WHOIS fails but TLD is high-risk
 
 # WHOIS timeout (seconds)
@@ -86,6 +90,31 @@ _SIMILARITY_THRESHOLD = 0.55
 # Domain-result cache settings
 _DOMAIN_CACHE_MAXSIZE = 4096
 _DOMAIN_CACHE_TTL_SECONDS = 300  # 5-minute TTL
+
+# Threat intelligence feeds and API settings
+_OPENPHISH_FEED_PATH = _DATA_DIR / "openphish_feed.txt"
+_URLHAUS_FEED_PATH = _DATA_DIR / "urlhaus_feed.csv"
+_FEED_REFRESH_INTERVAL_SECONDS = 3600.0  # hourly refresh
+
+_RISK_OPENPHISH = 35.0
+_RISK_URLHAUS = 35.0
+_RISK_OTX = 25.0
+_RISK_VIRUSTOTAL = 30.0
+
+_OTX_API_KEY = os.environ.get("OTX_API_KEY", "")
+_OTX_TIMEOUT = 1.0
+_OTX_INDICATOR_ENDPOINT = "https://otx.alienvault.com/api/v1/indicators"
+
+_VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "")
+_VIRUSTOTAL_TIMEOUT = 1.0
+_VIRUSTOTAL_URL_ENDPOINT = "https://www.virustotal.com/api/v3/urls"
+
+# Google Safe Browsing API v4 settings
+_GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "")
+_SAFE_BROWSING_TIMEOUT = 1.0  # seconds
+_SAFE_BROWSING_ENDPOINT = (
+    "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+)
 
 # ──────────────────────────────────────────────
 # Homoglyph / Confusable character map
@@ -195,11 +224,15 @@ class _DomainCacheEntry:
     is_homoglyph: bool
     homoglyph_brand: Optional[str]
     age_days: Optional[int]
+    registrar: Optional[str]
+    safe_browsing_threat: Optional[str]
     flags: Tuple[str, ...]  # frozen for hashability
     tld_delta: float
     typo_delta: float
     homoglyph_delta: float
     age_delta: float
+    threat_intel: Optional[Dict[str, Any]] = None
+    threat_intel_delta: float = 0.0
     created_at: float = field(default_factory=time.monotonic)
 
 
@@ -295,13 +328,16 @@ def domain_cache_clear() -> None:
 # ──────────────────────────────────────────────
 
 @functools.lru_cache(maxsize=2048)
-def _lookup_domain_age(domain: str) -> Optional[int]:
+def _lookup_domain_age(domain: str) -> Optional[Tuple[Optional[int], Optional[str]]]:
     """
-    Synchronous WHOIS lookup returning domain age in days, or None.
+    Synchronous WHOIS lookup returning ``(domain_age_days, registrar)``.
 
     Wrapped with ``functools.lru_cache(maxsize=2048)`` so repeated
     queries for the same domain return in sub-millisecond time without
     hitting the network.
+
+    Returns ``None`` on import / network failure.  Otherwise returns a
+    tuple of ``(age_days | None, registrar_name | None)``.
     """
     try:
         import whois  # type: ignore[import-untyped]
@@ -313,11 +349,13 @@ def _lookup_domain_age(domain: str) -> Optional[int]:
         creation = w.creation_date
         if isinstance(creation, list):
             creation = creation[0]
+        registrar = getattr(w, "registrar", None)
         if creation is None:
-            return None
+            return (None, registrar)
         if isinstance(creation, datetime):
             age = (datetime.now(timezone.utc) - creation.replace(tzinfo=timezone.utc)).days
-            return age
+            return (age, registrar)
+        return (None, registrar)
     except Exception:
         return None
     return None
@@ -586,9 +624,12 @@ def _check_typosquatting(
     """
     Detect brand impersonation / typosquatting.
 
-    Two-pass approach:
+    Three-pass approach:
+      0. **Official check** — if registered_domain is an official domain of
+         any known brand, it is authentic; never flag it.
       1. **Keyword match** — does any brand keyword appear in the domain label
          while the full registered domain is NOT in the brand's official list?
+         Checked across all brands first so direct keyword matches take precedence.
       2. **Levenshtein similarity** — is the registered domain suspiciously
          close to any official domain (ratio >= threshold)?
 
@@ -605,22 +646,19 @@ def _check_typosquatting(
     label_lower = domain_label.lower()
     full_lower = registered_domain.lower()
 
-    # Pre-check: If domain is in ANY brand's official domains, it is authentic
-    all_official = set()
+    # Pass 0 — If registered_domain is an official domain of ANY brand, it's authentic
     for info in brand_data.values():
-        all_official.update(d.lower() for d in info.get("official_domains", []))
+        official_domains = [d.lower() for d in info.get("official_domains", [])]
+        if full_lower in official_domains:
+            return False, None, 0.0, []
 
-    if full_lower in all_official:
-        return False, None, 0.0, []
-
+    # Pass 1 — Keyword hit in the domain label across all brands
     for _brand_key, info in brand_data.items():
         brand_name: str = info.get("brand_name", _brand_key)
         keywords: List[str] = [k.lower() for k in info.get("keywords", [])]
         official_domains: List[str] = [d.lower() for d in info.get("official_domains", [])]
 
-        # Pass 1 — keyword hit in the domain label
         if any(kw in label_lower for kw in keywords):
-            # Is the full registered domain an official one?
             if full_lower in official_domains:
                 return False, None, 0.0, []
             return (
@@ -630,20 +668,27 @@ def _check_typosquatting(
                 ["TYPOSQUATTING_DETECTED"],
             )
 
-        # Pass 2 — Levenshtein similarity against each official domain
+    # Pass 2 — Levenshtein similarity against each official domain
+    best_brand: Optional[str] = None
+    best_ratio: float = 0.0
+
+    for _brand_key, info in brand_data.items():
+        brand_name = info.get("brand_name", _brand_key)
+        official_domains = [d.lower() for d in info.get("official_domains", [])]
+
         for official in official_domains:
-            if full_lower == official:
-                return False, None, 0.0, []
-            off_label = official.split(".")[0]
-            ratio_label = _levenshtein_ratio(label_lower, off_label)
-            ratio_full = _levenshtein_ratio(full_lower, official)
-            if ratio_label >= 0.78 or ratio_full >= 0.78:
-                return (
-                    True,
-                    brand_name,
-                    _RISK_TYPOSQUATTING,
-                    ["TYPOSQUATTING_DETECTED"],
-                )
+            ratio = _levenshtein_ratio(full_lower, official)
+            if ratio >= _SIMILARITY_THRESHOLD and ratio > best_ratio:
+                best_ratio = ratio
+                best_brand = brand_name
+
+    if best_brand is not None:
+        return (
+            True,
+            best_brand,
+            _RISK_TYPOSQUATTING,
+            ["TYPOSQUATTING_DETECTED"],
+        )
 
     return False, None, 0.0, []
 
@@ -651,7 +696,7 @@ def _check_typosquatting(
 async def _check_whois_age(
     registered_domain: str,
     suffix: str = "",
-) -> Tuple[Optional[int], float, List[str]]:
+) -> Tuple[Optional[int], Optional[str], float, List[str]]:
     """
     Look up domain creation date via the LRU-cached ``_lookup_domain_age()``.
 
@@ -676,36 +721,43 @@ async def _check_whois_age(
         The TLD suffix (e.g. ``top``), used for fallback scoring on
         WHOIS failure.
 
-    Returns ``(domain_age_days | None, score_delta, new_flags)``.
+    Returns ``(domain_age_days | None, registrar | None, score_delta, new_flags)``.
     """
     loop = asyncio.get_running_loop()
     try:
-        age_days = await asyncio.wait_for(
+        whois_result = await asyncio.wait_for(
             loop.run_in_executor(None, _lookup_domain_age, registered_domain),
             timeout=_WHOIS_TIMEOUT,
         )
     except asyncio.TimeoutError:
         logger.warning(
-            "WHOIS/RDAP timeout for '%s' (> %.1fs) — falling back to "
-            "local TLD reputation",
+            "WHOIS/RDAP timeout for '%s' (>%.1fs) — falling back to "
+            "offline domain heuristics",
             registered_domain, _WHOIS_TIMEOUT,
         )
-        return _whois_fallback(registered_domain, suffix)
+        return _run_offline_domain_heuristics(registered_domain, suffix)
     except Exception as exc:
         logger.warning(
-            "WHOIS/RDAP error for '%s': %s — falling back to local TLD "
-            "reputation",
+            "WHOIS/RDAP error for '%s': %s — falling back to offline "
+            "domain heuristics",
             registered_domain, exc,
         )
-        return _whois_fallback(registered_domain, suffix)
+        return _run_offline_domain_heuristics(registered_domain, suffix)
+
+    # _lookup_domain_age returns None on complete failure, or (age, registrar)
+    if whois_result is None:
+        return _run_offline_domain_heuristics(registered_domain, suffix)
+
+    age_days, registrar = whois_result
 
     if age_days is not None and age_days < _NEW_DOMAIN_THRESHOLD_DAYS:
         return (
             age_days,
+            registrar,
             _RISK_NEW_DOMAIN,
-            [f"NEWLY_REGISTERED_DOMAIN (< {_NEW_DOMAIN_THRESHOLD_DAYS} days)"],
+            [f"NEW_DOMAIN ({age_days} days old)"],
         )
-    return age_days, 0.0, []
+    return age_days, registrar, 0.0, []
 
 
 def _whois_fallback(
@@ -732,6 +784,485 @@ def _whois_fallback(
             [f"WHOIS_TIMEOUT_FALLBACK (high-risk TLD .{suffix_lower})"],
         )
     return None, 0.0, ["WHOIS_TIMEOUT_FALLBACK (TLD benign — no penalty)"]
+
+
+def _run_offline_domain_heuristics(
+    registered_domain: str,
+    suffix: str,
+) -> Tuple[Optional[int], Optional[str], float, List[str]]:
+    """
+    Offline-capable domain heuristics that run without any network access.
+
+    When WHOIS/RDAP is completely unreachable (timeout, socket error, or
+    full offline mode), this function applies local-only signals to estimate
+    domain age risk:
+
+      * **High-risk TLD** — domains on suspicious TLDs (e.g. ``.top``,
+        ``.xyz``) are presumed newly registered and flagged with
+        ``NEW_DOMAIN (<30 days)`` plus the full ``_RISK_NEW_DOMAIN``
+        penalty.  This ensures that even when the agent is completely
+        disconnected, obviously suspicious domains are still flagged.
+      * **Benign TLD** — no penalty is applied to avoid false positives.
+
+    Parameters
+    ----------
+    registered_domain : str
+        The full registered domain (e.g. ``sbi-kyc-verify.top``).
+    suffix : str
+        The TLD suffix (e.g. ``top``).
+
+    Returns
+    -------
+    tuple
+        ``(domain_age_days | None, registrar | None, score_delta, flags)``.
+    """
+    tlds = _load_high_risk_tlds()
+    suffix_lower = suffix.lower().lstrip(".")
+
+    if suffix_lower in tlds:
+        logger.info(
+            "Offline heuristics: '%s' has high-risk TLD '.%s' — "
+            "presuming new domain, applying %.0f-point penalty",
+            registered_domain, suffix_lower, _RISK_NEW_DOMAIN,
+        )
+        return (
+            None,
+            None,
+            _RISK_NEW_DOMAIN,
+            [f"NEW_DOMAIN (<{_NEW_DOMAIN_THRESHOLD_DAYS} days)",
+             f"WHOIS_OFFLINE_FALLBACK (high-risk TLD .{suffix_lower})"],
+        )
+    return (
+        None,
+        None,
+        0.0,
+        ["WHOIS_OFFLINE_FALLBACK (TLD benign — no penalty)"],
+    )
+
+
+# ──────────────────────────────────────────────
+# Google Safe Browsing API v4 (FR-4)
+# ──────────────────────────────────────────────
+
+async def check_google_safe_browsing(
+    url: str,
+) -> Dict[str, Any]:
+    """
+    Query the Google Safe Browsing Lookup API v4 for *url*.
+
+    Returns a dict with the following keys:
+
+    * ``is_unsafe`` — ``True`` if Safe Browsing flagged the URL.
+    * ``checked``  — ``True`` if the API was actually queried
+      (``False`` when the key is missing or the request failed).
+    * ``threat_type`` — the threat category string (e.g.
+      ``"SOCIAL_ENGINEERING"``) or ``None``.
+
+    **Graceful pass-through fallback**:
+      - If ``GOOGLE_SAFE_BROWSING_API_KEY`` is empty or unset, the
+        check is silently skipped.
+      - If the network request fails or times out (>1.0 s), the
+        check is silently skipped — no exception is raised.
+    """
+    _PASS_THROUGH: Dict[str, Any] = {
+        "is_unsafe": False,
+        "checked": False,
+        "threat_type": None,
+    }
+
+    api_key = _GOOGLE_SAFE_BROWSING_API_KEY
+    if not api_key:
+        logger.debug("Google Safe Browsing API key not configured — skipping")
+        return _PASS_THROUGH
+
+    payload = {
+        "client": {
+            "clientId": "phishlens",
+            "clientVersion": "1.0.0",
+        },
+        "threatInfo": {
+            "threatTypes": [
+                "MALWARE",
+                "SOCIAL_ENGINEERING",
+                "UNWANTED_SOFTWARE",
+                "POTENTIALLY_HARMFUL_APPLICATION",
+            ],
+            "platformTypes": ["ANY_PLATFORM"],
+            "threatEntryTypes": ["URL"],
+            "threatEntries": [{"url": url}],
+        },
+    }
+
+    try:
+        import aiohttp  # type: ignore[import-untyped]
+    except ImportError:
+        logger.warning("aiohttp not installed — skipping Safe Browsing check")
+        return _PASS_THROUGH
+
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=_SAFE_BROWSING_TIMEOUT),
+        ) as session:
+            async with session.post(
+                _SAFE_BROWSING_ENDPOINT,
+                params={"key": api_key},
+                json=payload,
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+    except Exception as exc:
+        logger.warning(
+            "Google Safe Browsing request failed for '%s': %s — skipping",
+            url, exc,
+        )
+        return _PASS_THROUGH
+
+    matches = data.get("matches")
+    if not matches:
+        return {"is_unsafe": False, "checked": True, "threat_type": None}
+
+    # Take the first (most severe) match
+    threat_type = matches[0].get("threatType", "UNKNOWN")
+    return {
+        "is_unsafe": True,
+        "checked": True,
+        "threat_type": threat_type,
+    }
+
+
+# ──────────────────────────────────────────────
+# Tiered Threat Intelligence (FR-4 & Community Feeds)
+# ──────────────────────────────────────────────
+
+class ThreatFeedCache:
+    """
+    In-memory cache for local threat intelligence feeds (OpenPhish, URLhaus).
+    Refreshes hourly or when explicitly forced.
+    """
+
+    def __init__(
+        self,
+        openphish_path: Path = _OPENPHISH_FEED_PATH,
+        urlhaus_path: Path = _URLHAUS_FEED_PATH,
+        refresh_interval: float = _FEED_REFRESH_INTERVAL_SECONDS,
+    ) -> None:
+        self.openphish_path = openphish_path
+        self.urlhaus_path = urlhaus_path
+        self.refresh_interval = refresh_interval
+        self._lock = threading.Lock()
+        self.openphish_urls: Set[str] = set()
+        self.openphish_domains: Set[str] = set()
+        self.urlhaus_urls: Set[str] = set()
+        self.urlhaus_domains: Set[str] = set()
+        self.last_refreshed: float = time.monotonic()
+        self._load_feeds_locked()
+
+    def refresh_if_needed(self, force: bool = False) -> None:
+        now = time.monotonic()
+        with self._lock:
+            if not force and (now - self.last_refreshed) < self.refresh_interval:
+                return
+            self._load_feeds_locked()
+            self.last_refreshed = now
+
+    def _load_feeds_locked(self) -> None:
+        self.openphish_urls.clear()
+        self.openphish_domains.clear()
+        self.urlhaus_urls.clear()
+        self.urlhaus_domains.clear()
+
+        # OpenPhish community feed (newline-delimited URLs)
+        if self.openphish_path.exists():
+            try:
+                with open(self.openphish_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            norm = line.rstrip("/").lower()
+                            self.openphish_urls.add(norm)
+                            try:
+                                from urllib.parse import urlparse
+                                parsed = urlparse(line if "://" in line else f"http://{line}")
+                                if parsed.netloc:
+                                    self.openphish_domains.add(parsed.netloc.lower())
+                            except Exception:
+                                pass
+            except Exception as exc:
+                logger.warning("Failed loading OpenPhish feed: %s", exc)
+
+        # URLhaus community feed (CSV format: id,dateadded,url,url_status,...)
+        if self.urlhaus_path.exists():
+            try:
+                with open(self.urlhaus_path, "r", encoding="utf-8", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if not row or row[0].startswith("#"):
+                            continue
+                        url_val = ""
+                        if len(row) > 2 and row[2].startswith("http"):
+                            url_val = row[2].strip()
+                        else:
+                            for item in row:
+                                if item.strip().startswith("http"):
+                                    url_val = item.strip()
+                                    break
+                        if url_val:
+                            norm = url_val.rstrip("/").lower()
+                            self.urlhaus_urls.add(norm)
+                            try:
+                                from urllib.parse import urlparse
+                                parsed = urlparse(url_val)
+                                if parsed.netloc:
+                                    self.urlhaus_domains.add(parsed.netloc.lower())
+                            except Exception:
+                                pass
+            except Exception as exc:
+                logger.warning("Failed loading URLhaus feed: %s", exc)
+
+    def check(self, url: str, domain: Optional[str] = None) -> Dict[str, Any]:
+        self.refresh_if_needed()
+        norm_url = url.rstrip("/").lower()
+        norm_domain = domain.lower() if domain else None
+
+        openphish_hit = (
+            norm_url in self.openphish_urls
+            or (norm_domain and norm_domain in self.openphish_domains)
+        )
+        urlhaus_hit = (
+            norm_url in self.urlhaus_urls
+            or (norm_domain and norm_domain in self.urlhaus_domains)
+        )
+
+        return {
+            "openphish_hit": bool(openphish_hit),
+            "urlhaus_hit": bool(urlhaus_hit),
+            "is_unsafe": bool(openphish_hit or urlhaus_hit),
+            "checked": True,
+        }
+
+    def clear(self) -> None:
+        with self._lock:
+            self.openphish_urls.clear()
+            self.openphish_domains.clear()
+            self.urlhaus_urls.clear()
+            self.urlhaus_domains.clear()
+            self.last_refreshed = time.monotonic()
+
+
+_threat_feed_cache = ThreatFeedCache()
+
+
+class VirusTotalRateLimiter:
+    """
+    Enforces VirusTotal free tier rate limits:
+    - Max 4 requests per 60 seconds
+    - Max 500 requests per 24 hours
+    """
+
+    def __init__(self, max_per_min: int = 4, max_per_day: int = 500) -> None:
+        self.max_per_min = max_per_min
+        self.max_per_day = max_per_day
+        self._requests: List[float] = []
+        self._lock = threading.Lock()
+
+    def allow_request(self) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            # Drop entries older than 24h
+            self._requests = [t for t in self._requests if now - t < 86400.0]
+            if len(self._requests) >= self.max_per_day:
+                return False
+            # Check last 60s
+            recent = [t for t in self._requests if now - t < 60.0]
+            if len(recent) >= self.max_per_min:
+                return False
+            self._requests.append(now)
+            return True
+
+    def reset(self) -> None:
+        with self._lock:
+            self._requests.clear()
+
+
+_vt_rate_limiter = VirusTotalRateLimiter()
+
+
+async def check_alienvault_otx(
+    url: str,
+    domain: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Query AlienVault OTX indicator details (Tier 3).
+    Gracefully passes through if OTX_API_KEY is not set or network fails.
+    """
+    _PASS_THROUGH: Dict[str, Any] = {
+        "is_unsafe": False,
+        "checked": False,
+        "pulse_count": 0,
+    }
+    api_key = os.environ.get("OTX_API_KEY", "") or _OTX_API_KEY
+    if not api_key:
+        return _PASS_THROUGH
+
+    try:
+        import aiohttp
+    except ImportError:
+        return _PASS_THROUGH
+
+    target_domain = domain
+    if not target_domain:
+        try:
+            from urllib.parse import urlparse
+            target_domain = urlparse(url).netloc
+        except Exception:
+            target_domain = None
+
+    if not target_domain:
+        return _PASS_THROUGH
+
+    endpoint = f"{_OTX_INDICATOR_ENDPOINT}/domain/{target_domain}/general"
+    try:
+        headers = {"X-OTX-API-KEY": api_key}
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=_OTX_TIMEOUT),
+        ) as session:
+            async with session.get(endpoint, headers=headers) as resp:
+                if resp.status != 200:
+                    return _PASS_THROUGH
+                data = await resp.json()
+                pulse_info = data.get("pulse_info", {})
+                pulse_count = pulse_info.get("count", 0)
+                return {
+                    "is_unsafe": pulse_count > 0,
+                    "checked": True,
+                    "pulse_count": pulse_count,
+                }
+    except Exception as exc:
+        logger.debug("AlienVault OTX check failed for '%s': %s", target_domain, exc)
+        return _PASS_THROUGH
+
+
+async def check_virustotal(
+    url: str,
+    domain: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Query VirusTotal v3 URL analysis (Tier 4).
+    Enforces strict 4 req/min and 500 req/day rate limits.
+    Gracefully passes through if VIRUSTOTAL_API_KEY is unset or limit reached.
+    """
+    _PASS_THROUGH: Dict[str, Any] = {
+        "is_unsafe": False,
+        "checked": False,
+        "positives": 0,
+    }
+    api_key = os.environ.get("VIRUSTOTAL_API_KEY", "") or _VIRUSTOTAL_API_KEY
+    if not api_key:
+        return _PASS_THROUGH
+
+    if not _vt_rate_limiter.allow_request():
+        logger.debug("VirusTotal rate limit reached (4/min or 500/day) — skipping VT")
+        return {
+            "is_unsafe": False,
+            "checked": False,
+            "rate_limited": True,
+            "positives": 0,
+        }
+
+    try:
+        import aiohttp
+    except ImportError:
+        return _PASS_THROUGH
+
+    try:
+        # Base64url without padding as per VT v3 URL identifier format
+        url_id = base64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
+        endpoint = f"{_VIRUSTOTAL_URL_ENDPOINT}/{url_id}"
+        headers = {"x-apikey": api_key}
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=_VIRUSTOTAL_TIMEOUT),
+        ) as session:
+            async with session.get(endpoint, headers=headers) as resp:
+                if resp.status != 200:
+                    return _PASS_THROUGH
+                data = await resp.json()
+                stats = (
+                    data.get("data", {})
+                    .get("attributes", {})
+                    .get("last_analysis_stats", {})
+                )
+                malicious = stats.get("malicious", 0)
+                suspicious = stats.get("suspicious", 0)
+                positives = malicious + suspicious
+                return {
+                    "is_unsafe": positives > 0,
+                    "checked": True,
+                    "positives": positives,
+                    "malicious": malicious,
+                    "suspicious": suspicious,
+                }
+    except Exception as exc:
+        logger.debug("VirusTotal check failed for '%s': %s", url, exc)
+        return _PASS_THROUGH
+
+
+async def check_threat_intel(
+    url: str,
+    domain: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Tiered threat intelligence orchestrator:
+      Tier 1: Local OpenPhish & URLhaus feeds (hourly refresh)
+      Tier 2: Google Safe Browsing API v4 (1.0s timeout)
+      Tier 3: AlienVault OTX indicator search (1.0s timeout)
+      Tier 4: VirusTotal URL report (4/min, 500/day limit, demo only)
+    """
+    flags: List[str] = []
+    risk_delta = 0.0
+
+    # Tier 1: Local Feeds
+    t1_result = _threat_feed_cache.check(url, domain=domain)
+    if t1_result.get("openphish_hit"):
+        flags.append("THREAT_INTEL_OPENPHISH_FLAGGED")
+        risk_delta += _RISK_OPENPHISH
+    if t1_result.get("urlhaus_hit"):
+        flags.append("THREAT_INTEL_URLHAUS_FLAGGED")
+        risk_delta += _RISK_URLHAUS
+
+    # Tier 2: Google Safe Browsing
+    t2_result = await check_google_safe_browsing(url)
+    if t2_result.get("is_unsafe"):
+        flags.append("GOOGLE_SAFE_BROWSING_FLAGGED")
+        risk_delta += _RISK_SAFE_BROWSING
+
+    # Tier 3: AlienVault OTX
+    t3_result = await check_alienvault_otx(url, domain=domain)
+    if t3_result.get("is_unsafe"):
+        flags.append("OTX_PULSE_FLAGGED")
+        risk_delta += _RISK_OTX
+
+    # Tier 4: VirusTotal
+    t4_result = await check_virustotal(url, domain=domain)
+    if t4_result.get("is_unsafe"):
+        flags.append("VIRUSTOTAL_MALICIOUS_FLAGGED")
+        risk_delta += _RISK_VIRUSTOTAL
+
+    is_unsafe = (
+        t1_result.get("is_unsafe", False)
+        or t2_result.get("is_unsafe", False)
+        or t3_result.get("is_unsafe", False)
+        or t4_result.get("is_unsafe", False)
+    )
+
+    return {
+        "is_unsafe": is_unsafe,
+        "risk_delta": risk_delta,
+        "flags": flags,
+        "tier1_feeds": t1_result,
+        "tier2_safe_browsing": t2_result,
+        "tier3_otx": t3_result,
+        "tier4_virustotal": t4_result,
+    }
 
 
 # ──────────────────────────────────────────────
@@ -782,6 +1313,9 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 is_typosquatting=cached.is_typo,
                 target_brand=cached.target_brand,
                 domain_age_days=cached.age_days,
+                registrar=cached.registrar,
+                safe_browsing_threat=cached.safe_browsing_threat,
+                threat_intel=cached.threat_intel,
                 flags=list(cached.flags),
                 details=f"Analysed {url}; {len(cached.flags)} flag(s) raised [cached]",
                 latency_ms=round(elapsed, 2),
@@ -815,16 +1349,22 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 target_brand = homoglyph_brand
 
         # ── Step 5: WHOIS age (with zero-downtime fallback) ──
-        age_days, age_delta, age_flags = await _check_whois_age(
+        age_days, registrar, age_delta, age_flags = await _check_whois_age(
             registered_domain, suffix=suffix,
         )
         risk_score += age_delta
         flags.extend(age_flags)
 
-        # ── Step 6: Normalise score ──
+        # ── Step 6: Tiered Threat Intelligence (FR-4 & feeds) ──
+        threat_intel = await check_threat_intel(url, domain=registered_domain)
+        risk_score += threat_intel["risk_delta"]
+        flags.extend(threat_intel["flags"])
+        sb_threat = threat_intel.get("tier2_safe_browsing", {}).get("threat_type")
+
+        # ── Step 7: Normalise score ──
         risk_score = max(0.0, min(100.0, risk_score))
 
-        # ── Step 7: Populate domain-result cache ──
+        # ── Step 8: Populate domain-result cache ──
         _domain_cache.put(
             registered_domain,
             _DomainCacheEntry(
@@ -835,6 +1375,10 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 is_homoglyph=is_homoglyph,
                 homoglyph_brand=homoglyph_brand,
                 age_days=age_days,
+                registrar=registrar,
+                safe_browsing_threat=sb_threat,
+                threat_intel=threat_intel,
+                threat_intel_delta=threat_intel["risk_delta"],
                 flags=tuple(flags),
                 tld_delta=tld_delta,
                 typo_delta=typo_delta,
@@ -854,6 +1398,9 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
             is_typosquatting=is_typo,
             target_brand=target_brand,
             domain_age_days=age_days,
+            registrar=registrar,
+            safe_browsing_threat=sb_threat,
+            threat_intel=threat_intel,
             flags=flags,
             details=f"Analysed {url}; {len(flags)} flag(s) raised",
             latency_ms=round(elapsed, 2),
@@ -867,3 +1414,33 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
             details=str(exc),
             latency_ms=round(elapsed, 2),
         )
+
+
+# ---------------------------------------------------------------------------
+# Re-exports for Production-Grade Multi-Signal URL Inspection Pipeline
+# ---------------------------------------------------------------------------
+try:
+    from phishlens.agents.url_agent import (
+        DOMAnalysisResult,
+        DOMInspector,
+        HomographEngine,
+        HomographResult,
+        RedirectHop,
+        RedirectTraceResult,
+        RedirectTracer,
+        RiskSignal,
+        SSLAnalysisResult,
+        SSLAnalyzer,
+        URLAgent,
+        URLAgentInput,
+        URLAgentOutput,
+        analyze_homograph_and_brands,
+        analyze_ssl_infrastructure,
+        confusable_skeleton,
+        inspect_dom_and_favicons,
+        murmur3_favicon_hash,
+        run_url_agent,
+        trace_redirects_and_cloaking,
+    )
+except ImportError:
+    pass

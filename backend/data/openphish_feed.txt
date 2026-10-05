@@ -1,0 +1,4 @@
+# OpenPhish community feed — placeholder
+# Real feed URL: https://openphish.com/feed.txt
+# This file is refreshed hourly by the threat_intel loader.
+# One URL per line.

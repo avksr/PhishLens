@@ -6,6 +6,9 @@ from shared.models import (
     SenderAgentResult,
     IntentAgentResult,
     UpiAgentResult,
+    BankVerificationResult,
+    OsintHistoryResult,
+    OsintReportItem,
     RiskTierEnum,
     PrdVerdictEnum,
     ActionRequiredEnum,
@@ -15,7 +18,7 @@ from shared.models import (
     TldReputationEnum,
     ConfidenceLevelEnum
 )
-from core.scoring_engine import compute_score, _compute_dynamic_weights
+from core.scoring_engine import compute_score, _compute_dynamic_weights, _compute_noisy_or_base_score
 
 
 @pytest.fixture
@@ -148,7 +151,7 @@ def test_scoring_latency_benchmark(base_request):
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     assert elapsed_ms < 10.0
-    assert resp.overall_risk_score == 40
+    assert resp.overall_risk_score == 35  # Noisy-OR: 1 - (1-0.16)*(1-0.12)*(1-0.12) = 34.95 -> 35
     assert resp.risk_tier == RiskTierEnum.CAUTION
 
 
@@ -527,4 +530,480 @@ def test_benign_personal_conversation(base_request):
     assert resp.overall_risk_score <= 20
     assert resp.verdict_category == PrdVerdictEnum.SAFE
     assert resp.risk_tier == RiskTierEnum.SAFE
+
+
+# ─── TASK 5.1 & 5.3 SPECIFIC VERIFICATION TESTS ─────────────────────────────
+
+
+def test_dynamic_weights_with_upi_active():
+    """
+    Task 5.1: Verify base with UPI assigns URL 30%, Sender 25%, Intent 25%, UPI 20%.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0, detected_vpa="user@okhdfcbank")
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    assert weights["url_weight"] == 0.30
+    assert weights["sender_weight"] == 0.25
+    assert weights["intent_weight"] == 0.25
+    assert weights["upi_weight"] == 0.20
+    assert round(sum(weights.values()), 4) == 1.0
+
+
+def test_dynamic_weights_without_upi():
+    """
+    Task 5.1: Verify base without UPI assigns URL 40%, Sender 30%, Intent 30%.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r=None)
+    assert weights["url_weight"] == 0.40
+    assert weights["sender_weight"] == 0.30
+    assert weights["intent_weight"] == 0.30
+    assert round(sum(weights.values()), 4) == 1.0
+
+
+def test_dynamic_weights_with_upi_skipped():
+    """
+    Task 5.1: If UPI agent is SKIPPED, weights fall back to base 3-vector (URL 40%, Sender 30%, Intent 30%).
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    assert weights["url_weight"] == 0.40
+    assert weights["sender_weight"] == 0.30
+    assert weights["intent_weight"] == 0.30
+    assert weights["upi_weight"] == 0.0
+    assert round(weights["url_weight"] + weights["sender_weight"] + weights["intent_weight"], 4) == 1.0
+
+
+def test_dynamic_weights_with_upi_and_url_skipped():
+    """
+    Task 5.1: If URL is SKIPPED while UPI is active, the remaining 0.70 total is normalized proportionally.
+    Sender: 0.25 / 0.70 = 0.3571
+    Intent: 0.25 / 0.70 = 0.3571
+    UPI:    0.20 / 0.70 = 0.2857
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0, detected_vpa="test@upi")
+
+    weights = _compute_dynamic_weights(url_r, sender_r, intent_r, upi_r)
+    assert weights["url_weight"] == 0.0
+    assert weights["sender_weight"] == 0.3571
+    assert weights["intent_weight"] == 0.3571
+    assert weights["upi_weight"] == 0.2857
+    assert round(sum(weights.values()), 2) == 1.0
+
+
+def test_scoring_sla_strictly_under_10ms(base_request):
+    """
+    Task 5.1: Confirm the scoring engine SLA remains strictly under 10ms across 500 executions.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=60.0, latency_ms=0.5)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=70.0, latency_ms=0.5)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=80.0, latency_ms=0.5)
+    upi_r = UpiAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=75.0, latency_ms=0.5, detected_vpa="pay@okhdfc")
+
+    durations = []
+    for _ in range(500):
+        t0 = time.perf_counter()
+        resp = compute_score(base_request, url_r, sender_r, intent_r, upi_r)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        durations.append(elapsed_ms)
+
+    max_latency = max(durations)
+    median_latency = sorted(durations)[len(durations) // 2]
+    assert max_latency < 10.0, f"Max latency exceeded 10ms SLA: {max_latency:.2f}ms"
+    assert median_latency < 2.0, f"Median latency too high: {median_latency:.2f}ms"
+
+
+def test_hindi_verdict_and_recommendation_polish(base_request):
+    """
+    Task 5.3: Verify verdict_hi and recommendation_hi generate grammatically sound,
+    natural Hindi advisories for elderly citizens, including personal GSM warnings.
+    """
+    # 1. Personal GSM Caution case
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=35.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        sender_analyzed="+919876543210"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=35.0,
+        detected_intent=DetectedIntentEnum.SUSPICIOUS
+    )
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+
+    # Check caution headline contains natural advisory
+    assert "सतर्कता आवश्यक" in resp.verdict_hi
+    assert "व्यक्तिगत नंबर" in resp.verdict_hi
+    assert "1930" in resp.recommendation_hi
+    assert any('\u0900' <= c <= '\u097f' for c in resp.verdict_hi)
+    assert any('\u0900' <= c <= '\u097f' for c in resp.recommendation_hi)
+
+    # 2. Critical Scam case with Bank Impersonation on Personal GSM
+    sender_crit = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=85.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        brand_claimed="State Bank of India",
+        flags=["COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM"]
+    )
+    intent_crit = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=85.0,
+        detected_intent=DetectedIntentEnum.KYC_VERIFICATION
+    )
+    resp_crit = compute_score(base_request, url_r, sender_crit, intent_crit)
+    assert "सावधान" in resp_crit.verdict_hi or "धोखाधड़ी" in resp_crit.verdict_hi
+    assert "व्यक्तिगत" in resp_crit.verdict_hi or "फर्जी" in resp_crit.verdict_hi
+    assert "1930" in resp_crit.recommendation_hi
+
+
+# ─── NOISY-OR, FLOOR PRECEDENCE & RULE 8 ABUSE-PROOFING TESTS ──────────────
+
+
+def test_noisy_or_mathematical_properties():
+    """
+    Test Noisy-OR baseline aggregation formula:
+      BaseScore = 100.0 * (1 - Π (1 - weight × score × confidence))
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=50.0, confidence=1.0)
+    weights = {"url_weight": 0.40, "sender_weight": 0.30, "intent_weight": 0.30}
+
+    # Expected:
+    # term_url = 0.4 * 0.5 * 1.0 = 0.20 -> 1 - 0.20 = 0.80
+    # term_sender = 0.3 * 0.5 * 1.0 = 0.15 -> 1 - 0.15 = 0.85
+    # term_intent = 0.3 * 0.5 * 1.0 = 0.15 -> 1 - 0.15 = 0.85
+    # prod = 0.80 * 0.85 * 0.85 = 0.578
+    # base_score = 100 * (1 - 0.578) = 42.2
+    score = _compute_noisy_or_base_score(weights, url_r, sender_r, intent_r)
+    assert round(score, 1) == 42.2
+
+
+def test_noisy_or_zero_risk_clean():
+    """All clean vectors must strictly produce 0.0 base score."""
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=0.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=0.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=0.0, confidence=1.0)
+    weights = {"url_weight": 0.40, "sender_weight": 0.30, "intent_weight": 0.30}
+
+    score = _compute_noisy_or_base_score(weights, url_r, sender_r, intent_r)
+    assert score == 0.0
+
+
+def test_precedence_bank_name_mismatch_beats_trai_whitelist(base_request):
+    """
+    Explicit Precedence: Registered bank account name mismatch (floor 88)
+    MUST beat and override the official TRAI DLT whitelist cap (cap 12).
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+        sender_analyzed="VM-HDFCBK",
+        brand_claimed="HDFC Bank"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=10.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+    bank_verif = BankVerificationResult(
+        status=AgentStatusEnum.SUCCESS,
+        vpa="hdfc-help@okaxis",
+        registered_bank_name="Mohd Imran",
+        claimed_name="HDFC Bank",
+        is_name_mismatch=True,
+        flags=["NAME_MISMATCH_DETECTED"]
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r, bank_verification=bank_verif)
+    assert resp.overall_risk_score >= 88, (
+        f"Floor failed to beat whitelist cap! Expected >= 88, got {resp.overall_risk_score}"
+    )
+    assert resp.risk_tier == RiskTierEnum.CRITICAL
+    assert resp.action_required == ActionRequiredEnum.BLOCK_TRANSACTION
+    assert not any("BENIGN_VERIFICATION" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+    assert any("CRITICAL_ESCALATION" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_precedence_identity_contradiction_beats_trai_whitelist(base_request):
+    """
+    Explicit Precedence: Cross-agent contradiction (floor 92)
+    MUST beat and override the official TRAI DLT whitelist cap (cap 12).
+    """
+    # TRAI header claiming SBI, but embedded URL is a typosquatting fake portal
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=90.0,
+        domain="sbi-rewards.top",
+        is_typosquatting=True,
+        target_brand="SBI"
+    )
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+        sender_analyzed="VK-SBIINB",
+        brand_claimed="SBI"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=15.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    assert resp.overall_risk_score >= 92, (
+        f"Identity contradiction floor failed to beat TRAI cap: {resp.overall_risk_score}"
+    )
+    assert resp.risk_tier == RiskTierEnum.CRITICAL
+    assert not any("BENIGN_VERIFICATION" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_precedence_corroborated_osint_beats_trai_whitelist(base_request):
+    """
+    Explicit Precedence: Corroborated OSINT scam history (floor 86+)
+    MUST beat the official TRAI DLT whitelist cap.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+        sender_analyzed="AX-AIRTEL"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=40.0,
+        detected_intent=DetectedIntentEnum.SUSPICIOUS
+    )
+    osint_r = OsintHistoryResult(
+        status=AgentStatusEnum.SUCCESS,
+        total_complaints=4,
+        proof_snippet="Flagged 4 times for SIM swap scam on CyberCrime Portal",
+        reports=[
+            OsintReportItem(source="CyberCrime Portal", scam_category="SIM_SWAP", details="Scam", frequency_flagged=2),
+            OsintReportItem(source="ConsumerComplaints", scam_category="SIM_SWAP", details="Scam", frequency_flagged=2),
+        ]
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r, osint_history=osint_r)
+    assert resp.overall_risk_score >= 86, (
+        f"Corroborated OSINT floor failed to beat TRAI cap: {resp.overall_risk_score}"
+    )
+    assert resp.risk_tier == RiskTierEnum.CRITICAL
+    assert not any("BENIGN_VERIFICATION" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_precedence_confirmed_feed_hit_beats_trai_whitelist(base_request):
+    """
+    Explicit Precedence: Confirmed OpenPhish / URLhaus threat feed hit (floor 85)
+    MUST beat the official TRAI DLT whitelist cap.
+    """
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=85.0,
+        domain="secure-hdfc-otp.xyz",
+        flags=["OPENPHISH_HIT", "CONFIRMED_FEED_HIT"]
+    )
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=5.0,
+        sender_category=SenderCategoryEnum.OFFICIAL_TRAI_HEADER,
+        sender_analyzed="VM-HDFCBK"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=10.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    assert resp.overall_risk_score >= 85, (
+        f"Confirmed feed hit floor failed to beat TRAI cap: {resp.overall_risk_score}"
+    )
+    assert resp.risk_tier in (RiskTierEnum.CRITICAL, RiskTierEnum.HIGH_RISK)
+    assert not any("BENIGN_VERIFICATION" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_rule_8_abuse_proof_uncorroborated_capped_at_high_risk(base_request):
+    """
+    Rule 8 Abuse-Proof: An uncorroborated single community complaint on an otherwise
+    clean message must be capped at HIGH_RISK (max score <= 75), never escalating to CRITICAL.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=10.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        sender_analyzed="+919876543210"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=10.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+    # Single uncorroborated community complaint from one source
+    osint_r = OsintHistoryResult(
+        status=AgentStatusEnum.SUCCESS,
+        total_complaints=1,
+        internal_reports_count=1,
+        external_forum_mentions=0,
+        proof_snippet="Single user report on community forum",
+        reports=[
+            OsintReportItem(source="RandomForum", scam_category="DISPUTE", details="Slow delivery", frequency_flagged=1)
+        ]
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r, osint_history=osint_r)
+    # Must be capped at HIGH_RISK (max 75), preventing malicious reporter brigading
+    assert resp.overall_risk_score <= 75, f"Uncorroborated report exceeded 75: {resp.overall_risk_score}"
+    assert resp.risk_tier != RiskTierEnum.CRITICAL
+    assert any("HIGH_RISK_ESCALATION" in h and "reporter abuse" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_rule_8_abuse_proof_distinct_reporters_corroborated(base_request):
+    """
+    Rule 8 Abuse-Proof: When reports originate from multiple distinct sources (e.g. >= 2)
+    or have elevated vector indicators, it is corroborated and escalates to CRITICAL.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=15.0,
+        sender_category=SenderCategoryEnum.PERSONAL_GSM,
+        sender_analyzed="+919876543210"
+    )
+    intent_r = IntentAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=15.0,
+        detected_intent=DetectedIntentEnum.BENIGN
+    )
+    # Corroborated: 2 distinct independent sources (Internal DB + External Forums)
+    osint_r = OsintHistoryResult(
+        status=AgentStatusEnum.SUCCESS,
+        total_complaints=4,
+        internal_reports_count=2,
+        external_forum_mentions=2,
+        proof_snippet="Verified by multiple platforms",
+        reports=[
+            OsintReportItem(source="PhishLens Crowdsource DB", scam_category="FRAUD", details="Fake seller", frequency_flagged=2),
+            OsintReportItem(source="National Consumer Portal", scam_category="FRAUD", details="Unpaid parcel", frequency_flagged=2),
+        ]
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r, osint_history=osint_r)
+    assert resp.overall_risk_score >= 86
+    assert resp.risk_tier == RiskTierEnum.CRITICAL
+
+
+def test_rule_8_time_decay_old_reports(base_request):
+    """
+    Rule 8 Time Decay: Reports older than 180 days decay to 0.4x weight, preventing stale numbers
+    that may have been re-assigned by telecom circles from being permanently penalized.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SKIPPED, risk_score=0.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=10.0, sender_category=SenderCategoryEnum.PERSONAL_GSM)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=10.0, detected_intent=DetectedIntentEnum.BENIGN)
+
+    # 1 complaint from 300 days ago (age > 180 days -> decays to 0.4)
+    osint_r = OsintHistoryResult(
+        status=AgentStatusEnum.SUCCESS,
+        total_complaints=1,
+        reports=[
+            OsintReportItem(
+                source="OldForum",
+                scam_category="OLD_SCAM",
+                details="Stale report",
+                frequency_flagged=1,
+                date_reported="2024-01-01T00:00:00Z"
+            )
+        ]
+    )
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r, osint_history=osint_r)
+    # Decayed uncorroborated report must not exceed 75
+    assert resp.overall_risk_score <= 75
+    assert resp.risk_tier != RiskTierEnum.CRITICAL
+
+
+def test_threat_feed_confirmed_hit_floor_85(base_request):
+    """
+    Confirmed feed hit (OpenPhish / URLhaus) triggers floor 85.
+    """
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=70.0,
+        flags=["OPENPHISH_HIT"]
+    )
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=20.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=20.0, detected_intent=DetectedIntentEnum.BENIGN)
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    assert resp.overall_risk_score >= 85
+    assert any("OpenPhish/URLhaus" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_threat_feed_single_reputation_flag_weight_only(base_request):
+    """
+    Single Safe Browsing / VirusTotal flag enters via weight only (does NOT trigger floor 85).
+    """
+    url_r = UrlAgentResult(
+        status=AgentStatusEnum.SUCCESS,
+        risk_score=35.0,
+        flags=["VIRUSTOTAL_FLAG"]
+    )
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=10.0, sender_category=SenderCategoryEnum.PERSONAL_GSM)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=10.0, detected_intent=DetectedIntentEnum.BENIGN)
+
+    resp = compute_score(base_request, url_r, sender_r, intent_r)
+    # Does NOT trigger floor 85
+    assert resp.overall_risk_score < 70
+    assert not any("CRITICAL_ESCALATION" in h and "OpenPhish" in h for h in resp.audit_trail.synthesis_breakdown.heuristics_triggered)
+
+
+def test_osint_skipped_lowers_confidence_not_risk_score(base_request):
+    """
+    OSINT SKIPPED lowers confidence rating, but does NOT penalize or inflate risk score.
+    """
+    url_r = UrlAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
+    sender_r = SenderAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
+    intent_r = IntentAgentResult(status=AgentStatusEnum.SUCCESS, risk_score=40.0)
+
+    # Baseline with no OSINT
+    resp_baseline = compute_score(base_request, url_r, sender_r, intent_r)
+
+    # With OSINT agent returning SKIPPED
+    osint_skipped = OsintHistoryResult(
+        status=AgentStatusEnum.SKIPPED,
+        risk_score=0.0,
+        details="No UPI ID or phone number found for OSINT lookup."
+    )
+    resp_osint_skipped = compute_score(base_request, url_r, sender_r, intent_r, osint_history=osint_skipped)
+
+    # Risk score must be identical (not penalized)
+    assert resp_osint_skipped.overall_risk_score == resp_baseline.overall_risk_score
+
+    # Epistemic confidence must be lower when OSINT was skipped
+    assert resp_osint_skipped.confidence_percentage <= resp_baseline.confidence_percentage
+    assert resp_osint_skipped.confidence in (ConfidenceLevelEnum.MEDIUM, ConfidenceLevelEnum.LOW)
+
+
 
