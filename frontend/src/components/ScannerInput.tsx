@@ -1,14 +1,19 @@
 // ────────────────────────────────────────────────────────────
-//  PhishLens  ·  ScannerInput Component  (Day 4 Revision)
-//  Single-box auto-detection with GooeyInput + StatefulButton + GlowingEffect
+//  PhishLens  ·  ScannerInput Component  (Day 5 Revision)
+//  Tabbed: Text scanning + File Upload Dropzone
+//  + Simulated tag + Agent SKIPPED warnings
 // ────────────────────────────────────────────────────────────
 
 import { useState, useRef, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { GooeyInput } from "@/components/ui/gooey-input";
 import { StatefulButton } from "@/components/ui/stateful-button";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
+import { UploadDropzone } from './UploadDropzone';
+import { ThreatBadges } from './ThreatBadges';
 import { scanMessage } from '../lib/api';
+import { mockScanResult } from '../lib/mockData';
 import type { ScanResponse, ScanRequest } from '../lib/types';
 import highRisk from '../../../datasets/payloads_high_risk.json';
 import safe     from '../../../datasets/payloads_safe.json';
@@ -58,6 +63,10 @@ function detectInputType(text: string): string {
   return '💬 Detected: SMS / Message';
 }
 
+// ── Input Mode Tabs ──────────────────────────────────────────
+
+type InputMode = 'text' | 'file';
+
 // ── Props ─────────────────────────────────────────────────────
 
 export interface ScannerInputProps {
@@ -73,21 +82,34 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
   const [isLoading,    setIsLoading]    = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [focused,      setFocused]      = useState(false);
+  const [inputMode,    setInputMode]    = useState<InputMode>('text');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const MAX = 8000;
   const charFrac = content.length / MAX;
   const charColor = charFrac > 0.9 ? '#FF3366' : charFrac > 0.75 ? '#FF6B00' : '#94A3B8';
 
+  // ── Mock data for conditional tags ─────────────────────────
+  const { isSimulated, detectedFlags, agents, targetIdentifier } = mockScanResult;
+
   // ── Auto-detect input type on every keystroke ───────────────
 
   const detectedBadge = useMemo(() => detectInputType(content), [content]);
+
+  // ── Detect if content contains a UPI ID ─────────────────────
+  const hasUpiId = useMemo(() => UPI_REGEX.test(content), [content]);
+  const upiMatch = useMemo(() => {
+    const match = content.match(UPI_REGEX);
+    return match ? match[0] : targetIdentifier;
+  }, [content, targetIdentifier]);
 
   // ── Preset loader ─────────────────────────────────────────
 
   const loadPreset = useCallback((preset: Preset) => {
     setContent(preset.payload.content);
     setActivePreset(preset.id);
+    setInputMode('text');
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, []);
 
@@ -95,11 +117,14 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!content.trim() || isLoading || disabled) return;
+    if (inputMode === 'text' && (!content.trim() || isLoading || disabled)) return;
+    if (inputMode === 'file' && (!uploadedFile || isLoading || disabled)) return;
     setIsLoading(true);
     try {
       const result = await scanMessage({
-        content: content.trim(),
+        content: inputMode === 'file'
+          ? `[File Upload] ${uploadedFile!.name} — Evidence scan requested`
+          : content.trim(),
       });
       onScanComplete(result);
     } catch (err) {
@@ -112,6 +137,7 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
   const handleClear = () => {
     setContent('');
     setActivePreset(null);
+    setUploadedFile(null);
     textareaRef.current?.focus();
   };
 
@@ -148,90 +174,223 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
                 </p>
               </div>
             </div>
-            {/* LIVE badge */}
-            <div
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20"
-              aria-label="Scanner active"
-            >
-              <span aria-hidden className="inline-block shrink-0 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-              <span className="text-[11px] font-bold text-emerald-400 tracking-wide font-mono">LIVE</span>
-            </div>
-          </div>
-
-          {/* ── Preset buttons ─────────────────────────────────── */}
-          <div>
-            <p className="text-[10.5px] sm:text-xs mb-2 text-slate-400 uppercase font-bold tracking-wider">
-              Quick Load Scenarios
-            </p>
-            <div role="group" aria-label="Preset scenarios" className="flex flex-wrap gap-2">
-              {PRESETS.map((p) => {
-                const active = activePreset === p.id;
-                return (
-                  <Button
-                    key={p.id}
-                    id={`preset-${p.id}`}
-                    type="button"
-                    variant={active ? "default" : "secondary"}
-                    size="sm"
-                    onClick={() => loadPreset(p)}
-                    disabled={isDisabled}
-                    className={`text-xs transition-all ${
-                      active
-                        ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.1)]'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    <span aria-hidden className="mr-1.5">{p.icon}</span>{p.label}
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── Textarea with GooeyInput + Pointer Highlight ──── */}
-          <div>
-            <label htmlFor="scanner-msg" className="block mb-2 text-[11px] font-semibold tracking-wide uppercase text-slate-400">
-              Message Content <span className="text-rose-500">*</span>
-            </label>
-
-            {/* ✨ Replaced standard textarea with GooeyInput */}
-            <GooeyInput
-              id="scanner-msg"
-              ref={textareaRef}
-              value={content}
-              onChange={e => {
-                setContent(e.target.value.slice(0, MAX));
-                setActivePreset(null);
-              }}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              disabled={isDisabled}
-              required
-              rows={4}
-              placeholder="Paste the suspicious SMS, WhatsApp message, email body, UPI payment note, or URL here…"
-              containerClassName={focused ? 'ring-1 ring-cyan-500/40 shadow-[0_0_15px_rgba(0,240,255,0.12)]' : ''}
-            />
-
-            {/* ── Dynamic Pill / Badge Below Textarea & Character Count ── */}
-            <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+            {/* LIVE badge + Simulated tag */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {isSimulated && (
+                <span className="text-gray-500 italic text-xs border border-gray-700 px-2 rounded-full select-none">
+                  Simulated
+                </span>
+              )}
               <div
-                id="scanner-detected-pill"
-                role="status"
-                aria-live="polite"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono shadow-[0_0_10px_rgba(0,240,255,0.1)]"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20"
+                aria-label="Scanner active"
               >
-                <span>{detectedBadge}</span>
+                <span aria-hidden className="inline-block shrink-0 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+                <span className="text-[11px] font-bold text-emerald-400 tracking-wide font-mono">LIVE</span>
               </div>
-
-              <span
-                aria-live="polite"
-                className="text-xs font-mono transition-colors"
-                style={{ color: charColor }}
-              >
-                {content.length.toLocaleString()} / {MAX.toLocaleString()}
-              </span>
             </div>
           </div>
+
+          {/* ── UPI Target Display with Simulated Tag ── */}
+          {hasUpiId && (
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-cyan-500/[0.04] border border-white/[0.08]">
+              <span className="text-base" aria-hidden>💳</span>
+              <code className="text-[12px] font-mono text-cyan-400 font-semibold">
+                {upiMatch}
+              </code>
+              {isSimulated && (
+                <span className="text-gray-500 italic text-xs border border-gray-700 px-2 rounded-full select-none">
+                  Simulated
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* ── Input Mode Tabs ──────────────────────────────── */}
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] w-fit">
+            <button
+              type="button"
+              onClick={() => setInputMode('text')}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold font-mono transition-all cursor-pointer ${
+                inputMode === 'text'
+                  ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(0,240,255,0.08)]'
+                  : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+              }`}
+            >
+              💬 Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputMode('file')}
+              className={`px-4 py-1.5 rounded-md text-xs font-semibold font-mono transition-all cursor-pointer ${
+                inputMode === 'file'
+                  ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shadow-[0_0_10px_rgba(0,240,255,0.08)]'
+                  : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+              }`}
+            >
+              📂 File Upload
+            </button>
+          </div>
+
+          {/* ── Preset buttons (text mode only) ───────────────── */}
+          <AnimatePresence mode="wait">
+            {inputMode === 'text' && (
+              <motion.div
+                key="text-presets"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <p className="text-[10.5px] sm:text-xs mb-2 text-slate-400 uppercase font-bold tracking-wider">
+                  Quick Load Scenarios
+                </p>
+                <div role="group" aria-label="Preset scenarios" className="flex flex-wrap gap-2">
+                  {PRESETS.map((p) => {
+                    const active = activePreset === p.id;
+                    return (
+                      <Button
+                        key={p.id}
+                        id={`preset-${p.id}`}
+                        type="button"
+                        variant={active ? "default" : "secondary"}
+                        size="sm"
+                        onClick={() => loadPreset(p)}
+                        disabled={isDisabled}
+                        className={`text-xs transition-all ${
+                          active
+                            ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.1)]'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        <span aria-hidden className="mr-1.5">{p.icon}</span>{p.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Input Area (Text or File) ──────────────────────── */}
+          <AnimatePresence mode="wait">
+            {inputMode === 'text' ? (
+              <motion.div
+                key="text-input"
+                initial={{ opacity: 0, x: -12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                transition={{ duration: 0.2 }}
+              >
+                <label htmlFor="scanner-msg" className="block mb-2 text-[11px] font-semibold tracking-wide uppercase text-slate-400">
+                  Message Content <span className="text-rose-500">*</span>
+                </label>
+
+                {/* ✨ Replaced standard textarea with GooeyInput */}
+                <GooeyInput
+                  id="scanner-msg"
+                  ref={textareaRef}
+                  value={content}
+                  onChange={e => {
+                    setContent(e.target.value.slice(0, MAX));
+                    setActivePreset(null);
+                  }}
+                  onFocus={() => setFocused(true)}
+                  onBlur={() => setFocused(false)}
+                  disabled={isDisabled}
+                  required
+                  rows={4}
+                  placeholder="Paste the suspicious SMS, WhatsApp message, email body, UPI payment note, or URL here…"
+                  containerClassName={focused ? 'ring-1 ring-cyan-500/40 shadow-[0_0_15px_rgba(0,240,255,0.12)]' : ''}
+                />
+
+                {/* ── Dynamic Pill / Badge Below Textarea & Character Count ── */}
+                <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+                  <div
+                    id="scanner-detected-pill"
+                    role="status"
+                    aria-live="polite"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono shadow-[0_0_10px_rgba(0,240,255,0.1)]"
+                  >
+                    <span>{detectedBadge}</span>
+                  </div>
+
+                  <span
+                    aria-live="polite"
+                    className="text-xs font-mono transition-colors"
+                    style={{ color: charColor }}
+                  >
+                    {content.length.toLocaleString()} / {MAX.toLocaleString()}
+                  </span>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="file-input"
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -12 }}
+                transition={{ duration: 0.2 }}
+              >
+                <label className="block mb-2 text-[11px] font-semibold tracking-wide uppercase text-slate-400">
+                  Evidence File <span className="text-rose-500">*</span>
+                </label>
+                <UploadDropzone
+                  onFileAccepted={(file) => setUploadedFile(file)}
+                  disabled={isDisabled}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Detected Threat Flags (from mock) ─────────────── */}
+          {detectedFlags.length > 0 && content.trim().length > 0 && (
+            <div className="pt-3 border-t border-white/[0.06]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 font-mono mb-2">
+                Threat Flags (Mock)
+              </p>
+              <ThreatBadges detectedFlags={detectedFlags} compact />
+            </div>
+          )}
+
+          {/* ── Agent Status List (with SKIPPED warning) ──────── */}
+          {content.trim().length > 0 && (
+            <div className="pt-3 border-t border-white/[0.06]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 font-mono mb-2">
+                Agent Pipeline Status
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {agents.map((agent) => (
+                  <div key={agent.name} className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          agent.status === 'SUCCESS'
+                            ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]'
+                            : agent.status === 'SKIPPED'
+                              ? 'bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.4)]'
+                              : 'bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.6)]'
+                        }`}
+                      />
+                      <span className="text-[11px] text-zinc-400 font-mono">
+                        {agent.name} · {agent.role}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {agent.status === 'SKIPPED' ? (
+                        <span className="text-yellow-500 text-xs">⚠️ external search unavailable</span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-emerald-400 font-semibold">
+                          {agent.status}
+                        </span>
+                      )}
+                      <span className="text-[9px] font-mono text-zinc-600">{agent.latency_ms}ms</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Action row ─────────────────────────────────────── */}
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-5 border-t border-slate-800">
@@ -241,7 +400,7 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
               type="button"
               variant="ghost"
               onClick={handleClear}
-              disabled={isDisabled || !content}
+              disabled={isDisabled || (!content && !uploadedFile)}
               className="text-slate-400 hover:text-slate-200"
             >
               <span aria-hidden className="mr-2">✕</span> Clear
@@ -263,7 +422,7 @@ export function ScannerInput({ onScanComplete, onScanError, disabled = false }: 
                 id="scanner-submit-btn"
                 type="submit"
                 status={isLoading ? 'loading' : 'idle'}
-                disabled={isDisabled || !content.trim()}
+                disabled={isDisabled || (inputMode === 'text' ? !content.trim() : !uploadedFile)}
                 loadingText="Analyzing 3 Agents…"
                 idleText={
                   <>

@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import type { AuditTrail, UrlAgentResult, SenderAgentResult, IntentAgentResult, SynthesisBreakdown, AuditLogEntry, RiskTier, Language } from '../lib/types';
 import { fetchRecentAuditLogs } from '../lib/api';
+import { mockScanResult } from '../lib/mockData';
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -47,8 +48,13 @@ function StatusBadge({ status }: { status: 'SUCCESS' | 'SKIPPED' | 'ERROR' }) {
   }[status];
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold font-mono tracking-wider border ${cfg.className}`}>
-      <span>{cfg.icon}</span> {status}
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold font-mono tracking-wider border ${cfg.className}`}>
+        <span>{cfg.icon}</span> {status}
+      </span>
+      {status === 'SKIPPED' && (
+        <span className="text-yellow-500 text-xs">⚠️ external search unavailable</span>
+      )}
     </span>
   );
 }
@@ -735,6 +741,26 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
 
           {/* Synthesis */}
           <SynthesisCard data={auditTrail.synthesis_breakdown} />
+
+          {/* ── Source Attribution Footer ── */}
+          {mockScanResult.sourceAttribution && (
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-zinc-950 border border-white/[0.08] mt-1">
+              <div
+                className="w-7 h-7 rounded-lg bg-cyan-500/8 border border-cyan-500/20 flex items-center justify-center shrink-0 text-sm"
+                aria-hidden
+              >
+                🔗
+              </div>
+              <div className="flex-1">
+                <p className="m-0 text-[10px] font-bold uppercase tracking-wider text-zinc-500 font-mono">
+                  Source Attribution
+                </p>
+                <p className="m-0 text-xs text-zinc-300 font-sans">
+                  Source: {mockScanResult.sourceAttribution}
+                </p>
+              </div>
+            </div>
+          )}
         </>
       )}
 

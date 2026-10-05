@@ -2,6 +2,7 @@
 //  PhishLens  ·  App  —  Bento Grid Dashboard (Cryptgen Aesthetic)
 //  Pitch-black, ultra-minimal borders, ambient glows
 //  + Bilingual toggle (EN / HI) + responsive layout
+//  + Landing Page route (?page=landing)
 // ────────────────────────────────────────────────────────────
 
 import './index.css';
@@ -18,6 +19,10 @@ import { ScannerInput }      from './components/ScannerInput';
 import { RiskGauge }         from './components/RiskGauge';
 import { AuditTrailDrawer }  from './components/AuditTrailDrawer';
 import { InterceptionModal } from './components/InterceptionModal';
+import { RecentScans }       from './components/RecentScans';
+import { ThreatBadges }      from './components/ThreatBadges';
+import { mockScanResult }    from './lib/mockData';
+import { LandingPage }       from './components/landing/LandingPage';
 
 // ── Threat Intel Feed — auto-cycling with framer-motion ──────
 
@@ -100,6 +105,38 @@ function ThreatIntelFeed({ lang }: { lang: Language }) {
 // ── Component ─────────────────────────────────────────────────
 
 export default function App() {
+  // ── Page routing (stateful + URL param) ───────────────────
+  const [currentPage, setCurrentPage] = useState<'landing' | 'dashboard'>(() => {
+    const page = new URLSearchParams(window.location.search).get('page');
+    return page === 'dashboard' ? 'dashboard' : 'landing';
+  });
+
+  useEffect(() => {
+    const onPopState = () => {
+      const page = new URLSearchParams(window.location.search).get('page');
+      setCurrentPage(page === 'dashboard' ? 'dashboard' : 'landing');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const navigateTo = (page: 'landing' | 'dashboard') => {
+    setCurrentPage(page);
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', page);
+    window.history.pushState({}, '', url.toString());
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
+  if (currentPage === 'landing') {
+    return <LandingPage onNavigateToDashboard={() => navigateTo('dashboard')} />;
+  }
+
+  return <DashboardView onNavigateToLanding={() => navigateTo('landing')} />;
+}
+
+// ── Dashboard Component ───────────────────────────────────────
+function DashboardView({ onNavigateToLanding }: { onNavigateToLanding?: () => void }) {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'threat-intel' | 'audit-logs' | 'settings'>('dashboard');
 
@@ -141,6 +178,15 @@ export default function App() {
   // ── Sidebar Navigation Links ──────────────────────────────
 
   const links: Links[] = [
+    {
+      label: "Landing Page",
+      href: "?page=landing",
+      icon: <Radio className="size-5 shrink-0 text-blue-400" />,
+      active: false,
+      onClick: () => {
+        onNavigateToLanding?.();
+      },
+    },
     {
       label: "Dashboard",
       href: "#dashboard",
@@ -533,6 +579,17 @@ export default function App() {
 
             </BentoGrid>
 
+            {/* ══════════════════════════════════════════════════
+                 RECENT SCAN HISTORY — Full width section
+               ══════════════════════════════════════════════════ */}
+            <div className="mt-6">
+              <BentoGrid className="md:grid-cols-1 gap-4">
+                <BentoGridItem className="md:col-span-1">
+                  <RecentScans lang={lang} />
+                </BentoGridItem>
+              </BentoGrid>
+            </div>
+
             {/* Mobile Risk Gauge — scaled down for mobile screens */}
             {result && (
               <div className="block sm:hidden mt-4 flex justify-center w-full overflow-hidden">
@@ -553,6 +610,16 @@ export default function App() {
                     ? 'स्कैनिंग शुरू करने के लिए ऊपर एक प्रीसेट परिदृश्य लोड करें या अपना संदेश पेस्ट करें।'
                     : 'Load a preset scenario or paste your own message above to begin scanning.'}
                 </p>
+
+                {/* Mock data indicator */}
+                {mockScanResult.isSimulated && (
+                  <div className="flex flex-col items-center gap-2 mt-2">
+                    <span className="text-gray-500 italic text-xs border border-gray-700 px-2 rounded-full">
+                      Simulated Mode
+                    </span>
+                    <ThreatBadges detectedFlags={mockScanResult.detectedFlags} compact />
+                  </div>
+                )}
               </div>
             )}
           </main>
