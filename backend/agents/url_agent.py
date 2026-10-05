@@ -57,7 +57,7 @@ _RISK_TYPOSQUATTING = 50.0
 _RISK_NEW_DOMAIN = 40.0
 
 # WHOIS timeout (seconds)
-_WHOIS_TIMEOUT = 1.5
+_WHOIS_TIMEOUT = 0.5
 
 # Domain age threshold (days)
 _NEW_DOMAIN_THRESHOLD_DAYS = 30
@@ -137,7 +137,7 @@ def _parse_domain(url: str) -> Tuple[str, str, str, str]:
     - ``registered_domain``: label + suffix (e.g. ``sbi-kyc-verify.top``)
     """
     ext = tldextract.extract(url)
-    return ext.subdomain, ext.domain, ext.top_domain_under_public_suffix, ext.suffix
+    return ext.subdomain, ext.domain, ext.registered_domain, ext.suffix
 
 
 def _check_tld_reputation(suffix: str) -> Tuple[TldReputationEnum, float, List[str]]:
