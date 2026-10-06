@@ -4,70 +4,83 @@
 // ────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from 'react';
+import { Button } from "@/components/ui/button";
 import type { AuditTrail, UrlAgentResult, SenderAgentResult, IntentAgentResult, SynthesisBreakdown, AuditLogEntry, RiskTier, Language } from '../lib/types';
 import { fetchRecentAuditLogs } from '../lib/api';
+import { mockScanResult } from '../lib/mockData';
 
 // ── Helpers ───────────────────────────────────────────────────
 
-function scoreColor(n: number): string {
-  if (n <= 24) return '#00E676';
-  if (n <= 49) return '#FFB800';
-  if (n <= 77) return '#FF6B00';
-  return '#FF3366';
+function getScoreBadgeClass(n: number): string {
+  if (n <= 24) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_12px_rgba(52,211,153,0.15)]';
+  if (n <= 49) return 'text-amber-400 bg-amber-500/10 border-amber-500/30 shadow-[0_0_12px_rgba(251,191,36,0.15)]';
+  if (n <= 77) return 'text-orange-400 bg-orange-500/10 border-orange-500/30 shadow-[0_0_12px_rgba(251,146,60,0.15)]';
+  return 'text-rose-400 bg-rose-500/10 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.15)]';
 }
 
-function tierColor(tier: RiskTier): string {
+function getTierBadgeClass(tier: RiskTier): string {
   switch (tier) {
-    case 'SAFE':      return '#00E676';
-    case 'CAUTION':   return '#FFB800';
-    case 'HIGH_RISK': return '#FF6B00';
-    case 'CRITICAL':  return '#FF3366';
+    case 'SAFE':
+      return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_10px_rgba(52,211,153,0.15)]';
+    case 'CAUTION':
+      return 'text-amber-400 bg-amber-500/10 border-amber-500/30 shadow-[0_0_10px_rgba(251,191,36,0.15)]';
+    case 'HIGH_RISK':
+      return 'text-orange-400 bg-orange-500/10 border-orange-500/30 shadow-[0_0_10px_rgba(251,146,60,0.15)]';
+    case 'CRITICAL':
+      return 'text-rose-400 bg-rose-500/10 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.15)]';
   }
 }
 
 function StatusBadge({ status }: { status: 'SUCCESS' | 'SKIPPED' | 'ERROR' }) {
   const cfg = {
-    SUCCESS: { bg: 'rgba(0,230,118,0.1)', border: 'rgba(0,230,118,0.3)', color: '#00E676', icon: '✓' },
-    SKIPPED: { bg: 'rgba(75,85,104,0.15)', border: '#374151', color: '#94A3B8', icon: '–' },
-    ERROR:   { bg: 'rgba(255,51,102,0.1)', border: 'rgba(255,51,102,0.3)', color: '#FF3366', icon: '!' },
+    SUCCESS: {
+      className: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.1)]',
+      icon: '✓',
+    },
+    SKIPPED: {
+      className: 'bg-zinc-900 border-white/[0.08] text-zinc-400',
+      icon: '–',
+    },
+    ERROR: {
+      className: 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.15)]',
+      icon: '!',
+    },
   }[status];
+
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '2px 9px', borderRadius: '12px', fontSize: '10.5px', fontWeight: 700,
-      fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.5px',
-      background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color,
-    }}>
-      {cfg.icon} {status}
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold font-mono tracking-wider border ${cfg.className}`}>
+        <span>{cfg.icon}</span> {status}
+      </span>
+      {status === 'SKIPPED' && (
+        <span className="text-yellow-500 text-xs">⚠️ external search unavailable</span>
+      )}
     </span>
   );
 }
 
 function ScorePill({ score }: { score: number }) {
-  const c = scoreColor(score);
+  const badgeClass = getScoreBadgeClass(score);
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '3px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700,
-      fontFamily: 'JetBrains Mono, monospace',
-      color: c, background: `${c}14`, border: `1px solid ${c}35`,
-    }}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold font-mono border ${badgeClass}`}>
       {score}
-      <span style={{ fontSize: '10px', fontWeight: 400, opacity: 0.7 }}>/100</span>
+      <span className="text-[10px] font-normal opacity-70">/100</span>
     </span>
   );
 }
 
 function FlagList({ flags }: { flags: string[] }) {
-  if (!flags.length) return (
-    <span style={{ fontSize: '12px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', fontStyle: 'italic' }}>No flags raised</span>
-  );
+  if (!flags.length) {
+    return (
+      <span className="text-xs text-zinc-500 font-sans italic">No flags raised</span>
+    );
+  }
   return (
-    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+    <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
       {flags.map((f, i) => (
-        <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px' }}>
-          <span aria-hidden style={{ color: '#FF6B00', fontSize: '12px', marginTop: '1px', flexShrink: 0 }}>⚑</span>
-          <span style={{ fontSize: '12px', color: '#CBD5E1', fontFamily: 'JetBrains Mono, monospace', lineHeight: '1.5', wordBreak: 'break-word' }}>{f}</span>
+        <li key={i} className="flex items-start gap-2">
+          <span aria-hidden className="text-orange-400 text-xs mt-0.5 shrink-0">⚑</span>
+          <span className="text-xs text-zinc-300 font-mono leading-relaxed break-words">{f}</span>
         </li>
       ))}
     </ul>
@@ -76,59 +89,85 @@ function FlagList({ flags }: { flags: string[] }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p style={{
-      margin: '14px 0 6px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.9px',
-      textTransform: 'uppercase', color: '#94A3B8', fontFamily: 'Inter, sans-serif',
-    }}>{children}</p>
+    <p className="mt-3.5 mb-1.5 text-[10px] font-bold tracking-wider uppercase text-zinc-500 font-sans">
+      {children}
+    </p>
   );
 }
 
-function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', expanded, onToggle }: {
-  icon: string; title: string; agentName: string; children: React.ReactNode;
-  accentColor?: string; expanded: boolean; onToggle: () => void;
+function AgentCard({
+  icon,
+  title,
+  agentName,
+  children,
+  expanded,
+  onToggle,
+  isElevatedRisk = false,
+}: {
+  icon: string;
+  title: string;
+  agentName: string;
+  children: React.ReactNode;
+  expanded: boolean;
+  onToggle: () => void;
+  isElevatedRisk?: boolean;
 }) {
   return (
-    <div style={{
-      background: '#0D1623', border: `1px solid ${expanded ? accentColor + '35' : '#1F2937'}`,
-      borderRadius: '12px', overflow: 'hidden', transition: 'border-color 0.25s ease',
-      boxShadow: expanded ? `0 0 20px ${accentColor}10` : 'none',
-    }}>
-      {/* Card header — clickable */}
-      <button
+    <div
+      className={`rounded-xl overflow-hidden transition-all duration-300 bg-zinc-950 border ${
+        expanded
+          ? isElevatedRisk
+            ? 'border-rose-500/25 shadow-[0_0_20px_rgba(244,63,94,0.08)]'
+            : 'border-white/[0.12] shadow-[0_0_20px_rgba(0,240,255,0.04)]'
+          : 'border-white/[0.08] hover:border-white/[0.12]'
+      }`}
+    >
+      {/* Card header — clickable Button */}
+      <Button
         type="button"
+        variant="ghost"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="w-full flex items-center justify-between gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 mobile-card-padding"
-        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+        className="w-full h-auto p-3 sm:p-4 flex items-center justify-between gap-3 text-left hover:bg-white/[0.02] rounded-none transition-colors"
       >
-        <div className="flex items-center gap-2.5">
-          <div style={{
-            width: 34, height: 34, borderRadius: '8px', fontSize: '17px',
-            background: `${accentColor}12`, border: `1px solid ${accentColor}28`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }} aria-hidden>{icon}</div>
-          <div style={{ textAlign: 'left' }}>
-            <p className="text-[13px] sm:text-[13.5px]" style={{ margin: 0, fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base transition-colors ${
+              isElevatedRisk
+                ? 'bg-rose-500/10 border border-rose-500/25 text-rose-400'
+                : 'bg-cyan-500/10 border border-cyan-500/25 text-cyan-400'
+            }`}
+            aria-hidden
+          >
+            {icon}
+          </div>
+          <div>
+            <p className="text-sm font-bold text-zinc-100 tracking-tight font-sans m-0">
               {title}
             </p>
-            <p style={{ margin: 0, fontSize: '10.5px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
+            <p className="text-[11px] text-zinc-500 font-mono m-0">
               Agent: {agentName}
             </p>
           </div>
         </div>
-        <svg aria-hidden width="16" height="16" viewBox="0 0 16 16"
-          style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', flexShrink: 0 }}>
-          <path d="M3 6l5 5 5-5" stroke="#94A3B8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        <svg
+          aria-hidden
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          className={`shrink-0 transition-transform duration-300 text-zinc-500 ${expanded ? 'rotate-180 text-cyan-400' : ''}`}
+        >
+          <path d="M3 6l5 5 5-5" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
-      </button>
+      </Button>
 
       {/* Collapsible body */}
-      <div style={{
-        maxHeight: expanded ? '800px' : '0',
-        overflow: 'hidden',
-        transition: 'max-height 0.35s ease',
-      }}>
-        <div className="px-3 sm:px-4 pb-3.5 sm:pb-4 mobile-card-padding" style={{ borderTop: '1px solid #1F2937' }}>
+      <div
+        className={`transition-all duration-300 ease-in-out ${
+          expanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
+        }`}
+      >
+        <div className="px-3 sm:px-4 pb-4 pt-1 mobile-card-padding border-t border-white/[0.06]">
           {children}
         </div>
       </div>
@@ -139,17 +178,23 @@ function AgentCard({ icon, title, agentName, children, accentColor = '#00F0FF', 
 // ── URL Vector Card ───────────────────────────────────────────
 
 function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded: boolean; onToggle: () => void }) {
-  const c = scoreColor(data.risk_score);
+  const isElevated = data.risk_score > 49;
   return (
-    <AgentCard icon="🔗" title="URL / Domain Vector" agentName="Atharv" accentColor={c} expanded={expanded} onToggle={onToggle}>
-      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+    <AgentCard
+      icon="🔗"
+      title="URL / Domain Vector"
+      agentName="Atharv"
+      expanded={expanded}
+      onToggle={onToggle}
+      isElevatedRisk={isElevated}
+    >
+      <div className="flex items-center gap-2.5 mt-3 flex-wrap">
         <StatusBadge status={data.status} />
         <ScorePill score={data.risk_score} />
         {data.url_analyzed && (
-          <code className="text-[11px] px-2 py-0.5 rounded-md break-all max-w-full" style={{
-            background: '#111827', color: '#CBD5E1', fontFamily: 'JetBrains Mono, monospace',
-            border: '1px solid #1F2937',
-          }}>{data.url_analyzed}</code>
+          <code className="text-[11px] px-2.5 py-1 rounded-lg font-mono break-all max-w-full bg-black/40 text-zinc-300 border border-white/[0.06]">
+            {data.url_analyzed}
+          </code>
         )}
       </div>
 
@@ -157,36 +202,37 @@ function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded:
         <>
           <div className="flex gap-2 mt-3 flex-wrap">
             {data.domain_age_days !== null && (
-              <span style={{
-                padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 600,
-                fontFamily: 'JetBrains Mono, monospace',
-                background: data.domain_age_days < 30 ? 'rgba(255,107,0,0.12)' : 'rgba(0,230,118,0.1)',
-                color: data.domain_age_days < 30 ? '#FF6B00' : '#00E676',
-                border: `1px solid ${data.domain_age_days < 30 ? 'rgba(255,107,0,0.3)' : 'rgba(0,230,118,0.25)'}`,
-              }}>
+              <span
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold font-mono border ${
+                  data.domain_age_days < 30
+                    ? 'bg-orange-500/10 text-orange-400 border-orange-500/30'
+                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                }`}
+              >
                 🕒 Domain age: {data.domain_age_days}d
               </span>
             )}
             {data.is_typosquatting && (
-              <span style={{
-                padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 600,
-                fontFamily: 'JetBrains Mono, monospace',
-                background: 'rgba(255,51,102,0.12)', color: '#FF3366',
-                border: '1px solid rgba(255,51,102,0.3)',
-              }}>⚠ Typosquatting</span>
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold font-mono bg-rose-500/10 text-rose-400 border border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.15)]">
+                ⚠ Typosquatting
+              </span>
             )}
-            <span style={{
-              padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 600,
-              fontFamily: 'JetBrains Mono, monospace',
-              background: data.tld_reputation === 'HIGH_RISK' ? 'rgba(255,51,102,0.12)' : 'rgba(0,230,118,0.1)',
-              color: data.tld_reputation === 'HIGH_RISK' ? '#FF3366' : '#00E676',
-              border: `1px solid ${data.tld_reputation === 'HIGH_RISK' ? 'rgba(255,51,102,0.3)' : 'rgba(0,230,118,0.25)'}`,
-            }}>TLD: {data.tld_reputation}</span>
+            <span
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold font-mono border ${
+                data.tld_reputation === 'HIGH_RISK'
+                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+              }`}
+            >
+              TLD: {data.tld_reputation}
+            </span>
           </div>
 
           {data.target_brand && (
-            <><SectionLabel>Impersonated Brand</SectionLabel>
-            <p style={{ margin: 0, fontSize: '12.5px', color: '#F1F5F9', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>{data.target_brand}</p></>
+            <>
+              <SectionLabel>Impersonated Brand</SectionLabel>
+              <p className="m-0 text-xs font-semibold text-zinc-200 font-sans">{data.target_brand}</p>
+            </>
           )}
         </>
       )}
@@ -195,12 +241,12 @@ function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded:
       <FlagList flags={data.flags} />
 
       <SectionLabel>Agent Analysis</SectionLabel>
-      <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+      <p className="m-0 text-xs text-zinc-300 font-sans leading-relaxed">
         {data.details}
       </p>
 
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
-        ⚡ {data.latency_ms}ms
+      <p className="mt-3 text-[10px] text-zinc-500 font-mono flex items-center gap-1.5">
+        <span className="text-cyan-400">⚡</span> {data.latency_ms}ms
       </p>
     </AgentCard>
   );
@@ -209,60 +255,72 @@ function UrlCard({ data, expanded, onToggle }: { data: UrlAgentResult; expanded:
 // ── Sender Vector Card ────────────────────────────────────────
 
 function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; expanded: boolean; onToggle: () => void }) {
-  const c = scoreColor(data.risk_score);
-  const catColor: Record<string, string> = {
-    OFFICIAL_TRAI_HEADER: '#00E676', PERSONAL_GSM: '#FF3366',
-    INTERNATIONAL: '#FFB800', LOOKALIKE_HEADER: '#FF6B00', UNKNOWN: '#94A3B8',
+  const isElevated = data.risk_score > 49;
+
+  const getSenderCategoryClass = (cat: string) => {
+    switch (cat) {
+      case 'OFFICIAL_TRAI_HEADER':
+        return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+      case 'PERSONAL_GSM':
+        return 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+      case 'INTERNATIONAL':
+        return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'LOOKALIKE_HEADER':
+        return 'text-orange-400 bg-orange-500/10 border-orange-500/30';
+      default:
+        return 'text-zinc-300 bg-zinc-900 border-white/[0.08]';
+    }
   };
+
   return (
-    <AgentCard icon="📡" title="Sender Identity Vector" agentName="Avni" accentColor={c} expanded={expanded} onToggle={onToggle}>
-      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+    <AgentCard
+      icon="📡"
+      title="Sender Identity Vector"
+      agentName="Avni"
+      expanded={expanded}
+      onToggle={onToggle}
+      isElevatedRisk={isElevated}
+    >
+      <div className="flex items-center gap-2.5 mt-3 flex-wrap">
         <StatusBadge status={data.status} />
         <ScorePill score={data.risk_score} />
         {data.sender_analyzed && (
-          <code className="text-[11.5px] px-2 py-0.5 rounded-md" style={{
-            background: '#111827', color: '#CBD5E1', fontFamily: 'JetBrains Mono, monospace',
-            border: '1px solid #1F2937',
-          }}>{data.sender_analyzed}</code>
+          <code className="text-[11px] px-2.5 py-1 rounded-lg font-mono bg-black/40 text-zinc-300 border border-white/[0.06]">
+            {data.sender_analyzed}
+          </code>
         )}
       </div>
 
       {data.status !== 'SKIPPED' && (
         <div className="flex gap-2 mt-3 flex-wrap">
-          <span style={{
-            padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
-            fontFamily: 'JetBrains Mono, monospace',
-            color: catColor[data.sender_category] ?? '#CBD5E1',
-            background: `${catColor[data.sender_category] ?? '#CBD5E1'}14`,
-            border: `1px solid ${catColor[data.sender_category] ?? '#CBD5E1'}35`,
-          }}>{data.sender_category.replace(/_/g, ' ')}</span>
+          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${getSenderCategoryClass(data.sender_category)}`}>
+            {data.sender_category.replace(/_/g, ' ')}
+          </span>
 
           {data.is_spoofed_header && (
-            <span style={{
-              padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
-              fontFamily: 'JetBrains Mono, monospace', color: '#FF3366',
-              background: 'rgba(255,51,102,0.12)', border: '1px solid rgba(255,51,102,0.3)',
-            }}>⚠ SPOOFED HEADER</span>
+            <span className="px-2.5 py-1 rounded-lg text-xs font-bold font-mono text-rose-400 bg-rose-500/10 border border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.15)]">
+              ⚠ SPOOFED HEADER
+            </span>
           )}
 
           {data.brand_claimed && (
-            <span style={{
-              padding: '4px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
-              fontFamily: 'Inter, sans-serif', color: '#CBD5E1',
-              background: 'rgba(148,163,184,0.08)', border: '1px solid #1F2937',
-            }}>Claims: {data.brand_claimed}</span>
+            <span className="px-2.5 py-1 rounded-lg text-xs font-medium font-sans text-zinc-300 bg-zinc-900 border border-white/[0.06]">
+              Claims: {data.brand_claimed}
+            </span>
           )}
         </div>
       )}
 
       <SectionLabel>Flags</SectionLabel>
       <FlagList flags={data.flags} />
+
       <SectionLabel>Agent Analysis</SectionLabel>
-      <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+      <p className="m-0 text-xs text-zinc-300 font-sans leading-relaxed">
         {data.details}
       </p>
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
-        ⚡ {data.latency_ms}ms
+
+      <p className="mt-3 text-[10px] text-zinc-500 font-mono flex items-center gap-1.5">
+        <span className="text-cyan-400">⚡</span> {data.latency_ms}ms
       </p>
     </AgentCard>
   );
@@ -271,39 +329,54 @@ function SenderCard({ data, expanded, onToggle }: { data: SenderAgentResult; exp
 // ── Intent Vector Card ────────────────────────────────────────
 
 function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; expanded: boolean; onToggle: () => void }) {
-  const c = scoreColor(data.risk_score);
-  const intentColors: Record<string, string> = {
-    BENIGN: '#00E676', SUSPICIOUS: '#FFB800', PANIC_URGENCY: '#FF6B00',
-    FINANCIAL_EXTORTION: '#FF3366', LOTTERY_REWARD: '#FF6B00',
-    KYC_VERIFICATION: '#FF3366', OTP_HARVEST: '#FF3366',
+  const isElevated = data.risk_score > 49;
+
+  const getIntentBadgeClass = (intent: string) => {
+    switch (intent) {
+      case 'BENIGN':
+        return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+      case 'SUSPICIOUS':
+        return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'PANIC_URGENCY':
+      case 'LOTTERY_REWARD':
+        return 'text-orange-400 bg-orange-500/10 border-orange-500/30';
+      case 'FINANCIAL_EXTORTION':
+      case 'KYC_VERIFICATION':
+      case 'OTP_HARVEST':
+        return 'text-rose-400 bg-rose-500/10 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.15)]';
+      default:
+        return 'text-zinc-300 bg-zinc-900 border-white/[0.08]';
+    }
   };
-  const ic = intentColors[data.detected_intent] ?? '#CBD5E1';
 
   return (
-    <AgentCard icon="🧠" title="Psycholinguistic Vector" agentName="Vikas" accentColor={c} expanded={expanded} onToggle={onToggle}>
-      <div className="flex items-center gap-2.5 mt-3.5 flex-wrap">
+    <AgentCard
+      icon="🧠"
+      title="Psycholinguistic Vector"
+      agentName="Vikas"
+      expanded={expanded}
+      onToggle={onToggle}
+      isElevatedRisk={isElevated}
+    >
+      <div className="flex items-center gap-2.5 mt-3 flex-wrap">
         <StatusBadge status={data.status} />
         <ScorePill score={data.risk_score} />
-        <span style={{
-          padding: '4px 11px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
-          fontFamily: 'JetBrains Mono, monospace',
-          color: ic, background: `${ic}14`, border: `1px solid ${ic}35`,
-        }}>{data.detected_intent.replace(/_/g, ' ')}</span>
-        <span style={{
-          padding: '4px 11px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
-          fontFamily: 'JetBrains Mono, monospace', color: '#CBD5E1',
-          background: 'rgba(148,163,184,0.08)', border: '1px solid #1F2937',
-        }}>Confidence: {(data.confidence * 100).toFixed(0)}%</span>
+        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono border ${getIntentBadgeClass(data.detected_intent)}`}>
+          {data.detected_intent.replace(/_/g, ' ')}
+        </span>
+        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold font-mono text-zinc-300 bg-zinc-900 border border-white/[0.06]">
+          Confidence: {(data.confidence * 100).toFixed(0)}%
+        </span>
       </div>
 
       {data.manipulation_tactics.length > 0 && (
         <>
           <SectionLabel>Manipulation Tactics</SectionLabel>
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
             {data.manipulation_tactics.map((t, i) => (
-              <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px' }}>
-                <span aria-hidden style={{ color: '#FF6B00', fontSize: '13px', flexShrink: 0, marginTop: '1px' }}>◈</span>
-                <span style={{ fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.5' }}>{t}</span>
+              <li key={i} className="flex items-start gap-2">
+                <span aria-hidden className="text-orange-400 text-xs shrink-0 mt-0.5">◈</span>
+                <span className="text-xs text-zinc-300 font-sans leading-relaxed">{t}</span>
               </li>
             ))}
           </ul>
@@ -311,19 +384,15 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
       )}
 
       <SectionLabel>LLM Reasoning</SectionLabel>
-      <blockquote style={{
-        margin: 0, padding: '10px 14px', borderLeft: '3px solid #00F0FF',
-        borderRadius: '0 8px 8px 0', background: 'rgba(0,240,255,0.04)',
-        fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif',
-        lineHeight: '1.65', fontStyle: 'italic',
-      }}>
+      <blockquote className="m-0 p-3 sm:p-3.5 border-l-2 border-cyan-400 rounded-r-xl bg-cyan-500/[0.03] text-xs text-zinc-300 font-sans leading-relaxed italic border border-y-0 border-r-0">
         {data.reasoning}
       </blockquote>
 
       <SectionLabel>Flags</SectionLabel>
       <FlagList flags={data.flags} />
-      <p style={{ margin: '10px 0 0', fontSize: '10px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
-        ⚡ {data.latency_ms}ms
+
+      <p className="mt-3 text-[10px] text-zinc-500 font-mono flex items-center gap-1.5">
+        <span className="text-cyan-400">⚡</span> {data.latency_ms}ms
       </p>
     </AgentCard>
   );
@@ -333,28 +402,25 @@ function IntentCard({ data, expanded, onToggle }: { data: IntentAgentResult; exp
 
 function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
   const weights = [
-    { label: 'URL', value: data.weights_applied.url_weight, color: '#00F0FF' },
-    { label: 'Sender', value: data.weights_applied.sender_weight, color: '#A78BFA' },
-    { label: 'Intent', value: data.weights_applied.intent_weight, color: '#34D399' },
+    { label: 'URL', value: data.weights_applied.url_weight, barColor: 'bg-cyan-400 shadow-[0_0_6px_rgba(0,240,255,0.3)]', textColor: 'text-cyan-400' },
+    { label: 'Sender', value: data.weights_applied.sender_weight, barColor: 'bg-purple-400 shadow-[0_0_6px_rgba(167,139,250,0.3)]', textColor: 'text-purple-400' },
+    { label: 'Intent', value: data.weights_applied.intent_weight, barColor: 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.3)]', textColor: 'text-emerald-400' },
   ];
 
   return (
-    <div className="p-4 sm:p-[18px] rounded-xl" style={{
-      background: 'linear-gradient(135deg, #0D1623 0%, #111827 100%)',
-      border: '1px solid rgba(0,240,255,0.18)',
-      boxShadow: '0 0 24px rgba(0,240,255,0.05)',
-    }}>
-      <div className="flex items-center gap-2.5 mb-4">
-        <div style={{
-          width: 34, height: 34, borderRadius: '8px', fontSize: '17px',
-          background: 'rgba(0,240,255,0.1)', border: '1px solid rgba(0,240,255,0.25)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }} aria-hidden>⚖️</div>
+    <div className="p-4 sm:p-5 rounded-xl bg-zinc-950 border border-white/[0.1] shadow-[0_0_20px_rgba(0,240,255,0.03)] relative overflow-hidden">
+      <div className="flex items-center gap-3 mb-4">
+        <div
+          className="w-9 h-9 rounded-xl text-base bg-cyan-500/10 border border-cyan-500/25 flex items-center justify-center text-cyan-400 shrink-0"
+          aria-hidden
+        >
+          ⚖️
+        </div>
         <div>
-          <p style={{ margin: 0, fontSize: '13.5px', fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+          <p className="m-0 text-sm font-bold text-zinc-100 font-sans tracking-tight">
             Avika · Synthesis Engine
           </p>
-          <p style={{ margin: 0, fontSize: '10.5px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>
+          <p className="m-0 text-[11px] text-zinc-500 font-mono">
             Dynamic weight orchestration
           </p>
         </div>
@@ -364,20 +430,17 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         {weights.map(w => (
           <div key={w.label} className="flex-1 min-w-[80px]">
-            <div className="flex justify-between mb-1">
-              <span style={{ fontSize: '10.5px', color: '#94A3B8', fontFamily: 'JetBrains Mono, monospace' }}>{w.label}</span>
-              <span style={{ fontSize: '10.5px', color: w.color, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
+            <div className="flex justify-between mb-1.5">
+              <span className="text-[11px] text-zinc-500 font-mono">{w.label}</span>
+              <span className={`text-[11px] font-mono font-bold ${w.textColor}`}>
                 {(w.value * 100).toFixed(0)}%
               </span>
             </div>
-            <div className="h-[5px] rounded-sm overflow-hidden" style={{ background: '#1F2937' }}>
-              <div style={{
-                height: '100%', borderRadius: '3px',
-                width: `${w.value * 100}%`,
-                background: w.color,
-                boxShadow: `0 0 8px ${w.color}60`,
-                transition: 'width 0.8s ease',
-              }} />
+            <div className="h-1.5 rounded-full overflow-hidden bg-white/[0.04]">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ease-out ${w.barColor}`}
+                style={{ width: `${w.value * 100}%` }}
+              />
             </div>
           </div>
         ))}
@@ -386,14 +449,14 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
       {/* Heuristics */}
       {data.heuristics_triggered.length > 0 && (
         <>
-          <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-2 text-zinc-500 font-sans">
             Heuristics Triggered
           </p>
-          <ul className="mb-3.5" style={{ margin: '0 0 14px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+          <ul className="mb-3.5 m-0 p-0 list-none flex flex-col gap-1.5">
             {data.heuristics_triggered.map((h, i) => (
-              <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px' }}>
-                <span aria-hidden style={{ color: '#00F0FF', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>▸</span>
-                <span style={{ fontSize: '12px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.55' }}>{h}</span>
+              <li key={i} className="flex items-start gap-2">
+                <span aria-hidden className="text-cyan-400 text-xs mt-0.5 shrink-0">▸</span>
+                <span className="text-xs text-zinc-300 font-sans leading-relaxed">{h}</span>
               </li>
             ))}
           </ul>
@@ -401,10 +464,8 @@ function SynthesisCard({ data }: { data: SynthesisBreakdown }) {
       )}
 
       {/* Summary */}
-      <div className="p-2.5 sm:p-3.5 rounded-lg" style={{
-        background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.12)',
-      }}>
-        <p style={{ margin: 0, fontSize: '12.5px', color: '#CBD5E1', fontFamily: 'Inter, sans-serif', lineHeight: '1.6' }}>
+      <div className="p-3 sm:p-3.5 rounded-lg bg-cyan-500/[0.03] border border-white/[0.06]">
+        <p className="m-0 text-xs text-zinc-300 font-sans leading-relaxed">
           {data.summary_explanation}
         </p>
       </div>
@@ -467,74 +528,73 @@ export function LiveAuditFeed({ lang }: { lang: Language }) {
   };
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{
-      background: '#0D1623',
-      border: `1px solid ${open ? 'rgba(0,240,255,0.25)' : '#1F2937'}`,
-      transition: 'border-color 0.25s ease',
-    }}>
-      {/* Drawer header */}
-      <button
+    <div className={`rounded-xl overflow-hidden transition-all duration-300 bg-zinc-950 border ${
+      open ? 'border-white/[0.12] shadow-[0_0_20px_rgba(0,240,255,0.04)]' : 'border-white/[0.08] hover:border-white/[0.12]'
+    }`}>
+      {/* Drawer header - Shadcn Button */}
+      <Button
         id="audit-feed-toggle"
         type="button"
+        variant="ghost"
         onClick={handleToggle}
         aria-expanded={open}
-        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 cursor-pointer"
-        style={{ background: 'transparent', border: 'none' }}
+        className="w-full h-auto p-3.5 sm:p-4 flex items-center justify-between gap-3 text-left hover:bg-white/[0.02] rounded-none transition-colors"
       >
-        <div className="flex items-center gap-2.5">
-          <div style={{
-            width: 36, height: 36, borderRadius: '9px', fontSize: '18px',
-            background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }} aria-hidden>📋</div>
-          <div style={{ textAlign: 'left' }}>
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-xl text-base bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0 text-cyan-400"
+            aria-hidden
+          >
+            📋
+          </div>
+          <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm sm:text-[15px]" style={{
-                margin: 0, fontWeight: 700, color: '#F1F5F9',
-                fontFamily: 'Plus Jakarta Sans, Inter, sans-serif',
-              }}>
+              <p className="m-0 text-sm font-bold text-zinc-100 font-sans tracking-tight">
                 {lang === 'hi' ? 'हालिया ऑडिट लॉग' : 'Recent Audit Logs'}
               </p>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-[#94A3B8] font-mono border border-[#1F2937] bg-[#111827]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#00E676] animate-pulse" />
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] text-zinc-500 font-mono border border-white/[0.06] bg-black/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]" />
                 30s poll
               </span>
             </div>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+            <p className="m-0 text-[11px] text-zinc-500 font-sans">
               {lang === 'hi' ? 'पिछले स्कैन का लाइव फ़ीड (हर 30 सेकंड में ऑटो-रिफ्रेश)' : 'Live feed of previous scans (auto-refreshed every 30s)'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {logs.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{
-              color: '#00F0FF', background: 'rgba(0,240,255,0.1)',
-              border: '1px solid rgba(0,240,255,0.25)',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}>{logs.length}</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_8px_rgba(0,240,255,0.15)]">
+              {logs.length}
+            </span>
           )}
-          <svg aria-hidden width="16" height="16" viewBox="0 0 16 16"
-            style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s ease', flexShrink: 0 }}>
-            <path d="M3 6l5 5 5-5" stroke="#94A3B8" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          <svg
+            aria-hidden
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            className={`shrink-0 transition-transform duration-300 text-zinc-500 ${open ? 'rotate-180 text-cyan-400' : ''}`}
+          >
+            <path d="M3 6l5 5 5-5" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-      </button>
+      </Button>
 
       {/* Collapsible feed body */}
-      <div style={{
-        maxHeight: open ? '650px' : '0',
-        overflow: 'hidden',
-        transition: 'max-height 0.35s ease',
-      }}>
-        <div className="px-3 sm:px-5 pb-3.5 sm:pb-4 mobile-card-padding" style={{ borderTop: '1px solid #1F2937' }}>
+      <div
+        className={`transition-all duration-300 ease-in-out ${
+          open ? 'max-h-[700px] opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
+        }`}
+      >
+        <div className="px-3 sm:px-5 pb-4 mobile-card-padding border-t border-white/[0.06]">
           {/* Loading state */}
           {loading && logs.length === 0 && (
             <div className="flex items-center justify-center gap-2 py-6" role="status" aria-live="polite">
-              <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" style={{ animation: 'pl-spin 1s linear infinite' }}>
-                <circle cx="9" cy="9" r="7" stroke="rgba(0,240,255,0.2)" strokeWidth="2" fill="none"/>
-                <path d="M9 2a7 7 0 0 1 7 7" stroke="#00F0FF" strokeWidth="2" strokeLinecap="round" fill="none"/>
+              <svg aria-hidden width="18" height="18" viewBox="0 0 16 16" className="animate-spin text-cyan-400">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" fill="none"/>
+                <path d="M8 2a6 6 0 0 1 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none"/>
               </svg>
-              <span className="text-xs" style={{ color: '#00F0FF', fontFamily: 'JetBrains Mono, monospace' }}>
+              <span className="text-xs text-cyan-400 font-mono">
                 {lang === 'hi' ? 'लॉग लोड हो रहे हैं…' : 'Loading audit logs…'}
               </span>
             </div>
@@ -542,23 +602,17 @@ export function LiveAuditFeed({ lang }: { lang: Language }) {
 
           {/* Error state */}
           {fetchError && (
-            <div role="alert" className="py-3 px-3 rounded-lg mt-3 flex items-center gap-2" style={{
-              background: 'rgba(255,51,102,0.07)', border: '1px solid rgba(255,51,102,0.25)',
-            }}>
+            <div role="alert" className="py-2.5 px-3 rounded-xl mt-3 flex items-center gap-2 bg-rose-500/10 border border-rose-500/25 text-rose-400 text-xs font-mono">
               <span aria-hidden>⚠</span>
-              <span className="text-xs" style={{ color: '#FF3366', fontFamily: 'JetBrains Mono, monospace' }}>{fetchError}</span>
+              <span>{fetchError}</span>
             </div>
           )}
 
           {/* Table / List View */}
           {logs.length > 0 && (
-            <div className="mt-3 flex flex-col gap-2 max-h-[440px] overflow-y-auto pr-1"
-              style={{ scrollbarWidth: 'thin', scrollbarColor: '#1F2937 transparent' }}
-            >
+            <div className="mt-3 flex flex-col gap-2 max-h-[440px] overflow-y-auto pr-1">
               {/* Header row for medium+ screens */}
-              <div className="hidden sm:grid grid-cols-[130px_100px_1fr_110px] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] border-b border-[#1F2937]"
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
-              >
+              <div className="hidden sm:grid grid-cols-[130px_100px_1fr_110px] gap-3 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500 border-b border-white/[0.06] font-mono">
                 <span>Scan ID</span>
                 <span>Risk Score</span>
                 <span>Verdict</span>
@@ -566,22 +620,18 @@ export function LiveAuditFeed({ lang }: { lang: Language }) {
               </div>
 
               {logs.map(log => {
-                const tc = tierColor(log.risk_tier);
+                const tierClass = getTierBadgeClass(log.risk_tier);
                 const resolvedVerdict = (lang === 'hi' && log.verdict_hi) ? log.verdict_hi : log.verdict;
                 return (
                   <div
                     key={log.scan_id}
-                    className="grid grid-cols-1 sm:grid-cols-[130px_100px_1fr_110px] items-start sm:items-center gap-2 sm:gap-3 p-3 rounded-lg transition-colors duration-150"
-                    style={{
-                      background: '#111827', border: '1px solid #1F2937',
-                    }}
+                    className="grid grid-cols-1 sm:grid-cols-[130px_100px_1fr_110px] items-start sm:items-center gap-2 sm:gap-3 p-3 rounded-xl bg-black/40 border border-white/[0.06] hover:border-white/[0.1] transition-colors duration-150"
                   >
                     {/* 1. Scan ID */}
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="sm:hidden text-[10px] text-[#94A3B8] font-bold uppercase font-mono">ID:</span>
+                      <span className="sm:hidden text-[10px] text-zinc-500 font-bold uppercase font-mono">ID:</span>
                       <code
-                        className="text-[11px] font-mono text-[#00F0FF] px-1.5 py-0.5 rounded border border-[rgba(0,240,255,0.2)]"
-                        style={{ background: 'rgba(0,240,255,0.06)' }}
+                        className="text-[11px] font-mono text-cyan-400 px-2 py-0.5 rounded-md border border-cyan-500/20 bg-cyan-500/5"
                         title={log.scan_id}
                       >
                         {log.scan_id.slice(0, 8)}…
@@ -590,29 +640,22 @@ export function LiveAuditFeed({ lang }: { lang: Language }) {
 
                     {/* 2. Risk Score */}
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="sm:hidden text-[10px] text-[#94A3B8] font-bold uppercase font-mono">Score:</span>
-                      <span
-                        className="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono tracking-wider"
-                        style={{
-                          color: tc,
-                          background: `${tc}15`,
-                          border: `1px solid ${tc}35`,
-                        }}
-                      >
+                      <span className="sm:hidden text-[10px] text-zinc-500 font-bold uppercase font-mono">Score:</span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono tracking-wider border ${tierClass}`}>
                         {log.overall_risk_score} <span className="text-[9px] opacity-75">/100</span>
                       </span>
                     </div>
 
                     {/* 3. Verdict */}
                     <p
-                      className="m-0 text-xs text-[#CBD5E1] font-sans leading-snug line-clamp-2"
+                      className="m-0 text-xs text-zinc-300 font-sans leading-snug line-clamp-2"
                       title={resolvedVerdict}
                     >
                       {resolvedVerdict}
                     </p>
 
                     {/* 4. Timestamp */}
-                    <div className="flex items-center sm:justify-end gap-1.5 text-[10px] text-[#94A3B8] font-mono shrink-0">
+                    <div className="flex items-center sm:justify-end gap-1.5 text-[10px] text-zinc-600 font-mono shrink-0">
                       <span>{timeAgo(log.timestamp)}</span>
                     </div>
                   </div>
@@ -623,16 +666,12 @@ export function LiveAuditFeed({ lang }: { lang: Language }) {
 
           {/* Empty state */}
           {!loading && !fetchError && logs.length === 0 && (
-            <p className="text-center py-6 text-xs" style={{ color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+            <p className="text-center py-6 text-xs text-zinc-500 font-sans">
               {lang === 'hi' ? 'अभी तक कोई ऑडिट लॉग नहीं है' : 'No audit logs yet'}
             </p>
           )}
         </div>
       </div>
-
-      <style>{`
-        @keyframes pl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 }
@@ -658,17 +697,18 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
       {auditTrail && (
         <>
           {/* Section header */}
-          <div className="flex items-center gap-2.5">
-            <div style={{
-              width: 36, height: 36, borderRadius: '9px', fontSize: '18px',
-              background: 'rgba(0,240,255,0.08)', border: '1px solid rgba(0,240,255,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }} aria-hidden>🔬</div>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl text-lg bg-cyan-500/8 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0"
+              aria-hidden
+            >
+              🔬
+            </div>
             <div>
-              <h3 className="text-base" style={{ margin: 0, fontWeight: 700, color: '#F1F5F9', fontFamily: 'Plus Jakarta Sans, Inter, sans-serif' }}>
+              <h3 className="text-base sm:text-lg font-bold text-zinc-100 font-sans tracking-tight m-0">
                 {lang === 'hi' ? 'ऑडिट ट्रेल' : 'Audit Trail'}
               </h3>
-              <p style={{ margin: 0, fontSize: '11.5px', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+              <p className="text-xs text-zinc-500 font-sans m-0">
                 {lang === 'hi' ? '3-एजेंट व्याख्यात्मक विश्लेषण' : '3-agent explainability drilldown'}
               </p>
             </div>
@@ -676,13 +716,9 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
 
           {/* Overall processing time */}
           {processingTimeMs != null && (
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-lg" style={{
-              background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.15)',
-            }}>
-              <span aria-hidden style={{ fontSize: '14px' }}>⚡</span>
-              <span className="text-xs sm:text-[12.5px] font-bold" style={{
-                fontFamily: 'JetBrains Mono, monospace', color: '#00F0FF',
-              }}>
+            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-500/[0.05] border border-white/[0.08] text-cyan-400">
+              <span aria-hidden className="text-sm">⚡</span>
+              <span className="text-xs sm:text-[12.5px] font-bold font-mono">
                 {lang === 'hi' ? `कुल प्रोसेसिंग समय: ${processingTimeMs.toFixed(0)}ms` : `Total Processing Time: ${processingTimeMs.toFixed(0)}ms`}
               </span>
             </div>
@@ -690,11 +726,9 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
 
           {/* Recommendation banner */}
           {recommendation && (
-            <div className="flex gap-2.5 items-start p-3 sm:p-4 rounded-lg" style={{
-              background: 'rgba(0,240,255,0.05)', border: '1px solid rgba(0,240,255,0.18)',
-            }}>
+            <div className="flex gap-3 items-start p-3.5 sm:p-4 rounded-xl bg-cyan-500/[0.03] border border-white/[0.06]">
               <span aria-hidden className="text-base shrink-0 mt-0.5">💡</span>
-              <p className="text-[13px] leading-relaxed" style={{ margin: 0, color: '#CBD5E1', fontFamily: 'Inter, sans-serif' }}>
+              <p className="m-0 text-xs sm:text-sm text-zinc-200 font-sans leading-relaxed">
                 {recommendation}
               </p>
             </div>
@@ -707,6 +741,26 @@ export function AuditTrailDrawer({ auditTrail, recommendation, processingTimeMs,
 
           {/* Synthesis */}
           <SynthesisCard data={auditTrail.synthesis_breakdown} />
+
+          {/* ── Source Attribution Footer ── */}
+          {mockScanResult.sourceAttribution && (
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-zinc-950 border border-white/[0.08] mt-1">
+              <div
+                className="w-7 h-7 rounded-lg bg-cyan-500/8 border border-cyan-500/20 flex items-center justify-center shrink-0 text-sm"
+                aria-hidden
+              >
+                🔗
+              </div>
+              <div className="flex-1">
+                <p className="m-0 text-[10px] font-bold uppercase tracking-wider text-zinc-500 font-mono">
+                  Source Attribution
+                </p>
+                <p className="m-0 text-xs text-zinc-300 font-sans">
+                  Source: {mockScanResult.sourceAttribution}
+                </p>
+              </div>
+            </div>
+          )}
         </>
       )}
 

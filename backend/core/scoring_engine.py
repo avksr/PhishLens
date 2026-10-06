@@ -841,6 +841,8 @@ def compute_score(
     # Badge: Manipulated Image (ELA)
     if vision_r and vision_r.status == AgentStatusEnum.SUCCESS and vision_r.is_morphed:
         active_badges.append("📸 Manipulated Image")
+        if vision_r.is_receipt_matched:
+            active_badges.append("🧾 Fake Receipt")
 
     # Badge: Document Forgery / Tampered ID
     if doc_r and doc_r.status == AgentStatusEnum.SUCCESS and doc_r.is_forged:
@@ -1022,6 +1024,41 @@ def compute_score(
         synthesis_breakdown=synthesis
     )
 
+    confidence_score_val = round(confidence_percentage / 100.0, 4)
+
+    explainability_payload = {
+        "overall_risk_score": rounded_score,
+        "verdict_category": verdict_category.value,
+        "risk_tier": risk_tier.value,
+        "confidence_level": confidence.value,
+        "confidence_score": confidence_score_val,
+        "confidence_percentage": confidence_percentage,
+        "noisy_or": {
+            "formula": "100.0 * (1.0 - Π (1.0 - weight_i * (score_i / 100.0) * confidence_i))",
+            "base_score": base_score,
+            "weights_applied": weights,
+            "vector_scores": {
+                "url": url_r.risk_score if url_r.status == AgentStatusEnum.SUCCESS else 0.0,
+                "sender": sender_r.risk_score if sender_r.status == AgentStatusEnum.SUCCESS else 0.0,
+                "intent": intent_r.risk_score if intent_r.status == AgentStatusEnum.SUCCESS else 0.0,
+                "upi": upi_r.risk_score if (upi_r and upi_r.status == AgentStatusEnum.SUCCESS) else 0.0,
+            },
+            "vector_confidences": {
+                "url": 1.0 if url_r.status == AgentStatusEnum.SUCCESS else 0.0,
+                "sender": 1.0 if sender_r.status == AgentStatusEnum.SUCCESS else 0.0,
+                "intent": intent_r.confidence if (intent_r.status == AgentStatusEnum.SUCCESS and intent_r.confidence > 0.0) else (1.0 if intent_r.status == AgentStatusEnum.SUCCESS else 0.0),
+                "upi": 1.0 if (upi_r and upi_r.status == AgentStatusEnum.SUCCESS) else 0.0,
+            },
+            "heuristics_triggered": heuristics,
+        },
+        "reasons": reasons,
+        "why_blocked_evidence": why_blocked_evidence,
+        "actionable_guidance": actionable_guidance,
+        "active_badges": active_badges,
+        "claimed_vs_verified": matrix.model_dump() if matrix else None,
+        "latencies_ms": latency_breakdown.model_dump(),
+    }
+
     return ScanResponse(
         overall_risk_score=rounded_score,
         risk_score=rounded_score,
@@ -1029,6 +1066,8 @@ def compute_score(
         risk_tier=risk_tier,
         confidence=confidence,
         confidence_percentage=confidence_percentage,
+        confidence_score=confidence_score_val,
+        explainability=explainability_payload,
         claimed_vs_verified=matrix,
         why_blocked_evidence=why_blocked_evidence,
         actionable_guidance=actionable_guidance,

@@ -125,6 +125,18 @@ class MockUpiVerifier(UpiVerifier):
             "is_verified_merchant": False,
             "account_type": "SAVINGS",
         },
+        "refund-support@okaxis": {
+            "registered_name": "Mohd Imran",
+            "bank_name": "Axis Bank",
+            "is_verified_merchant": False,
+            "account_type": "SAVINGS",
+        },
+        "avksr@okaxis": {
+            "registered_name": "Avika Sharma",
+            "bank_name": "Axis Bank",
+            "is_verified_merchant": False,
+            "account_type": "SAVINGS",
+        },
     }
 
     async def verify_vpa(self, vpa: str) -> UpiVerificationResult:

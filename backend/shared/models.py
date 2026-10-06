@@ -6,7 +6,7 @@ Ref: schema_mocks.json
 
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 from datetime import datetime, timezone
 import uuid
 
@@ -174,6 +174,16 @@ class ScanRequest(BaseModel):
     file_name: Optional[str] = Field(default=None, description="Original filename if uploaded")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Client metadata")
 
+    @field_validator("channel", mode="before")
+    @classmethod
+    def normalize_channel(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v_clean = v.strip().lower()
+            for member in ChannelEnum:
+                if member.value == v_clean or member.name.lower() == v_clean:
+                    return member
+        return v
+
 
 class ConfidenceLevelEnum(str, Enum):
     HIGH = "HIGH"
@@ -274,6 +284,48 @@ class BankVerificationResult(BaseModel):
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
+    # Next-gen and dictionary-compatibility fields
+    name_match_score: Optional[float] = None
+    name_match_status: Optional[str] = None
+    verification: Optional[Any] = None
+    evidence_item: Optional[EvidenceItem] = None
+    provider: str = "SANDBOX_MOCK"
+
+    @property
+    def registered_name(self) -> Optional[str]:
+        return self.registered_bank_name
+
+    @registered_name.setter
+    def registered_name(self, value: Optional[str]) -> None:
+        self.registered_bank_name = value
+
+    def __getitem__(self, item: str) -> Any:
+        if item == "provider":
+            return self.provider or self.provider_used
+        if item == "verification":
+            return self.verification
+        if item == "name_match_score":
+            return self.name_match_score
+        if item == "name_match_status":
+            return self.name_match_status
+        if item == "flags":
+            return self.flags
+        if item == "evidence_item":
+            return self.evidence_item
+        if hasattr(self, item):
+            return getattr(self, item)
+        raise KeyError(f"Key '{item}' not found in BankVerificationResult")
+
+    def __contains__(self, item: str) -> bool:
+        return hasattr(self, item) or item in (
+            "provider", "verification", "name_match_score", "name_match_status", "flags", "evidence_item"
+        )
+
+    def get(self, item: str, default: Any = None) -> Any:
+        try:
+            return self[item]
+        except KeyError:
+            return default
 
 
 class OsintReportItem(BaseModel):
@@ -311,6 +363,10 @@ class VisionAnalysisResult(BaseModel):
     flags: List[str] = Field(default_factory=list)
     details: str = ""
     latency_ms: float = 0.0
+    # Added by Avika — Perceptual hash and payment receipt analysis
+    is_receipt_matched: bool = False
+    receipt_template: Optional[str] = None
+    phash: Optional[str] = None
 
 
 class DocumentFraudResult(BaseModel):
@@ -401,6 +457,8 @@ class ScanResponse(BaseModel):
     document_fraud: Optional[DocumentFraudResult] = None
     # Points 8, 9, 10, 13, 18 additions
     confidence_percentage: Optional[float] = 95.0
+    confidence_score: Optional[float] = Field(default=0.95, ge=0.0, le=1.0, description="Normalized 0-1 confidence score agreed between LLM and scoring engine")
+    explainability: Optional[Dict[str, Any]] = Field(default=None, description="Structured explainability breakdown for JSON export")
     claimed_vs_verified: Optional[ClaimedVsVerifiedMatrix] = None
     why_blocked_evidence: List[str] = Field(default_factory=list)
     actionable_guidance: List[str] = Field(default_factory=list)
@@ -466,6 +524,42 @@ class ScanResponse(BaseModel):
             else:
                 self.action_required = ActionRequiredEnum.BLOCK_TRANSACTION
 
+        # Synchronize confidence_score (0-1) and confidence_percentage (0-100)
+        if self.confidence_score is None and self.confidence_percentage is not None:
+            self.confidence_score = round(self.confidence_percentage / 100.0, 4)
+        elif self.confidence_percentage is None and self.confidence_score is not None:
+            self.confidence_percentage = round(self.confidence_score * 100.0, 2)
+        elif self.confidence_score is not None and self.confidence_percentage is not None:
+            self.confidence_score = round(self.confidence_percentage / 100.0, 4)
+
         return self
+
+    def export_explainability_json(self) -> Dict[str, Any]:
+        """Export standardized explainability JSON payload for auditor and UI consumption."""
+        if self.explainability:
+            return self.explainability
+
+        synthesis = self.audit_trail.synthesis_breakdown if self.audit_trail else None
+        return {
+            "scan_id": self.scan_id,
+            "timestamp": self.timestamp,
+            "overall_risk_score": self.overall_risk_score,
+            "verdict_category": self.verdict_category.value if self.verdict_category else None,
+            "risk_tier": self.risk_tier.value if self.risk_tier else None,
+            "confidence_level": self.confidence.value if self.confidence else "HIGH",
+            "confidence_score": self.confidence_score,
+            "confidence_percentage": self.confidence_percentage,
+            "noisy_or": {
+                "formula": "1.0 - Π (1.0 - weight_i * score_i * confidence_i)",
+                "weights_applied": synthesis.weights_applied if synthesis else {},
+                "heuristics_triggered": synthesis.heuristics_triggered if synthesis else [],
+            },
+            "reasons": self.reasons,
+            "why_blocked_evidence": self.why_blocked_evidence,
+            "actionable_guidance": self.actionable_guidance,
+            "active_badges": self.active_badges,
+            "claimed_vs_verified": self.claimed_vs_verified.model_dump() if self.claimed_vs_verified else None,
+            "latencies_ms": self.latency_breakdown.model_dump() if self.latency_breakdown else {},
+        }
 
 

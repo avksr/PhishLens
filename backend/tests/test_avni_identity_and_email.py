@@ -29,8 +29,9 @@ from shared.models import (
     SenderCategoryEnum,
 )
 from agents.email_agent import analyze_email
-from agents.sender_agent import analyze_sender
+from agents.sender_agent import analyze_sender, analyze_sender_multi
 from agents.upi_agent import analyze_upi
+from scripts.refresh_dlt_registry import run_nnp_prefix_mismatch_audit
 from agents.upi_verifier import MockUpiVerifier, RapidApiUpiVerifier, get_upi_verifier
 from agents.bank_identity_agent import (
     verify_bank_identity,
@@ -313,3 +314,164 @@ async def test_evidence_builder_carries_sandbox_mock():
     # Check that UPI and bank identity tools carry provider: "SANDBOX_MOCK"
     providers = [item.get("provider") for item in evidence_list]
     assert "SANDBOX_MOCK" in providers
+
+
+# ===========================================================================
+# 4. AVNI SPRINT 2 DELIVERABLES
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_multi_phone_parallel_analysis_body():
+    """
+    Verify multi-phone parallel extraction and scoring from message body:
+    Extracts multiple numbers, scores concurrently, and picks highest risk.
+    """
+    # 1409876543 is promotional 140 (high risk), 9876543210 is normal GSM (medium risk)
+    req = ScanRequest(
+        content="URGENT: SBI KYC expired. Call promotional desk at 1409876543 or alternative 9876543210 immediately.",
+        sender=None,
+    )
+    res = await analyze_sender(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.risk_score >= 80.0
+    assert res.email_analysis is not None
+    assert "multi_phone_results" in res.email_analysis
+    assert res.email_analysis["phone_count"] >= 2
+    # Verify both numbers were analyzed
+    analyzed_phones = [item["phone"] for item in res.email_analysis["multi_phone_results"]]
+    assert "1409876543" in analyzed_phones or "9876543210" in analyzed_phones
+
+
+@pytest.mark.asyncio
+async def test_multi_phone_parallel_analysis_sender_field():
+    """Verify analyze_sender_multi handles multiple phone numbers passed in sender field."""
+    req = ScanRequest(
+        content="Your electricity bill is overdue. Pay immediately.",
+        sender="9876543210, 9123456780",
+    )
+    res = await analyze_sender_multi(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.email_analysis is not None
+    assert res.email_analysis["phone_count"] == 2
+
+
+def test_nnp_circle_mismatch_audit():
+    """Verify offline NNP prefix circle mismatch detector flags invalid, unregistered, and mismatched prefixes."""
+    synthetic_registry = {
+        "TEST01": {
+            "brand_name": "Fraud Bank",
+            "category": "Banking",
+            "operator_prefixes": ["BZ"],  # BZ is known invalid
+        },
+        "TEST02": {
+            "brand_name": "Bogus Telecom",
+            "category": "Telecom Operator",
+            "operator_prefixes": ["QQ"],  # QQ is unregistered (not in valid or invalid list)
+        },
+        "TEST03": {
+            "brand_name": "State Bank of India",
+            "category": "Banking",  # National category
+            "operator_prefixes": ["NE"],  # NE is single-circle North East prefix
+        },
+        "TEST04": {
+            "brand_name": "Legitimate Vi Bank",
+            "category": "Banking",
+            "operator_prefixes": ["VM"],  # VM is valid pan-India
+        },
+    }
+    mismatches = run_nnp_prefix_mismatch_audit(synthetic_registry)
+    severities = {m["entity_code"]: m["severity"] for m in mismatches}
+
+    assert severities.get("TEST01") == "CRITICAL"  # Known invalid
+    assert severities.get("TEST02") == "HIGH"      # Unregistered
+    assert severities.get("TEST03") == "MEDIUM"    # Single-circle for national entity
+    assert "TEST04" not in severities              # Valid pan-India prefix
+
+
+@pytest.mark.asyncio
+async def test_trai_operator_entity_prefix_mismatch():
+    """
+    Verify operator-entity mismatch:
+    e.g. CP-SBIINB where CP is not authorized for SBIINB.
+    """
+    req = ScanRequest(
+        content="Dear SBI customer, your KYC is expired. Update now.",
+        sender="CP-SBIINB",
+    )
+    res = await analyze_sender(req)
+    assert res.status == AgentStatusEnum.SUCCESS
+    assert res.is_spoofed_header is True
+    assert "TRAI_OPERATOR_ENTITY_PREFIX_MISMATCH" in res.flags
+    assert res.risk_score >= 70.0
+
+
+def test_email_spf_alignment_fail():
+    """Verify SPF envelope-from mismatch (laundering) is flagged."""
+    req = ScanRequest(
+        channel=ChannelEnum.EMAIL,
+        sender="service@paypal.com",
+        content="From: service@paypal.com\n"
+                "Received-SPF: pass (smtp.mailfrom=attacker-legit-server.com)\n"
+                "Subject: Your account receipt\n\n"
+                "Here is your payment receipt.",
+    )
+    res = analyze_email(req)
+    assert "EMAIL_SPF_ALIGNMENT_FAIL" in res["flags"]
+    assert "EMAIL_SPF_ENVELOPE_FROM_MISMATCH" in res["flags"]
+    assert res["risk_score"] >= 35.0
+
+
+def test_email_dkim_alignment_fail():
+    """Verify DKIM signing domain mismatch (d= doesn't match From) is flagged."""
+    req = ScanRequest(
+        channel=ChannelEnum.EMAIL,
+        sender="alerts@hdfcbank.com",
+        content="From: alerts@hdfcbank.com\n"
+                "Authentication-Results: mx.google.com; dkim=pass (test) header.d=compromised-thirdparty.net\n"
+                "Subject: Mandatory Security Update\n\n"
+                "Please verify your netbanking account.",
+    )
+    res = analyze_email(req)
+    assert "EMAIL_DKIM_ALIGNMENT_FAIL" in res["flags"]
+    assert "EMAIL_DKIM_SIGNING_DOMAIN_MISMATCH" in res["flags"]
+    assert res["risk_score"] >= 30.0
+
+
+def test_email_dmarc_reject_and_quarantine():
+    """Verify DMARC policy parsing flags reject and quarantine policies."""
+    req_reject = ScanRequest(
+        channel=ChannelEnum.EMAIL,
+        content="From: alert@sbi.co.in\n"
+                "Authentication-Results: mx.google.com; dmarc=reject header.from=sbi.co.in\n"
+                "Subject: Urgent alert\n\n"
+                "Account suspended.",
+    )
+    res_reject = analyze_email(req_reject)
+    assert "EMAIL_DMARC_FAIL" in res_reject["flags"]
+    assert "EMAIL_DMARC_POLICY_REJECT" in res_reject["flags"]
+    assert res_reject["risk_score"] >= 50.0
+
+    req_quarantine = ScanRequest(
+        channel=ChannelEnum.EMAIL,
+        content="From: alert@icicibank.com\n"
+                "Authentication-Results: mx.google.com; dmarc=quarantine header.from=icicibank.com\n"
+                "Subject: Urgent alert\n\n"
+                "Account suspended.",
+    )
+    res_quarantine = analyze_email(req_quarantine)
+    assert "EMAIL_DMARC_FAIL" in res_quarantine["flags"]
+    assert "EMAIL_DMARC_POLICY_QUARANTINE" in res_quarantine["flags"]
+
+
+def test_email_header_injection_crlf():
+    """Verify CRLF header injection in email headers is detected and penalized."""
+    req = ScanRequest(
+        channel=ChannelEnum.EMAIL,
+        content="From: admin@trusted.com\r\nBcc: evil-stealer@hacker.org\n"
+                "Subject: Clean subject\n\n"
+                "Regular email body text.",
+    )
+    res = analyze_email(req)
+    assert "EMAIL_HEADER_INJECTION_DETECTED" in res["flags"]
+    assert res["risk_score"] >= 60.0
+

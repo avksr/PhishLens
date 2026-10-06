@@ -40,6 +40,7 @@ from agents.bank_identity_agent import (
     verify_bank_identity,
     compute_fuzzy_name_match,
 )
+from agents.qr_shield import verify_qr_pre_payment
 
 # ---------------------------------------------------------------------------
 # Canonical Brand Portals for VPA Typosquatting Detection
@@ -676,6 +677,26 @@ async def _run_upi_analysis(req: ScanRequest, t_start: float) -> UpiAgentResult:
     search_corpus = req.content
     if req.sender:
         search_corpus = req.sender + " " + search_corpus
+
+    # ── QR Pre-Payment Shield Evaluation ──
+    if "upi://pay" in search_corpus.lower():
+        qr_match = re.search(r"upi://pay\?[^\s\"'>]+", search_corpus, re.IGNORECASE)
+        if qr_match:
+            qr_eval = verify_qr_pre_payment(qr_match.group(0), user_intent_claim=search_corpus)
+            if qr_eval.is_collect_request_trap or qr_eval.is_unverified_merchant_claim or qr_eval.risk_score >= 70.0:
+                latency_ms = (time.perf_counter() - t_start) * 1000.0
+                dl_flags = ["UPI_DEEPLINK_DETECTED"] + [f for f in qr_eval.flags if f != "UPI_DEEPLINK_DETECTED"]
+                raw_res = UpiAgentResult(
+                    status=AgentStatusEnum.SUCCESS,
+                    risk_score=_clamp(max(qr_eval.risk_score, 85.0)),
+                    detected_vpa=qr_eval.payee_vpa,
+                    is_spoofed_merchant=qr_eval.is_unverified_merchant_claim or qr_eval.is_collect_request_trap,
+                    target_entity=qr_eval.payee_name,
+                    flags=dl_flags,
+                    details=f"🚨 QR Pre-Payment Shield Alert: {qr_eval.advisory}",
+                    latency_ms=round(latency_ms, 3),
+                )
+                return await _enrich_with_bank_identity(raw_res, req, qr_eval.payee_name)
 
     deeplink_result = _parse_upi_deeplink(search_corpus)
     if deeplink_result:
