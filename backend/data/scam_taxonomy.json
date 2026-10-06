@@ -1,7 +1,7 @@
 [
   {
-    "id": "electricity_bill_disconnection",
-    "name": "Electricity Bill Disconnection / Utility Extortion",
+    "id": "ELEC_DISCONNECTION",
+    "name": "Electricity Bill Disconnection Scam",
     "authority": "CERT-In & RBI",
     "advisory_source": "CERT-In Advisory CIAD-2023-0041 & RBI Consumer Alert on Utility Scams",
     "intent": "PANIC_URGENCY",
@@ -20,7 +20,10 @@
       "contact electricity officer",
       "discom bill",
       "bill pay karo warna light",
-      "bill overdue"
+      "bill overdue",
+      "power supply will be cut off",
+      "power supply cut off",
+      "bill disconnection"
     ],
     "typical_phrases": [
       "Aapka bijli bill update nahi hua, connection kat diya jayega.",
@@ -30,8 +33,8 @@
     ]
   },
   {
-    "id": "digital_arrest_cbi_extortion",
-    "name": "Digital Arrest / CBI & Law Enforcement Extortion",
+    "id": "DIGITAL_ARREST",
+    "name": "Digital Arrest / CBI Extortion",
     "authority": "CERT-In & MHA I4C",
     "advisory_source": "CERT-In Advisory CIAD-2024-0018 & MHA Indian Cyber Crime Coordination Centre (I4C)",
     "intent": "FINANCIAL_EXTORTION",
@@ -41,13 +44,18 @@
       "digital arrest",
       "digital arrest warrant",
       "video call arrest warrant",
+      "video call pe arrest warrant",
       "video call arrest warrant issued by cbi",
       "video call arrest warrant issued by cyber cell",
+      "cbi officer se video call",
+      "cyber cell se warrant",
+      "cbi extortion",
       "supreme court warrant",
       "supreme court notice",
       "cbi officer",
+      "cbi police",
       "cyber crime police",
-      "cyber crime cell",
+      "cyber cell",
       "court summons",
       "giraftari",
       "jail bhej diya jayega",
@@ -57,6 +65,7 @@
     ],
     "typical_phrases": [
       "video call arrest warrant issued by CBI / Cyber Cell",
+      "video call pe arrest warrant issued by CBI",
       "Aapke naam pe digital arrest warrant hai.",
       "Supreme Court ka warrant issue hua hai, turant payment karo.",
       "Police case se bachna hai toh abhi fine pay karo.",
@@ -64,34 +73,7 @@
     ]
   },
   {
-    "id": "telecom_sim_deactivation",
-    "name": "Telecom SIM & Mobile Number Deactivation Fraud",
-    "authority": "DoT & TRAI",
-    "advisory_source": "Department of Telecommunications (DoT) & TRAI Advisory on Impersonation and SIM Disconnection",
-    "intent": "PANIC_URGENCY",
-    "severity": "HIGH",
-    "description": "Deceptive notices purporting to be from TRAI or the Department of Telecommunications threatening that the user's mobile number or SIM card will be deactivated or disconnected within 2 hours unless immediate verification is performed.",
-    "keywords": [
-      "trai disconnect",
-      "trai will disconnect your mobile number",
-      "trai will disconnect your mobile number within 2 hours",
-      "mobile number disconnected within 2 hours",
-      "sim card blocked within 2 hours",
-      "dot verification",
-      "trai verification notice",
-      "sim deactivation within 2 hours",
-      "mobile number band ho jayega",
-      "trai notice",
-      "sim card deactivation"
-    ],
-    "typical_phrases": [
-      "TRAI will disconnect your mobile number within 2 hours.",
-      "DoT alert: Your mobile number will be disconnected within 2 hours.",
-      "TRAI verification notice: Mobile SIM will be deactivated today."
-    ]
-  },
-  {
-    "id": "irctc_refund_phishing",
+    "id": "IRCTC_REFUND",
     "name": "IRCTC Ticket Cancellation Refund Phishing",
     "authority": "CERT-In & Indian Railways",
     "advisory_source": "CERT-In Advisory CIAD-2023-0029 on Malicious IRCTC Phishing & Rogue APKs",
@@ -117,8 +99,8 @@
     ]
   },
   {
-    "id": "part_time_telegram_job_scam",
-    "name": "Part-Time Task & Telegram Earning Scam",
+    "id": "TELEGRAM_JOB",
+    "name": "Part-Time Telegram Job Scam",
     "authority": "CERT-In & RBI",
     "advisory_source": "CERT-In Advisory CIAD-2023-0015 & RBI Warning on Part-Time Work from Home Scams",
     "intent": "LOTTERY_REWARD",
@@ -151,7 +133,7 @@
     ]
   },
   {
-    "id": "kyc_expiry_deactivation",
+    "id": "KYC_DEACTIVATION",
     "name": "KYC Expiry & Account Suspension Fraud",
     "authority": "RBI & Indian Banks Association",
     "advisory_source": "RBI Consumer Advisory on Fraudulent KYC Update & Phishing Links",
@@ -172,13 +154,107 @@
       "netbanking password",
       "unblock account",
       "pan card link",
-      "kyc verify karo"
+      "kyc verify karo",
+      "kyc deactivation"
     ],
     "typical_phrases": [
       "Sir aapka KYC expire ho gaya hai, abhi update karo.",
       "URGENT: SBI account blocked within 2 hours submit PAN.",
       "OTP bata do verification ke liye.",
       "Your bank account will be suspended today. Update KYC immediately."
+    ]
+  },
+  {
+    "id": "SIM_DEACTIVATION",
+    "name": "Telecom SIM Deactivation Threat",
+    "authority": "DoT & TRAI",
+    "advisory_source": "Department of Telecommunications (DoT) & TRAI Advisory on Impersonation and SIM Disconnection",
+    "intent": "PANIC_URGENCY",
+    "severity": "HIGH",
+    "description": "Deceptive notices purporting to be from TRAI or the Department of Telecommunications threatening that the user's mobile number or SIM card will be deactivated or disconnected within 2 hours unless immediate verification is performed.",
+    "keywords": [
+      "trai disconnect",
+      "trai will disconnect your mobile number",
+      "trai will disconnect your mobile",
+      "trai will disconnect your sim",
+      "sim will be deactivated",
+      "sim will be blocked",
+      "mobile number will be disconnected",
+      "trai ke order se sim band",
+      "mobile number disconnected within 2 hours",
+      "sim card blocked within 2 hours",
+      "dot verification",
+      "trai verification notice",
+      "sim deactivation within 2 hours",
+      "mobile number band ho jayega",
+      "trai notice",
+      "sim card deactivation",
+      "telecom sim deactivation"
+    ],
+    "typical_phrases": [
+      "TRAI will disconnect your mobile number within 2 hours.",
+      "DoT alert: Your mobile number will be disconnected within 2 hours.",
+      "TRAI verification notice: Mobile SIM will be deactivated today.",
+      "TRAI ke order se sim band kar diya jayega."
+    ]
+  },
+  {
+    "id": "LOTTERY_REWARD",
+    "name": "Lottery & Fake Reward Scam",
+    "authority": "RBI & Consumer Protection",
+    "advisory_source": "RBI Consumer Advisory on Lottery Fraud and Fake Prize Schemes",
+    "intent": "LOTTERY_REWARD",
+    "severity": "MEDIUM",
+    "description": "Advance-fee fraud informing victims they have won a high-value lottery, lucky draw, or KBC prize, requiring them to transfer processing fees or taxes to claim winnings.",
+    "keywords": [
+      "lottery",
+      "kbc lottery",
+      "won lottery",
+      "prize winner",
+      "lucky draw",
+      "claim lottery",
+      "congratulations you won",
+      "cash reward",
+      "jackpot winner",
+      "kbc reward",
+      "lottery claim number",
+      "won rs 25,00,000",
+      "kbc prize",
+      "claim prize money"
+    ],
+    "typical_phrases": [
+      "Congratulations! You won Rs 25,00,000 in KBC lottery lucky draw.",
+      "Claim your lottery cash prize by calling the manager.",
+      "You are the lucky winner of iPhone 15 jackpot."
+    ]
+  },
+  {
+    "id": "UPI_COLLECT",
+    "name": "UPI Collect Request Trap",
+    "authority": "NPCI & RBI",
+    "advisory_source": "NPCI & RBI Advisory on UPI Collect Request Frauds and PIN Misuse",
+    "intent": "FINANCIAL_EXTORTION",
+    "severity": "HIGH",
+    "description": "Financial deception tricking victims into approving incoming UPI collect payment requests under the guise of receiving cashback, lottery money, or refunds by entering their UPI PIN.",
+    "keywords": [
+      "upi collect",
+      "collect request",
+      "approve upi request",
+      "receive money enter upi pin",
+      "enter pin to receive money",
+      "accept collect request",
+      "upi payment request",
+      "paise lene ke liye pin dale",
+      "upi pin dalo",
+      "scan qr code to receive money",
+      "claim refund approve upi",
+      "upi collect trap",
+      "approve request to get refund"
+    ],
+    "typical_phrases": [
+      "Approve UPI collect request to receive Rs 2,000 cashback immediately.",
+      "Enter UPI PIN to receive money into your bank account.",
+      "Accept payment request on PhonePe / Google Pay to claim refund."
     ]
   }
 ]

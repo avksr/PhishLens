@@ -30,7 +30,6 @@ from shared.models import (
     IntentAgentResult,
     AgentStatusEnum,
     DetectedIntentEnum,
-    SpearPhishingCategoryEnum,
 )
 
 logger = logging.getLogger("phishlens.intent_agent")
@@ -204,18 +203,24 @@ def match_scam_taxonomy(text: str) -> Dict[str, Any]:
             best_match = entry
             best_matched_keywords = matched_kw
 
-    if best_match and (best_score >= 0.25 or best_matched_keywords):
+    if best_match and (best_score >= 0.20 or best_matched_keywords):
         return {
+            "category": best_match.get("name"),
+            "id": best_match.get("id"),
             "category_id": best_match.get("id"),
             "category_name": best_match.get("name"),
+            "severity": best_match.get("severity"),
             "match_score": best_score,
             "advisory_source": best_match.get("advisory_source"),
             "matched_keywords": best_matched_keywords,
         }
 
     return {
+        "category": None,
+        "id": None,
         "category_id": None,
         "category_name": None,
+        "severity": None,
         "match_score": 0.0,
         "advisory_source": None,
         "matched_keywords": [],
@@ -267,13 +272,21 @@ _PANIC_URGENCY_PATTERNS = [
     re.compile(r"\b(?:electricity|connection)\s+(?:aaj\s+raat\s+tak|tonight)\s+(?:cut|disconnected)\b", re.IGNORECASE),
     re.compile(r"\bbill\s+(?:is\s+)?overdue.*(?:pay\s+(?:immediately|now)|disconnect|cut\s*off)\b", re.IGNORECASE),
     re.compile(r"\bpower\s+cut\s+(?:threat|warning|notice)\b", re.IGNORECASE),
-    # Day 4: Telecom SIM & Mobile number deactivation urgency
+    # Day 3+/4: Telecom SIM & Mobile number deactivation urgency
     re.compile(
-        r"\b(?:disconnect|block|suspend|deactivate)\s+(?:your\s+)?(?:mobile\s+number|sim|phone)\s+"
+        r"\btrai\s+(?:will\s+)?(?:disconnect|block|suspend|deactivate)\s+(?:your\s+)?"
+        r"(?:mobile\s+number|mobile|sim|phone|number)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:disconnect|block|suspend|deactivate)\s+(?:your\s+)?(?:mobile\s+number|mobile|sim|phone)\s+"
         r"within\s+\d+\s*(?:hours?|hrs?)\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\bsim\s+(?:card\s+)?(?:will\s+be\s+)?(?:deactivated|blocked|suspended|disconnected)\b", re.IGNORECASE),
+    re.compile(r"\bmobile\s+number\s+(?:will\s+be\s+)?(?:disconnected|suspended|blocked|deactivated)\b", re.IGNORECASE),
     re.compile(r"\b(?:mobile\s+number|sim)\s+(?:will\s+be\s+)?(?:disconnected|suspended|blocked)\b", re.IGNORECASE),
+    re.compile(r"\btrai\s+ke\s+(?:order|aadesh)\s+se\s+sim\s+band\b", re.IGNORECASE),
     re.compile(
         r"\baapka\s+(?:mobile\s+number|sim)\s+(?:2\s*ghante|aaj\s*raat)\s*(?:ke\s*andar|mein|tak)?\s*"
         r"(?:band|block)\s*ho\s*jayega\b",
@@ -300,8 +313,11 @@ _COERCIVE_AUTHORITY_PATTERNS = [
     re.compile(r"\b(?:contact|call|reach)\s+(?:our\s+)?(?:electricity\s+)?officer\b", re.IGNORECASE),
     re.compile(r"\b(?:police|cbi)\s+case\b", re.IGNORECASE),
     re.compile(r"\bpolice\s+arrest\b", re.IGNORECASE),
-    re.compile(r"\bcustoms\s+department\b", re.IGNORECASE),
-    re.compile(r"\b(?:rbi|trai|customs|income\s*tax)\s+department\s+(?:notice|penalty|officer|summons|warning|raid|defaulter|investigation)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:rbi|trai|customs|income\s*tax)\s+department\s+"
+        r"(?:notice|penalty|officer|summons|warning|raid|defaulter|investigation)\b",
+        re.IGNORECASE,
+    ),
     # Hinglish legal / arrest threats
     re.compile(r"\bdigital\s*arrest\s*(?:warrant|ke\s*liye\s*ready|issue|hoga|hogi)?\b", re.IGNORECASE),
     re.compile(r"\baapke\s+naam\s+p(?:e|ar)\s+(?:.*)?warrant\b", re.IGNORECASE),
@@ -311,20 +327,18 @@ _COERCIVE_AUTHORITY_PATTERNS = [
     re.compile(r"\bgiraftari\b", re.IGNORECASE),
     re.compile(r"\barrest\s+kar\s+(?:liya\s+)?jayega\b", re.IGNORECASE),
     re.compile(r"\bgiraftar\s+kar\s+(?:liya\s+)?jayega\b", re.IGNORECASE),
-    # Day 4: Video Call Digital Arrest & Telecom Authority Threats
-    re.compile(r"\bvideo\s+call\s+(?:arrest\s+)?warrant\b", re.IGNORECASE),
+    # Day 3+/4: Video Call Digital Arrest & Authority Extortion
+    re.compile(r"\bvideo\s+call\s+pe\s+arrest\s+warrant\b", re.IGNORECASE),
+    re.compile(r"\bvideo\s+call\s+p(?:e|ar)\s+(?:arrest\s+)?warrant\b", re.IGNORECASE),
+    re.compile(r"\bvideo\s+call\s+arrest\s+warrant\b", re.IGNORECASE),
     re.compile(
         r"\b(?:video\s+call\s+)?arrest\s+warrant\s+issued\s+by\s+(?:cbi|cyber\s*(?:crime\s*)?(?:cell|police))\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\bcbi\s+officer\s+se\s+video\s+call\b", re.IGNORECASE),
+    re.compile(r"\b(?:cbi|police)\s+(?:officer\s+)?(?:se\s+)?video\s+call\b", re.IGNORECASE),
+    re.compile(r"\bcyber\s*(?:crime\s*)?cell\s+se\s+warrant\b", re.IGNORECASE),
     re.compile(r"\bvideo\s+call\s+par\s+(?:statement|arrest|investigation)\b", re.IGNORECASE),
-    re.compile(
-        r"\b(?:trai|dot)\s+(?:will\s+)?(?:disconnect|block|suspend|deactivate)\s+(?:your\s+)?"
-        r"(?:mobile\s+number|sim|phone|number)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"\b(?:trai|dot)\s+(?:mobile\s+number\s+)?disconnection\s+notice\b", re.IGNORECASE),
-    re.compile(r"\b(?:trai|dot)\s+verification\s+notice\b", re.IGNORECASE),
 ]
 
 # Credential & PII Harvesting: +45.0 risk
@@ -709,11 +723,13 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
         confidence = 0.5
 
         elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
-        details = "Analyzed via local resilient heuristic engine (RULES_ONLY_FALLBACK)"
-        if taxonomy_match.get("category_name"):
-            flags.append(f"TAXONOMY:{taxonomy_match['category_id'].upper()}")
+        details = "Analyzed via local resilient heuristic engine (LLM unavailable)"
+        if taxonomy_match.get("category_name") or taxonomy_match.get("category"):
+            cat_name = taxonomy_match.get("category_name") or taxonomy_match.get("category")
+            cat_id = taxonomy_match.get("category_id") or taxonomy_match.get("id") or ""
+            flags.append(f"TAXONOMY:{cat_id.upper()}")
             details += (
-                f" | Taxonomy: {taxonomy_match['category_name']} "
+                f" | Taxonomy: {cat_name} "
                 f"({taxonomy_match['match_score']:.2f})"
             )
 
@@ -746,9 +762,9 @@ async def analyze_intent(req: ScanRequest) -> IntentAgentResult:
                 confidence=0.5,
                 flags=flags,
                 reasoning=reasoning,
-                details="Analyzed via local resilient heuristic engine (RULES_ONLY_FALLBACK)",
+                details="Analyzed via local resilient heuristic engine (LLM unavailable)",
                 latency_ms=elapsed_ms,
-                scam_category=taxonomy_match.get("category_name"),
+                scam_category=taxonomy_match.get("category_name") or taxonomy_match.get("category"),
                 taxonomy_match_score=taxonomy_match.get("match_score"),
             )
         except Exception:
