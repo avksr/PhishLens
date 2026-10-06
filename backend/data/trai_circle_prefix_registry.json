@@ -76,6 +76,69 @@
       "category": "Government Telecom PSU",
       "active": true,
       "note": "PSU-routed cooperative messaging prefix, used for select government schemes (e.g. EPFO)"
+    },
+    "NE": {
+      "operator_name": "Telecom North East Circle",
+      "circles": ["North East"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "North East circle-restricted telecom prefix"
+    },
+    "KL": {
+      "operator_name": "Telecom Kerala Circle",
+      "circles": ["Kerala"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Kerala circle-restricted telecom prefix"
+    },
+    "TN": {
+      "operator_name": "Telecom Tamil Nadu Circle",
+      "circles": ["Tamil Nadu"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Tamil Nadu circle-restricted telecom prefix"
+    },
+    "KA": {
+      "operator_name": "Telecom Karnataka Circle",
+      "circles": ["Karnataka"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Karnataka circle-restricted telecom prefix"
+    },
+    "GJ": {
+      "operator_name": "Telecom Gujarat Circle",
+      "circles": ["Gujarat"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Gujarat circle-restricted telecom prefix"
+    },
+    "MH": {
+      "operator_name": "Telecom Maharashtra Circle",
+      "circles": ["Maharashtra", "Goa"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Maharashtra & Goa circle-restricted telecom prefix"
+    },
+    "WB": {
+      "operator_name": "Telecom West Bengal Circle",
+      "circles": ["West Bengal", "Kolkata"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "West Bengal circle-restricted telecom prefix"
+    },
+    "DL": {
+      "operator_name": "Telecom Delhi Circle",
+      "circles": ["Delhi"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Delhi NCR circle-restricted telecom prefix"
+    },
+    "AP": {
+      "operator_name": "Telecom Andhra Pradesh Circle",
+      "circles": ["Andhra Pradesh", "Telangana"],
+      "category": "Regional Operator",
+      "active": true,
+      "note": "Andhra Pradesh & Telangana circle-restricted telecom prefix"
     }
   },
   "known_invalid_or_unregistered_prefixes": {

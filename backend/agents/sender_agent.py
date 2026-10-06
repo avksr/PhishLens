@@ -44,7 +44,12 @@ from shared.models import (
     SenderAgentResult,
     SenderCategoryEnum,
 )
-from agents.email_agent import analyze_email
+from agents.email_agent import analyze_email, parse_raw_eml
+from agents.phone_osint import (
+    resolve_phone_osint,
+    resolve_phone_osint_sync,
+    batch_resolve_phones_osint,
+)
 
 # ---------------------------------------------------------------------------
 # Optional phonenumbers Import with Graceful Fallback
@@ -393,6 +398,160 @@ def _verify_circle_prefix(operator_prefix: str) -> Tuple[bool, bool, str]:
         f"Operator prefix '{operator_prefix}' is not found in the TRAI circle registry. "
         "This is highly suspicious — legitimate TRAI DLT operators use only registered prefixes.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Telecom Circle Branch Mismatch Detector (AVNI)
+# ---------------------------------------------------------------------------
+# Maps key Indian cities and regional locations to their canonical telecom circle
+_CITY_TO_CIRCLE: Dict[str, str] = {
+    # Karnataka
+    "bangalore": "Karnataka", "bengaluru": "Karnataka", "mysore": "Karnataka", "mysuru": "Karnataka",
+    "hubli": "Karnataka", "mangalore": "Karnataka", "mangaluru": "Karnataka", "belgaum": "Karnataka",
+    # Maharashtra / Mumbai
+    "mumbai": "Mumbai", "bombay": "Mumbai", "nariman point": "Mumbai", "bandra": "Mumbai",
+    "andheri": "Mumbai", "thane": "Maharashtra", "pune": "Maharashtra", "nagpur": "Maharashtra",
+    "nashik": "Maharashtra", "aurangabad": "Maharashtra", "navi mumbai": "Mumbai",
+    # Delhi NCR
+    "delhi": "Delhi", "new delhi": "Delhi", "noida": "Delhi", "gurgaon": "Delhi", "gurugram": "Delhi",
+    "connaught place": "Delhi", "faridabad": "Delhi", "ghaziabad": "Delhi",
+    # West Bengal / Kolkata
+    "kolkata": "Kolkata", "calcutta": "Kolkata", "howrah": "West Bengal", "salt lake": "Kolkata",
+    "siliguri": "West Bengal", "asansol": "West Bengal", "durgapur": "West Bengal",
+    # Tamil Nadu / Chennai
+    "chennai": "Tamil Nadu", "madras": "Tamil Nadu", "coimbatore": "Tamil Nadu", "madurai": "Tamil Nadu",
+    "trichy": "Tamil Nadu", "tiruchirappalli": "Tamil Nadu", "salem": "Tamil Nadu",
+    # Andhra Pradesh & Telangana
+    "hyderabad": "Andhra Pradesh", "secunderabad": "Andhra Pradesh", "cyberabad": "Andhra Pradesh",
+    "visakhapatnam": "Andhra Pradesh", "vizag": "Andhra Pradesh", "vijayawada": "Andhra Pradesh",
+    "guntur": "Andhra Pradesh", "tirupati": "Andhra Pradesh",
+    # Gujarat
+    "ahmedabad": "Gujarat", "surat": "Gujarat", "vadodara": "Gujarat", "baroda": "Gujarat",
+    "rajkot": "Gujarat", "gandhinagar": "Gujarat", "bhavnagar": "Gujarat",
+    # Uttar Pradesh
+    "lucknow": "Uttar Pradesh", "kanpur": "Uttar Pradesh", "varanasi": "Uttar Pradesh",
+    "agra": "Uttar Pradesh", "prayagraj": "Uttar Pradesh", "allahabad": "Uttar Pradesh",
+    "meerut": "Uttar Pradesh", "bareilly": "Uttar Pradesh", "aligarh": "Uttar Pradesh",
+    # Bihar & Jharkhand
+    "patna": "Bihar", "gaya": "Bihar", "muzaffarpur": "Bihar", "bhagalpur": "Bihar",
+    "ranchi": "Bihar", "jamshedpur": "Bihar", "dhanbad": "Bihar",
+    # Rajasthan
+    "jaipur": "Rajasthan", "jodhpur": "Rajasthan", "udaipur": "Rajasthan", "kota": "Rajasthan",
+    "bikaner": "Rajasthan", "ajmer": "Rajasthan",
+    # Punjab & Haryana
+    "chandigarh": "Punjab", "ludhiana": "Punjab", "amritsar": "Punjab", "jalandhar": "Punjab",
+    "patiala": "Punjab", "panipat": "Haryana", "ambala": "Haryana", "karnal": "Haryana",
+    # Madhya Pradesh
+    "bhopal": "Madhya Pradesh", "indore": "Madhya Pradesh", "jabalpur": "Madhya Pradesh",
+    "gwalior": "Madhya Pradesh", "ujjain": "Madhya Pradesh",
+    # Kerala
+    "kochi": "Kerala", "cochin": "Kerala", "thiruvananthapuram": "Kerala", "trivandrum": "Kerala",
+    "kozhikode": "Kerala", "calicut": "Kerala", "thrissur": "Kerala", "kollam": "Kerala",
+    # North East / Assam
+    "guwahati": "Assam", "shillong": "North East", "imphal": "North East", "agartala": "North East",
+    "aizawl": "North East", "dimapur": "North East", "kohima": "North East",
+    # Odisha
+    "bhubaneswar": "Odisha", "cuttack": "Odisha", "rourkela": "Odisha",
+    # Jammu & Kashmir
+    "srinagar": "Jammu & Kashmir", "jammu": "Jammu & Kashmir",
+    # Goa
+    "panaji": "Goa", "goa": "Goa", "margao": "Goa",
+}
+
+_BRANCH_CONTEXT_RE = re.compile(
+    r"(?:(?:branch|branch\s*office|branch:?)\s*(?:at\s*|in\s*|of\s*|:\s*)?([A-Za-z\s]+?)(?=[.,\n\r;]|$|\b(?:call|ph|contact|ifsc|account|ac|update|kyc|manager|desk)\b))"
+    r"|(?:([A-Za-z\s]+?)\s+(?:branch|banch|branch\s*office))",
+    re.IGNORECASE,
+)
+
+
+def detect_telecom_circle_branch_mismatch(operator_prefix: str, content: str) -> Optional[Dict[str, Any]]:
+    """
+    Compare 2-letter operator prefix in TRAI circle prefix registry against
+    regional bank branches claimed in text.
+    
+    If the operator prefix is circle-restricted (e.g. TA for MTNL Delhi/Mumbai,
+    KL for Kerala, NE for North East) but the message body claims a branch in an
+    unrelated geographic circle (e.g. Bangalore, Lucknow, Kolkata), this flags a
+    critical telecom circle route contradiction.
+    """
+    prefix_upper = operator_prefix.upper().strip()
+    entry = _CIRCLE_VALID_PREFIXES.get(prefix_upper)
+    if not entry:
+        return None
+
+    allowed_circles = entry.get("circles", [])
+    # Pan-India operator prefixes (Airtel AX, Vi VM, Jio JK) have All India license
+    if "All India" in allowed_circles:
+        return None
+
+    # Search for regional location or branch mentions in content
+    claimed_location = None
+    claimed_circle = None
+    content_lower = content.lower()
+
+    # Pass 1: explicit branch context pattern
+    for match in _BRANCH_CONTEXT_RE.finditer(content):
+        candidate_phrase = (match.group(1) or match.group(2) or "").strip().lower()
+        for city, circle in _CITY_TO_CIRCLE.items():
+            if city in candidate_phrase:
+                claimed_location = city
+                claimed_circle = circle
+                break
+        if claimed_circle:
+            break
+
+    # Pass 2: check direct mentions of cities if banking/official keyword present
+    if not claimed_circle:
+        has_bank = any(kw.lower() in content_lower for kw, _ in _BANKING_KEYWORDS) or "branch" in content_lower
+        if has_bank:
+            for city, circle in _CITY_TO_CIRCLE.items():
+                # Check for whole-word boundary
+                if re.search(rf"\b{re.escape(city)}\b", content_lower):
+                    claimed_location = city
+                    claimed_circle = circle
+                    break
+
+    if not claimed_circle or not claimed_location:
+        return None
+
+    # Check circle compatibility
+    def _circle_matches(allowed: List[str], target: str) -> bool:
+        target_lower = target.lower()
+        for c in allowed:
+            c_lower = c.lower()
+            if target_lower in c_lower or c_lower in target_lower:
+                return True
+            # Cross-handle Kolkata/West Bengal, Mumbai/Maharashtra, UP East/West
+            if ("kolkata" in target_lower and "west bengal" in c_lower) or ("west bengal" in target_lower and "kolkata" in c_lower):
+                return True
+            if ("mumbai" in target_lower and "maharashtra" in c_lower) or ("maharashtra" in target_lower and "mumbai" in c_lower):
+                return True
+            if ("uttar pradesh" in target_lower and "uttar pradesh" in c_lower):
+                return True
+        return False
+
+    if not _circle_matches(allowed_circles, claimed_circle):
+        operator_name = entry.get("operator_name", prefix_upper)
+        allowed_str = ", ".join(allowed_circles)
+        details = (
+            f"Telecom circle mismatch detected: Sender header uses operator prefix '{prefix_upper}' "
+            f"({operator_name}), which is authorized only for [{allowed_str}], "
+            f"but message claims a regional bank branch in '{claimed_location.title()}' ({claimed_circle}). "
+            "Scammers frequently use mismatched regional routes or leaked telecom headers from distant circles "
+            "to impersonate local bank branches."
+        )
+        return {
+            "mismatch": True,
+            "operator_prefix": prefix_upper,
+            "operator_name": operator_name,
+            "allowed_circles": allowed_circles,
+            "claimed_location": claimed_location.title(),
+            "claimed_circle": claimed_circle,
+            "details": details,
+        }
+
+    return None
 
 
 def _normalise_homoglyphs(text: str) -> str:
@@ -788,6 +947,28 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
             # Elevate risk; still fall through to entity-code checks
             # (we may gather additional evidence before returning)
 
+        # ── Telecom Circle Branch Mismatch Detector (AVNI) ──────────────
+        circle_mismatch = detect_telecom_circle_branch_mismatch(operator_prefix, req.content)
+        if circle_mismatch:
+            flags.append("TELECOM_CIRCLE_BRANCH_MISMATCH")
+            flags.append("REGIONAL_BRANCH_OPERATOR_CONTRADICTION")
+            flags.append("UNVERIFIED_LOOKALIKE_HEADER")
+            entry = _REGISTRY.get(entity_code)
+            latency_ms = (time.perf_counter() - t_start) * 1000.0
+            return SenderAgentResult(
+                status=AgentStatusEnum.SUCCESS,
+                sender_category=SenderCategoryEnum.LOOKALIKE_HEADER,
+                risk_score=_clamp_score(88.0),
+                is_spoofed_header=True,
+                brand_claimed=entry.get("brand_name") if entry else circle_mismatch.get("claimed_location"),
+                flags=flags,
+                details=circle_mismatch["details"],
+                latency_ms=round(latency_ms, 3),
+                raw_sender=raw_sender,
+                normalised_sender=normalised,
+                provider="TRAI_DLT_REGISTRY",
+            )
+
         # ── O(1) lookup against singleton in-memory registry ──
         entry = _REGISTRY.get(entity_code)
         pair_valid = (operator_prefix, entity_code) in _VALID_PAIRS
@@ -1083,6 +1264,17 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 pass
 
         brand = _detect_official_keyword(req.content)
+        # Query Truecaller / OSINT registry
+        osint = resolve_phone_osint_sync(normalised, claimed_brand=brand)
+        has_osint_spam = osint.get("spam_score", 0.0) >= 60.0 or osint.get("spam_reports", 0) >= 10
+        if has_osint_spam:
+            flags.append("TRUECALLER_SCAM_REPORTED")
+            flags.append("OSINT_HIGH_SPAM_SCORE")
+            if osint.get("entity_mismatch"):
+                flags.append("OSINT_CALLER_NAME_ENTITY_MISMATCH")
+            if "CHAKSHU_REPORTED" in osint.get("badges", []):
+                flags.append("CHAKSHU_SUSPECTED_FRAUD")
+
         if brand:
             flags.append("COMMERCIAL_BANK_CLAIMED_ON_PERSONAL_GSM")
             flags.append("MISSING_TRAI_OFFICIAL_HEADER")
@@ -1092,11 +1284,21 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 if len(normalised) == 10
                 else normalised
             )
+            base_score = 85.0
+            if has_osint_spam:
+                base_score = max(base_score, float(osint["spam_score"]))
+            osint_note = ""
+            if has_osint_spam:
+                osint_note = (
+                    f" Truecaller/OSINT intelligence flags this number as '{osint['caller_name']}' "
+                    f"with {osint['spam_reports']} community reports (Category: {osint['spam_category']}, "
+                    f"Carrier: {osint['carrier']}, Circle: {osint['circle']})."
+                )
             latency_ms = (time.perf_counter() - t_start) * 1000.0
             return SenderAgentResult(
                 status=AgentStatusEnum.SUCCESS,
                 sender_category=SenderCategoryEnum.PERSONAL_GSM,
-                risk_score=_clamp_score(85.0),
+                risk_score=_clamp_score(base_score),
                 phone_type=phone_type,
                 brand_claimed=brand,
                 is_spoofed_header=False,
@@ -1109,18 +1311,29 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                     "never from a personal mobile phone number. "
                     "Receiving such a message from a private number is a strong warning sign of fraud — "
                     "do not click any links or call back the number."
+                    + osint_note
                 ),
                 latency_ms=round(latency_ms, 3),
                 raw_sender=raw_sender,
                 normalised_sender=normalised,
+                provider="TRUECALLER_OSINT_REGISTRY" if has_osint_spam else "TRAI_DLT_REGISTRY",
             )
 
         # Plain personal GSM number with no suspicious content.
+        base_score = 40.0
+        osint_note = ""
+        if has_osint_spam:
+            base_score = max(base_score, float(osint["spam_score"]))
+            osint_note = (
+                f" Truecaller/OSINT intelligence flags this number as '{osint['caller_name']}' "
+                f"with {osint['spam_reports']} community spam reports (Category: {osint['spam_category']}, "
+                f"Carrier: {osint['carrier']}, Circle: {osint['circle']})."
+            )
         latency_ms = (time.perf_counter() - t_start) * 1000.0
         return SenderAgentResult(
             status=AgentStatusEnum.SUCCESS,
             sender_category=SenderCategoryEnum.PERSONAL_GSM,
-            risk_score=_clamp_score(40.0),
+            risk_score=_clamp_score(base_score),
             phone_type=phone_type,
             flags=flags,
             details=(
@@ -1128,10 +1341,12 @@ async def _run_analysis(req: ScanRequest, t_start: float) -> SenderAgentResult:
                 "No claims of being a bank or government agency were found in this message, "
                 "but be cautious — legitimate businesses do not usually contact you from "
                 "personal phone numbers."
+                + osint_note
             ),
             latency_ms=round(latency_ms, 3),
             raw_sender=raw_sender,
             normalised_sender=normalised,
+            provider="TRUECALLER_OSINT_REGISTRY" if has_osint_spam else "TRAI_DLT_REGISTRY",
         )
 
 
@@ -1238,8 +1453,8 @@ async def _analyse_phone_candidate(
     t_start: float,
 ) -> Dict[str, Any]:
     """
-    Run ``analyze_sender`` for a single phone candidate derived from the
-    message body.  Returns a serialisable summary dict, never raises.
+    Run ``analyze_sender`` and Truecaller/OSINT resolution concurrently for a single
+    phone candidate derived from the message body. Returns a serialisable summary dict, never raises.
     """
     synthetic_req = ScanRequest(
         content=base_req.content,
@@ -1248,17 +1463,42 @@ async def _analyse_phone_candidate(
         metadata=base_req.metadata or {},
     )
     try:
-        result = await analyze_sender(synthetic_req)
+        sender_task = analyze_sender(synthetic_req)
+        osint_task = resolve_phone_osint(phone, claimed_brand=_detect_official_keyword(base_req.content))
+        result, osint = await asyncio.gather(sender_task, osint_task)
+
+        c_flags = list(result.flags)
+        c_risk = result.risk_score
+        c_details = result.details
+
+        if osint.get("spam_score", 0.0) >= 60.0 or osint.get("spam_reports", 0) >= 10:
+            if "TRUECALLER_SCAM_REPORTED" not in c_flags:
+                c_flags.append("TRUECALLER_SCAM_REPORTED")
+            if "OSINT_HIGH_SPAM_SCORE" not in c_flags:
+                c_flags.append("OSINT_HIGH_SPAM_SCORE")
+            if osint.get("entity_mismatch") and "OSINT_CALLER_NAME_ENTITY_MISMATCH" not in c_flags:
+                c_flags.append("OSINT_CALLER_NAME_ENTITY_MISMATCH")
+            if "CHAKSHU_REPORTED" in osint.get("badges", []) and "CHAKSHU_SUSPECTED_FRAUD" not in c_flags:
+                c_flags.append("CHAKSHU_SUSPECTED_FRAUD")
+            c_risk = max(c_risk, float(osint["spam_score"]), 88.0)
+            osint_summary = (
+                f"[Truecaller/OSINT: '{osint['caller_name']}', {osint['spam_reports']} reports, "
+                f"category: {osint['spam_category']}, circle: {osint['circle']}, carrier: {osint['carrier']}] "
+            )
+            if osint_summary not in c_details:
+                c_details = osint_summary + c_details
+
         return {
             "phone": phone,
-            "risk_score": result.risk_score,
+            "risk_score": c_risk,
             "sender_category": result.sender_category.value,
-            "flags": result.flags,
-            "details": result.details,
+            "flags": c_flags,
+            "details": c_details,
             "phone_type": result.phone_type,
             "brand_claimed": result.brand_claimed,
             "is_spoofed_header": result.is_spoofed_header,
             "latency_ms": result.latency_ms,
+            "osint": osint,
         }
     except Exception as exc:  # noqa: BLE001 — fail-safe
         return {
@@ -1271,25 +1511,26 @@ async def _analyse_phone_candidate(
             "brand_claimed": None,
             "is_spoofed_header": False,
             "latency_ms": round((time.perf_counter() - t_start) * 1000.0, 3),
+            "osint": None,
         }
 
 
 async def analyze_sender_multi(req: ScanRequest) -> SenderAgentResult:
     """
-    Multi-phone parallel sender analysis (AVNI Sprint 2).
+    Multi-phone parallel sender analysis via Truecaller & OSINT registry (AVNI).
 
     Behaviour
     ---------
     1. If ``req.sender`` is already provided *and* is a single phone / header,
        fall through to the standard ``analyze_sender`` path.
     2. Otherwise, extract ALL distinct Indian phone numbers found in the
-       message body and analyse them **concurrently** via ``asyncio.gather``.
+       message body and dispatch them **concurrently** via ``asyncio.gather``
+       through the Truecaller / OSINT phone reputation registry.
     3. The sub-result with the **highest risk_score** is returned as the
        primary ``SenderAgentResult``.
-    4. All sub-results (for UI accordion / expandable evidence panel) are
-       embedded in the result's ``email_analysis`` dict under the key
-       ``multi_phone_results`` — reusing the existing optional field so no
-       schema change is required.
+    4. All sub-results and OSINT records (for UI accordion / evidence panels)
+       are embedded in ``email_analysis["multi_phone_results"]`` and
+       ``email_analysis["osint_registry_matches"]``.
 
     Parameters
     ----------
@@ -1298,7 +1539,7 @@ async def analyze_sender_multi(req: ScanRequest) -> SenderAgentResult:
     Returns
     -------
     SenderAgentResult
-        Primary result (highest-risk phone).  Never raises.
+        Primary result (highest-risk phone). Never raises.
     """
     t_start = time.perf_counter()
 
@@ -1342,7 +1583,7 @@ async def analyze_sender_multi(req: ScanRequest) -> SenderAgentResult:
         risk_score=float(best["risk_score"]),
         flags=best["flags"],
         details=(
-            f"[Multi-phone scan — {len(candidates)} numbers found] "
+            f"[Multi-phone scan — {len(candidates)} numbers resolved via Truecaller/OSINT] "
             + best["details"]
         ),
         phone_type=best.get("phone_type"),
@@ -1351,12 +1592,13 @@ async def analyze_sender_multi(req: ScanRequest) -> SenderAgentResult:
         raw_sender=best["phone"],
         normalised_sender=best["phone"],
         latency_ms=total_latency_ms,
-        provider="TRAI_DLT_REGISTRY",
+        provider="TRUECALLER_OSINT_REGISTRY",
         # Embed all sub-results for UI panels (reuses email_analysis slot)
         email_analysis={
             "multi_phone_results": sub_results,
             "phone_count": len(candidates),
             "highest_risk_phone": best["phone"],
+            "osint_registry_matches": [r.get("osint") for r in sub_results if r.get("osint")],
         },
     )
 
