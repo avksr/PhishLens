@@ -812,7 +812,7 @@ async def test_intent_agent_multi_llm_rules_only_fallback_contract(monkeypatch: 
         assert res.status == AgentStatusEnum.SUCCESS
         assert res.confidence == 0.5, f"Expected confidence 0.5 for rules-only fallback, got {res.confidence}"
         assert "RULES_ONLY_FALLBACK" in res.flags
-        assert "RULES_ONLY_FALLBACK" in res.details
+        assert "LLM unavailable" in res.details
         assert res.risk_score >= 45.0
 
 
@@ -823,50 +823,60 @@ def test_scam_taxonomy_load_public_advisories() -> None:
     """
     taxonomy = load_scam_taxonomy()
     assert isinstance(taxonomy, list)
-    assert len(taxonomy) >= 5
+    assert len(taxonomy) >= 8
 
     category_ids = {c["id"] for c in taxonomy}
     expected_categories = {
-        "electricity_bill_disconnection",
-        "digital_arrest_cbi_extortion",
-        "telecom_sim_deactivation",
-        "irctc_refund_phishing",
-        "part_time_telegram_job_scam",
-        "kyc_expiry_deactivation",
+        "ELEC_DISCONNECTION",
+        "DIGITAL_ARREST",
+        "IRCTC_REFUND",
+        "TELEGRAM_JOB",
+        "KYC_DEACTIVATION",
+        "SIM_DEACTIVATION",
+        "LOTTERY_REWARD",
+        "UPI_COLLECT",
     }
     assert expected_categories.issubset(category_ids), f"Missing categories: {expected_categories - category_ids}"
 
     for entry in taxonomy:
         assert "id" in entry
         assert "name" in entry
-        assert "advisory_source" in entry
+        assert "severity" in entry
         assert "keywords" in entry and len(entry["keywords"]) > 0
 
 
 @pytest.mark.parametrize("message,expected_category", [
     (
         "Aapka bijli bill update nahi hua, connection kat diya jayega.",
-        "electricity_bill_disconnection",
+        "ELEC_DISCONNECTION",
     ),
     (
         "video call arrest warrant issued by CBI / Cyber Cell",
-        "digital_arrest_cbi_extortion",
+        "DIGITAL_ARREST",
     ),
     (
         "TRAI will disconnect your mobile number within 2 hours",
-        "telecom_sim_deactivation",
+        "SIM_DEACTIVATION",
     ),
     (
         "Your IRCTC ticket cancellation refund of Rs 1,450 is pending. Download rail connect apk.",
-        "irctc_refund_phishing",
+        "IRCTC_REFUND",
     ),
     (
         "YouTube video like karo aur Telegram pe screenshot bhejo, daily earning hogi.",
-        "part_time_telegram_job_scam",
+        "TELEGRAM_JOB",
     ),
     (
         "Sir aapka KYC expire ho gaya hai, abhi update karo warna account block.",
-        "kyc_expiry_deactivation",
+        "KYC_DEACTIVATION",
+    ),
+    (
+        "Congratulations you won 25 lakhs in KBC lottery lucky draw.",
+        "LOTTERY_REWARD",
+    ),
+    (
+        "Approve UPI collect request to receive cashback into your bank account.",
+        "UPI_COLLECT",
     ),
 ])
 def test_scam_taxonomy_similarity_matcher(message: str, expected_category: str) -> None:
@@ -876,7 +886,7 @@ def test_scam_taxonomy_similarity_matcher(message: str, expected_category: str) 
     and a high match score.
     """
     match = match_scam_taxonomy(message)
-    assert match["category_id"] == expected_category, f"Expected {expected_category}, got {match['category_id']}"
+    assert match["id"] == expected_category, f"Expected {expected_category}, got {match['id']}"
     assert match["match_score"] >= 0.50, f"Match score too low: {match['match_score']}"
     assert match["advisory_source"] is not None
 
@@ -936,7 +946,7 @@ async def test_intent_agent_trai_telecom_disconnection_threat(monkeypatch: pytes
 
     assert res.status == AgentStatusEnum.SUCCESS
     assert res.risk_score >= 40.0
-    assert res.detected_intent in (DetectedIntentEnum.PANIC_URGENCY, DetectedIntentEnum.FINANCIAL_EXTORTION)
+    assert res.detected_intent == DetectedIntentEnum.PANIC_URGENCY
     assert "RULES_ONLY_FALLBACK" in res.flags
     assert res.confidence == 0.5
     assert res.scam_category is not None
@@ -962,3 +972,57 @@ async def test_intent_agent_false_positive_trai_and_video_call(monkeypatch: pyte
     assert res.risk_score <= 15.0
     assert res.detected_intent == DetectedIntentEnum.BENIGN
     assert len(res.manipulation_tactics) == 0
+
+
+# ─────────────────────────────────────────────────────────────
+# Day 3+ Acceptance Criteria Tests (Task 1, Task 2, Task 3)
+# ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_task1_both_keys_removed_rules_only_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Task 1 Done When:
+    With both API keys removed -> result has "RULES_ONLY_FALLBACK" in flags and confidence: 0.5.
+    Details: "Analyzed via local resilient heuristic engine (LLM unavailable)"
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GROQ_API_KEY", "")
+
+    req = ScanRequest(content="URGENT: Your bank account will be blocked today.")
+    res = await analyze_intent(req)
+
+    assert "RULES_ONLY_FALLBACK" in res.flags
+    assert res.confidence == 0.5
+    assert "LLM unavailable" in res.details
+
+
+def test_task2_match_scam_taxonomy_digital_arrest_acceptance() -> None:
+    """
+    Task 2 Done When:
+    match_scam_taxonomy("digital arrest warrant CBI police") returns
+    {category: "Digital Arrest / CBI Extortion", id: "DIGITAL_ARREST"}.
+    """
+    res = match_scam_taxonomy("digital arrest warrant CBI police")
+    assert res.get("category") == "Digital Arrest / CBI Extortion"
+    assert res.get("id") == "DIGITAL_ARREST"
+
+
+@pytest.mark.asyncio
+async def test_task3_hinglish_threat_patterns_acceptance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Task 3 Done When:
+    - "TRAI will disconnect your mobile number within 2 hours" triggers PANIC_URGENCY.
+    - "video call pe arrest warrant issued by CBI" triggers FINANCIAL_EXTORTION.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GROQ_API_KEY", "")
+
+    res1 = await analyze_intent(
+        ScanRequest(content="TRAI will disconnect your mobile number within 2 hours")
+    )
+    assert res1.detected_intent == DetectedIntentEnum.PANIC_URGENCY
+
+    res2 = await analyze_intent(
+        ScanRequest(content="video call pe arrest warrant issued by CBI")
+    )
+    assert res2.detected_intent == DetectedIntentEnum.FINANCIAL_EXTORTION
