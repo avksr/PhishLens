@@ -30,7 +30,6 @@ from shared.models import (
     IntentAgentResult,
     AgentStatusEnum,
     DetectedIntentEnum,
-    SpearPhishingCategoryEnum,
 )
 
 logger = logging.getLogger("phishlens.intent_agent")
