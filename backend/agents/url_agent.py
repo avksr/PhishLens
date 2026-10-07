@@ -27,8 +27,11 @@ import collections
 import csv
 import functools
 import json
+import ipaddress
 import logging
 import os
+import socket
+import struct
 import re
 import threading
 import time
@@ -38,6 +41,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import urlparse
 
 import tldextract
 
@@ -77,6 +81,8 @@ _RISK_NEW_DOMAIN = 40.0
 _RISK_HOMOGLYPH = 45.0
 _RISK_SAFE_BROWSING = 30.0
 _RISK_WHOIS_TIMEOUT_PENALTY = 15.0  # penalty when WHOIS fails but TLD is high-risk
+_RISK_IP_OBFUSCATION = 40.0  # penalty for hex/octal/decimal IP obfuscation
+_RISK_CLAIMED_BRAND_MISMATCH = 30.0  # penalty when intent-claimed brand ≠ URL domain
 
 # WHOIS timeout (seconds)
 _WHOIS_TIMEOUT = 1.5
@@ -440,6 +446,239 @@ def prewarm_whois_cache(timeout_per_domain: float = 2.0) -> int:
 
 
 # ──────────────────────────────────────────────
+# IP Obfuscation Detection (Hex / Octal / Decimal)
+# ──────────────────────────────────────────────
+# Phishing URLs sometimes use obfuscated IP addresses to evade filters:
+#   - Decimal integer: http://2130706433  (= 127.0.0.1)
+#   - Hex: http://0x7f000001  (= 127.0.0.1)
+#   - Octal: http://0177.0.0.01  (= 127.0.0.1)
+#   - Dotted hex: http://0x7f.0x0.0x0.0x1
+#   - Mixed: http://0x7f.0.0.1
+# These regexes match the *host* portion of a URL.
+
+# Matches a single integer IP (decimal or hex): e.g. 2130706433 or 0x7f000001
+_RE_INT_IP = re.compile(
+    r"^(?:0x[0-9a-fA-F]+|[0-9]{6,10})$"
+)
+
+# Matches dotted-octal or dotted-hex octets: 0177.0.0.01 or 0x7f.0x0.0x0.0x1
+_RE_OCTET_OBFUSCATED = re.compile(
+    r"^(?:0[xX][0-9a-fA-F]+|0[0-7]+)$"
+)
+
+
+def _is_private_ip(ip_str: str) -> bool:
+    """Return True if *ip_str* is a private / reserved IPv4 address."""
+    try:
+        return ipaddress.ip_address(ip_str).is_private
+    except (ValueError, TypeError):
+        return False
+
+
+def _defang_ip_host(host: str) -> Tuple[Optional[str], List[str]]:
+    """
+    Detect and decode obfuscated IP addresses in a URL host.
+
+    Supported encodings:
+      * **Decimal integer** — ``2130706433`` → ``127.0.0.1``
+      * **Hex integer** — ``0x7f000001`` → ``127.0.0.1``
+      * **Dotted hex** — ``0x7f.0x0.0x0.0x1`` → ``127.0.0.1``
+      * **Dotted octal** — ``0177.0.0.01`` → ``127.0.0.1``
+      * **Mixed** — ``0x7f.0.0.1`` → ``127.0.0.1``
+
+    Returns
+    -------
+    tuple
+        ``(decoded_ip | None, list_of_flags)``.
+        If the host is not an obfuscated IP, returns ``(None, [])``.
+    """
+    if not host:
+        return None, []
+
+    # Strip port if present
+    h = host.split(":")[0].strip().rstrip(".")
+    if not h:
+        return None, []
+
+    flags: List[str] = []
+
+    # ── Case 1: Single integer (decimal or hex) ──
+    if _RE_INT_IP.match(h):
+        try:
+            if h.lower().startswith("0x"):
+                num = int(h, 16)
+                flags.append("IP_HEX_ENCODED")
+            else:
+                num = int(h)
+                flags.append("IP_DECIMAL_ENCODED")
+            if 0 <= num <= 0xFFFFFFFF:
+                ip_str = socket.inet_ntoa(struct.pack("!I", num))
+                return ip_str, flags
+        except (ValueError, OverflowError, struct.error, OSError):
+            pass
+
+    # ── Case 2: Dotted notation with hex/octal octets ──
+    parts = h.split(".")
+    if 2 <= len(parts) <= 4:
+        decoded_octets: List[int] = []
+        has_obfuscation = False
+        for part in parts:
+            part_stripped = part.strip()
+            if not part_stripped:
+                break
+            try:
+                if part_stripped.lower().startswith("0x"):
+                    val = int(part_stripped, 16)
+                    has_obfuscation = True
+                elif (
+                    len(part_stripped) > 1
+                    and part_stripped.startswith("0")
+                    and part_stripped.isdigit()
+                ):
+                    # Octal: leading zero with more than one digit
+                    val = int(part_stripped, 8)
+                    has_obfuscation = True
+                else:
+                    val = int(part_stripped)
+            except ValueError:
+                decoded_octets = []
+                break
+            if 0 <= val <= 255:
+                decoded_octets.append(val)
+            else:
+                decoded_octets = []
+                break
+
+        if len(decoded_octets) == len(parts) and has_obfuscation and len(decoded_octets) in (3, 4):
+            # Pad to 4 octets if needed (3-part IPs: a.b.cd → a.b.0.cd)
+            while len(decoded_octets) < 4:
+                decoded_octets.insert(-1, 0)
+            ip_str = ".".join(str(o) for o in decoded_octets)
+            try:
+                ipaddress.ip_address(ip_str)  # validate
+                obf_types = set()
+                for part in parts:
+                    ps = part.strip()
+                    if ps.lower().startswith("0x"):
+                        obf_types.add("HEX")
+                    elif len(ps) > 1 and ps.startswith("0") and ps.isdigit():
+                        obf_types.add("OCTAL")
+                if "HEX" in obf_types and "OCTAL" in obf_types:
+                    flags.append("IP_MIXED_HEX_OCTAL")
+                elif "HEX" in obf_types:
+                    flags.append("IP_DOTTED_HEX")
+                else:
+                    flags.append("IP_DOTTED_OCTAL")
+                return ip_str, flags
+            except ValueError:
+                pass
+
+    return None, []
+
+
+def _check_ip_obfuscation(url: str) -> Tuple[Optional[str], float, List[str]]:
+    """
+    Check if a URL uses an obfuscated (hex/octal/decimal) IP address.
+
+    Returns ``(decoded_ip | None, risk_delta, flags)``.
+    """
+    try:
+        parsed = urlparse(url if "://" in url else f"http://{url}")
+        host = parsed.hostname or ""
+    except Exception:
+        return None, 0.0, []
+
+    decoded_ip, ip_flags = _defang_ip_host(host)
+    if decoded_ip is None:
+        return None, 0.0, []
+
+    ip_flags.append(f"DECODED_IP:{decoded_ip}")
+
+    # Private IPs in URLs are suspicious but less risky than public
+    if _is_private_ip(decoded_ip):
+        ip_flags.append("IP_PRIVATE_RANGE")
+        return decoded_ip, _RISK_IP_OBFUSCATION * 0.6, ip_flags
+
+    return decoded_ip, _RISK_IP_OBFUSCATION, ip_flags
+
+
+# ──────────────────────────────────────────────
+# Claimed Brand Cross-Reference
+# ──────────────────────────────────────────────
+
+def _check_claimed_brand_mismatch(
+    registered_domain: str,
+    domain_label: str,
+    claimed_brand: Optional[str],
+) -> Tuple[bool, float, List[str]]:
+    """
+    Cross-reference the claimed brand (from the intent agent) against the
+    URL's actual domain.
+
+    If the intent agent identifies the message as claiming to be from
+    "State Bank of India" but the URL's domain is ``sbi-kyc-verify.top``
+    (not an official SBI domain), this is a strong impersonation signal.
+
+    Parameters
+    ----------
+    registered_domain : str
+        Full registered domain (e.g. ``sbi-kyc-verify.top``).
+    domain_label : str
+        Second-level domain label (e.g. ``sbi-kyc-verify``).
+    claimed_brand : str or None
+        Brand name extracted by the intent agent (e.g. ``"State Bank of India"``).
+
+    Returns
+    -------
+    tuple
+        ``(is_mismatch, risk_delta, flags)``.
+    """
+    if not claimed_brand:
+        return False, 0.0, []
+
+    brand_data = _load_brand_data()
+    claimed_lower = claimed_brand.strip().lower()
+
+    # Find the brand entry that matches the claimed brand name
+    matched_brand_info = None
+    for _key, info in brand_data.items():
+        brand_name = info.get("brand_name", _key).lower()
+        keywords = [k.lower() for k in info.get("keywords", [])]
+        if (
+            claimed_lower == brand_name
+            or claimed_lower in keywords
+            or any(kw in claimed_lower for kw in keywords)
+            or brand_name in claimed_lower
+        ):
+            matched_brand_info = info
+            break
+
+    if matched_brand_info is None:
+        # Can't verify — unknown brand
+        return False, 0.0, []
+
+    official_domains = [
+        d.lower() for d in matched_brand_info.get("official_domains", [])
+    ]
+    full_lower = registered_domain.lower()
+
+    # If the URL's domain IS an official domain, no mismatch
+    if full_lower in official_domains:
+        return False, 0.0, ["CLAIMED_BRAND_VERIFIED"]
+
+    # Mismatch: claimed brand but unofficial domain
+    return (
+        True,
+        _RISK_CLAIMED_BRAND_MISMATCH,
+        [
+            "CLAIMED_BRAND_MISMATCH",
+            f"CLAIMED:{claimed_brand}",
+            f"ACTUAL_DOMAIN:{registered_domain}",
+        ],
+    )
+
+
+# ──────────────────────────────────────────────
 # Internal helpers
 # ──────────────────────────────────────────────
 
@@ -620,17 +859,22 @@ def _check_homoglyph(
 def _check_typosquatting(
     domain_label: str,
     registered_domain: str,
+    claimed_brand: Optional[str] = None,
 ) -> Tuple[bool, Optional[str], float, List[str]]:
     """
     Detect brand impersonation / typosquatting.
 
-    Three-pass approach:
+    Four-pass approach:
       0. **Official check** — if registered_domain is an official domain of
          any known brand, it is authentic; never flag it.
-      1. **Keyword match** — does any brand keyword appear in the domain label
+      1. **Claimed brand priority** — if the intent agent identified a
+         claimed brand, check whether the URL's domain belongs to that
+         brand's official list first. This catches cases where the message
+         says "SBI" but the URL is ``sbi-kyc-verify.top``.
+      2. **Keyword match** — does any brand keyword appear in the domain label
          while the full registered domain is NOT in the brand's official list?
          Checked across all brands first so direct keyword matches take precedence.
-      2. **Levenshtein similarity** — is the registered domain suspiciously
+      3. **Levenshtein similarity** — is the registered domain suspiciously
          close to any official domain (ratio >= threshold)?
 
     Parameters
@@ -639,6 +883,8 @@ def _check_typosquatting(
         The second-level domain label only (e.g. ``sbi-kyc-verify``).
     registered_domain : str
         The full domain under the public suffix (e.g. ``sbi-kyc-verify.top``).
+    claimed_brand : str or None
+        Optional brand name passed from the intent agent for cross-reference.
 
     Returns ``(is_typosquatting, target_brand, score_delta, new_flags)``.
     """
@@ -652,11 +898,39 @@ def _check_typosquatting(
         if full_lower in official_domains:
             return False, None, 0.0, []
 
-    # Pass 1 — Keyword hit in the domain label across all brands
+    # Pass 1 — Claimed brand priority from intent agent
+    if claimed_brand:
+        claimed_lower = claimed_brand.strip().lower()
+        for _brand_key, info in brand_data.items():
+            brand_name: str = info.get("brand_name", _brand_key)
+            keywords: List[str] = [k.lower() for k in info.get("keywords", [])]
+            official_domains: List[str] = [
+                d.lower() for d in info.get("official_domains", [])
+            ]
+            # Match claimed brand to this brand entry
+            bn_lower = brand_name.lower()
+            if (
+                claimed_lower == bn_lower
+                or claimed_lower in keywords
+                or any(kw in claimed_lower for kw in keywords)
+                or bn_lower in claimed_lower
+            ):
+                # Found the claimed brand — check if domain is official
+                if full_lower not in official_domains:
+                    return (
+                        True,
+                        brand_name,
+                        _RISK_TYPOSQUATTING,
+                        ["TYPOSQUATTING_DETECTED", "CLAIMED_BRAND_CONTEXT"],
+                    )
+                # Official domain, authentic
+                return False, None, 0.0, []
+
+    # Pass 2 — Keyword hit in the domain label across all brands
     for _brand_key, info in brand_data.items():
-        brand_name: str = info.get("brand_name", _brand_key)
-        keywords: List[str] = [k.lower() for k in info.get("keywords", [])]
-        official_domains: List[str] = [d.lower() for d in info.get("official_domains", [])]
+        brand_name = info.get("brand_name", _brand_key)
+        keywords = [k.lower() for k in info.get("keywords", [])]
+        official_domains = [d.lower() for d in info.get("official_domains", [])]
 
         if any(kw in label_lower for kw in keywords):
             if full_lower in official_domains:
@@ -668,7 +942,7 @@ def _check_typosquatting(
                 ["TYPOSQUATTING_DETECTED"],
             )
 
-    # Pass 2 — Levenshtein similarity against each official domain
+    # Pass 3 — Levenshtein similarity against each official domain
     best_brand: Optional[str] = None
     best_ratio: float = 0.0
 
@@ -1269,13 +1543,26 @@ async def check_threat_intel(
 # Public API
 # ──────────────────────────────────────────────
 
-async def analyze_url(req: ScanRequest) -> UrlAgentResult:
+async def analyze_url(
+    req: ScanRequest,
+    claimed_brand: Optional[str] = None,
+) -> UrlAgentResult:
     """
     Analyse the URL in *req* and return a fully populated ``UrlAgentResult``.
 
     Uses the in-memory TTL-aware domain-result cache (``_domain_cache``)
     so that repeat scans of the same registered domain return in <1 ms
     without re-running TLD, typosquatting, homoglyph, or WHOIS checks.
+
+    Parameters
+    ----------
+    req : ScanRequest
+        The scan request containing the URL to analyse.
+    claimed_brand : str or None
+        Optional brand name extracted by the intent agent (e.g.
+        ``"State Bank of India"``).  When provided, the URL agent
+        cross-references this against the URL's actual domain to detect
+        impersonation with higher precision.
 
     This function **never** raises an unhandled exception.
     """
@@ -1292,6 +1579,9 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 latency_ms=round(elapsed, 2),
             )
 
+        # ── Step 1b: IP obfuscation check ──
+        decoded_ip, ip_delta, ip_flags = _check_ip_obfuscation(url)
+
         # ── Step 2: Parse domain ──
         subdomain, domain_label, registered_domain, suffix = _parse_domain(url)
 
@@ -1303,9 +1593,14 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 "Domain cache HIT for '%s' (%.3f ms)",
                 registered_domain, elapsed,
             )
+            # Merge IP flags into cached result if needed
+            merged_flags = list(cached.flags)
+            if ip_flags:
+                merged_flags.extend(ip_flags)
+            merged_score = min(100.0, cached.risk_score + ip_delta)
             return UrlAgentResult(
                 status=AgentStatusEnum.SUCCESS,
-                risk_score=round(cached.risk_score, 2),
+                risk_score=round(merged_score, 2),
                 url_analyzed=url,
                 domain=registered_domain,
                 tld=suffix or None,
@@ -1316,8 +1611,8 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
                 registrar=cached.registrar,
                 safe_browsing_threat=cached.safe_browsing_threat,
                 threat_intel=cached.threat_intel,
-                flags=list(cached.flags),
-                details=f"Analysed {url}; {len(cached.flags)} flag(s) raised [cached]",
+                flags=merged_flags,
+                details=f"Analysed {url}; {len(merged_flags)} flag(s) raised [cached]",
                 latency_ms=round(elapsed, 2),
             )
 
@@ -1325,13 +1620,18 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
         risk_score = 0.0
         flags: List[str] = []
 
+        # Apply IP obfuscation risk
+        if ip_delta > 0:
+            risk_score += ip_delta
+            flags.extend(ip_flags)
+
         tld_rep, tld_delta, tld_flags = _check_tld_reputation(suffix)
         risk_score += tld_delta
         flags.extend(tld_flags)
 
-        # ── Step 4: Typosquatting detection ──
+        # ── Step 4: Typosquatting detection (with claimed brand context) ──
         is_typo, target_brand, typo_delta, typo_flags = _check_typosquatting(
-            domain_label, registered_domain
+            domain_label, registered_domain, claimed_brand=claimed_brand,
         )
         risk_score += typo_delta
         flags.extend(typo_flags)
@@ -1347,6 +1647,15 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
             if not is_typo and homoglyph_brand:
                 is_typo = True
                 target_brand = homoglyph_brand
+
+        # ── Step 4c: Claimed brand cross-reference ──
+        if claimed_brand and not is_typo:
+            cb_mismatch, cb_delta, cb_flags = _check_claimed_brand_mismatch(
+                registered_domain, domain_label, claimed_brand,
+            )
+            if cb_mismatch:
+                risk_score += cb_delta
+                flags.extend(cb_flags)
 
         # ── Step 5: WHOIS age (with zero-downtime fallback) ──
         age_days, registrar, age_delta, age_flags = await _check_whois_age(
@@ -1414,6 +1723,168 @@ async def analyze_url(req: ScanRequest) -> UrlAgentResult:
             details=str(exc),
             latency_ms=round(elapsed, 2),
         )
+
+
+async def analyze_url_fast(
+    url: str,
+    claimed_brand: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Fast, sub-50ms URL risk assessment for the browser extension endpoint.
+
+    Runs **only** local heuristic checks (no WHOIS, no external API calls):
+      1. IP obfuscation detection (hex / octal / decimal)
+      2. TLD reputation scoring
+      3. Typosquatting / brand-impersonation detection
+      4. Homoglyph / Punycode detection
+      5. Claimed brand cross-reference (if provided)
+      6. Local threat feed lookup (OpenPhish / URLhaus — no network)
+
+    Parameters
+    ----------
+    url : str
+        The URL to check.
+    claimed_brand : str or None
+        Optional brand name for cross-reference.
+
+    Returns
+    -------
+    dict
+        Lightweight response with risk tier, score, flags, and brand
+        impersonation data.  Designed for the ``POST /api/v1/url/check``
+        endpoint consumed by browser extensions.
+    """
+    start = time.perf_counter()
+
+    try:
+        risk_score = 0.0
+        flags: List[str] = []
+
+        # Normalise URL
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+
+        # ── IP obfuscation ──
+        decoded_ip, ip_delta, ip_flags = _check_ip_obfuscation(url)
+        risk_score += ip_delta
+        flags.extend(ip_flags)
+
+        # ── Parse domain ──
+        subdomain, domain_label, registered_domain, suffix = _parse_domain(url)
+
+        # ── Domain cache probe (sub-ms return) ──
+        cached = _domain_cache.get(registered_domain)
+        if cached is not None:
+            elapsed = (time.perf_counter() - start) * 1000
+            merged_flags = list(cached.flags) + ip_flags
+            merged_score = min(100.0, cached.risk_score + ip_delta)
+            return {
+                "url": url,
+                "risk_score": round(merged_score, 2),
+                "risk_tier": _score_to_risk_tier(merged_score),
+                "domain": registered_domain,
+                "tld": suffix or None,
+                "is_typosquatting": cached.is_typo,
+                "target_brand": cached.target_brand,
+                "is_ip_obfuscated": decoded_ip is not None,
+                "decoded_ip": decoded_ip,
+                "flags": merged_flags,
+                "cached": True,
+                "latency_ms": round(elapsed, 2),
+            }
+
+        # ── TLD reputation ──
+        tld_rep, tld_delta, tld_flags = _check_tld_reputation(suffix)
+        risk_score += tld_delta
+        flags.extend(tld_flags)
+
+        # ── Typosquatting (with claimed brand) ──
+        is_typo, target_brand, typo_delta, typo_flags = _check_typosquatting(
+            domain_label, registered_domain, claimed_brand=claimed_brand,
+        )
+        risk_score += typo_delta
+        flags.extend(typo_flags)
+
+        # ── Homoglyph / Punycode ──
+        is_homoglyph, homoglyph_brand, homoglyph_delta, homoglyph_flags = _check_homoglyph(
+            domain_label, registered_domain,
+        )
+        if is_homoglyph:
+            risk_score += homoglyph_delta
+            flags.extend(homoglyph_flags)
+            if not is_typo and homoglyph_brand:
+                is_typo = True
+                target_brand = homoglyph_brand
+
+        # ── Claimed brand cross-reference ──
+        if claimed_brand and not is_typo:
+            cb_mismatch, cb_delta, cb_flags = _check_claimed_brand_mismatch(
+                registered_domain, domain_label, claimed_brand,
+            )
+            if cb_mismatch:
+                risk_score += cb_delta
+                flags.extend(cb_flags)
+                is_typo = True
+                target_brand = claimed_brand
+
+        # ── Local threat feeds only (no network) ──
+        feed_result = _threat_feed_cache.check(url, domain=registered_domain)
+        if feed_result.get("openphish_hit"):
+            flags.append("THREAT_INTEL_OPENPHISH_FLAGGED")
+            risk_score += _RISK_OPENPHISH
+        if feed_result.get("urlhaus_hit"):
+            flags.append("THREAT_INTEL_URLHAUS_FLAGGED")
+            risk_score += _RISK_URLHAUS
+
+        # ── Normalise ──
+        risk_score = max(0.0, min(100.0, risk_score))
+
+        elapsed = (time.perf_counter() - start) * 1000
+        return {
+            "url": url,
+            "risk_score": round(risk_score, 2),
+            "risk_tier": _score_to_risk_tier(risk_score),
+            "domain": registered_domain,
+            "tld": suffix or None,
+            "tld_reputation": tld_rep.value if tld_rep else "NEUTRAL",
+            "is_typosquatting": is_typo,
+            "target_brand": target_brand,
+            "is_ip_obfuscated": decoded_ip is not None,
+            "decoded_ip": decoded_ip,
+            "flags": flags,
+            "cached": False,
+            "latency_ms": round(elapsed, 2),
+        }
+
+    except Exception as exc:
+        elapsed = (time.perf_counter() - start) * 1000
+        return {
+            "url": url,
+            "risk_score": 0.0,
+            "risk_tier": "SAFE",
+            "error": str(exc),
+            "flags": [],
+            "latency_ms": round(elapsed, 2),
+        }
+
+
+def _score_to_risk_tier(score: float) -> str:
+    """
+    Map a numeric risk score to a human-readable risk tier.
+
+    Tiers match ``RiskTierEnum``:
+      * 0–24   → SAFE
+      * 25–49  → CAUTION
+      * 50–77  → HIGH_RISK
+      * 78–100 → CRITICAL
+    """
+    if score < 25:
+        return "SAFE"
+    if score < 50:
+        return "CAUTION"
+    if score < 78:
+        return "HIGH_RISK"
+    return "CRITICAL"
 
 
 # ---------------------------------------------------------------------------
